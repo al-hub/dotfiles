@@ -1,0 +1,141 @@
+!! Colorscheme
+
+!xterm*decTerminalID:            vt340
+
+!URxvt.perl-ext-common: sixel-proof-of-concept
+
+
+! special
+URxvt.scrollBar:false
+
+
+URxvt*background: Black
+URxvt*foreground: #CCCCCC
+!URxvt*geometry: 80x30
+
+!URxvt.font: 9x15
+
+!-- Xft settings -- !
+!Xft.dpi:        96
+!Xft.antialias:  true 
+!Xft.rgba:       rgb
+!Xft.hinting:    true
+!Xft.hintstyle:  hintfull
+!
+!! -- Fonts -- !
+
+!https://blog.khmersite.net/2017/12/change-the-urxvt-font-size-on-the-fly/
+Urxvt.perl-ext-common: default,resize-font,tabbed
+
+
+!tabbed
+URxvt.tabbed.tabbar-fg: 2
+URxvt.tabbed.tabbar-bg: 0
+URxvt.tabbed.tab-fg:    3
+URxvt.tabbed.tab-bg:    0
+
+
+
+URxvt.letterSpace:              -1
+URxvt.lineSpace:              -1
+
+URxvt.font:                     xft:D2Coding:style=Book:pixelsize=17
+URxvt.boldfont:                 xft:D2Coding:style=Bold:pixelsize=17
+
+
+!urxvt*color0:         #101010
+!urxvt*color8:         #525252
+!
+!urxvt*color1:        #e158b8
+!urxvt*color9:        #e158b8
+!
+!urxvt*color2:        #49dd9a
+!urxvt*color10:       #49dd9a
+!
+!urxvt*color3:        #5e65de
+!urxvt*color11:       #5e65de
+!
+!urxvt*color4:        #337ed4
+!urxvt*color12:       #337ed4
+!
+!urxvt*color5:        #aa50db
+!urxvt*color13:       #aa50db
+!
+!urxvt*color6:        #009999
+!urxvt*color14:       #009999
+!
+!urxvt*color7:         #b9b9b9
+!urxvt*color15:        #f7f7f7
+!
+! https://www.reddit.com/r/unixporn/comments/33e6n5/unconventional_terminal_color_schemes/?sort=confidence
+!!Source http://github.com/altercation/solarized
+!special
+URxvt.foreground:   #ffffff
+URxvt.background:   #000000
+URxvt.cursorColor:  #ffffff
+
+! black
+URxvt.color0:       #000000
+URxvt.color8:       #999999
+
+! red
+URxvt.color1:       #cc6666
+URxvt.color9:       #ff9999
+
+! green
+URxvt.color2:       #66cc99
+URxvt.color10:      #99ffcc
+
+! yellow
+URxvt.color3:       #cc9966
+URxvt.color11:      #ffcc99
+
+! blue
+URxvt.color4:       #6699cc
+URxvt.color12:      #99ccff
+
+! magenta
+URxvt.color5:       #cc6699
+URxvt.color13:      #ff99cc
+
+! cyan
+URxvt.color6:       #66cccc
+URxvt.color14:      #99ffff
+
+! white
+URxvt.color7:       #cccccc
+URxvt.color15:      #ffffff
+
+URxvt.keysym.Control-Tab: \033[27;5;9~
+
+
+URxvt.keysym.C-minus:     resize-font:smaller
+URxvt.keysym.C-plus:      resize-font:bigger
+UURxvt.keysym.C-equal:     resize-font:reset
+URxvt.keysym.C-question:  resize-font:show
+
+!  black    red    green    yellow    blue    purple    cyan    white
+
+
+!urxvt*color0:    #6c6c6c
+!urxvt*color1:    #e9897c
+!!urxvt*color2:    #b6e77d
+!urxvt*color3:    #ecebbe
+!urxvt*color4:    #a9cdeb
+!urxvt*color5:    #ea96eb
+!urxvt*color6:    #c9caec
+!!urxvt*color7:    #f2f2f2
+!
+!urxvt*color8:    #747474
+!urxvt*color9:    #f99286
+!!urxvt*color10:    #c3f786
+!urxvt*color11:    #fcfbcc
+!urxvt*color12:    #b6defb
+!urxvt*color13:    #fba1fb
+!urxvt*color14:    #d7d9fc
+!!urxvt*color15:    #e2e2e2
+!
+!URxvt*font: xft:Ubuntu Mono:size=10
+!URxvt*boldFont: xft:Ubuntu Mono:bold:size=10
+
+
