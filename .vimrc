@@ -31,6 +31,8 @@ Plug 'nathanaelkane/vim-indent-guides'
 Plug 'brafales/vim-desert256'
 Plug 'ctrlpvim/ctrlp.vim'
 Plug 'christoomey/vim-tmux-navigator'
+Plug 'mileszs/ack.vim'
+Plug 'yegappan/grep'
 call plug#end()
 
 "filetype plugin indent on
@@ -71,6 +73,16 @@ nmap <F8> :SrcExplToggle<CR>
 
 nmap <F9> <F5><CR> <F7><CR> <F8><CR> 
 
+nnoremap <F3> :Ack % <space>
+nnoremap <F2> :Rgrep <CR>
+nnoremap <F4> :vimgrep <C-R><C-W> **/*.c **/*.h <Bar> cw <CR><C-W><C-J>
+
+
+"map <f4> :s#/\* \(.*\) \*/#\1<CR>:nohlsearch<CR>
+
+
+nmap <F9> <F5><CR> <F7><CR> <F8><CR> 
+
 "nmap <leader>l :set list!<CR>
 "hi NoneText cterm=None ctermfg=darkgrey
 "hi SpecialKey cterm=None ctermfg=darkgrey
@@ -102,7 +114,7 @@ set clipboard=unnamedplus
 
 let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 1
-let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_open = 0 
 let g:syntastic_check_on_wq = 0
 
 let g:syntastic_cpp_compiler = 'g++'
