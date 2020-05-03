@@ -30,10 +30,12 @@ PlugClean
 
 Learning
 
-
 ## tmux
 
 Learning
+
+reload  
+bind, : source-file ~/.tmux.conf  
 
 
 ## ref
