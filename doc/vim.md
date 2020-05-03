@@ -117,6 +117,10 @@ vim.grep ack
 https://damduc.tistory.com/402  
 
 
+비정상적 사용 https://wiki.ubuntu-kr.org/index.php/Vim  
+조영한 사용 https://gist.github.com/onmoving  
+올드패션 http://mataeoh.egloos.com/v/7036315  
+
 
 
 
