@@ -122,7 +122,13 @@ https://damduc.tistory.com/402
 올드패션 http://mataeoh.egloos.com/v/7036315  
 
 
-
+dev
+https://developer.gnome.org
+http://www.cplusplus.com
+https://vim.fandom.com/wiki/Vim_Tips_Wiki
+http://forum.falinux.com/zbxe/index.php?mid=C_LIB&category=520920
+https://www.freedesktop.org/wiki/Software/dbus/
+git-scm.com/book/ko/v2/
 
 
 
