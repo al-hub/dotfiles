@@ -33,6 +33,9 @@ Plug 'ctrlpvim/ctrlp.vim'
 Plug 'christoomey/vim-tmux-navigator'
 Plug 'mileszs/ack.vim'
 Plug 'yegappan/grep'
+Plug 'vimwiki/vimwiki'
+Plug 'vim-scripts/ZoomWin'
+Plug 'tpope/vim-fugitive'
 call plug#end()
 
 "filetype plugin indent on
@@ -76,6 +79,14 @@ nmap <F9> <F5><CR> <F7><CR> <F8><CR>
 nnoremap <F3> :Ack % <space>
 nnoremap <F2> :Rgrep <CR>
 nnoremap <F4> :vimgrep <C-R><C-W> **/*.c **/*.h <Bar> cw <CR><C-W><C-J>
+
+nnoremap <C-w>z :ZoomWin <CR> 
+
+
+"https://vim.fandom.com/wiki/Scroll_using_arrow_keys_like_in_a_web_browser
+"J is dd delete, K is  help keyword
+map <S-J> <C-E>
+map <S-K> <C-Y>
 
 
 "map <f4> :s#/\* \(.*\) \*/#\1<CR>:nohlsearch<CR>
