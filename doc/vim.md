@@ -1,8 +1,8 @@
 ---
-### vim
+## vim
 ---
 
-## site
+### site
 https://dhkoo.github.io/2019/09/22/vim/  
 https://m.blog.naver.com/PostView.nhn?blogId=jayeonsaram&logNo=220648947768&proxyReferer=https:%2F%2Fwww.google.com%2F  
 https://myeongjae.kim/blog/2017/07/18/vimlinux-9-synatstic-문법-체크-플러그인  
@@ -20,11 +20,11 @@ https://github.com/christoomey/vim-tmux-navigator
 https://stfwlg.github.io/archivers/Utility-_vim_사용기_01  
 https://agvim.wordpress.com/2015/12/31/tmux/  
 
-## tip
+### tip
 :e ~/.vimrc  
 
 
-## ~/.vimrc
+### ~/.vimrc
 
 
 ```
@@ -53,7 +53,7 @@ nmap <F9> <F5><CR> <F7><CR> <F8><CR>
   
 
 
-## ELSE
+### ELSE
 
 열었을때, 이전으로 가기 https://idchowto.com/?p=29094 
 
@@ -90,7 +90,7 @@ https://stackoverflow.com/questions/29167604/setting-vim-cursorline-colors
 https://bj25.tistory.com/14
 
 
-## TODO
+### TODO
 
 copy  from tmux pane  easy key  
 https://rampart81.github.io/post/vim-clipboard-share/  
