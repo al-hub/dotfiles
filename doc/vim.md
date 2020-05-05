@@ -121,14 +121,6 @@ https://damduc.tistory.com/402
 조영한 사용 https://gist.github.com/onmoving  
 올드패션 http://mataeoh.egloos.com/v/7036315  
 
-
-dev
-https://developer.gnome.org
-http://www.cplusplus.com
-https://vim.fandom.com/wiki/Vim_Tips_Wiki
-http://forum.falinux.com/zbxe/index.php?mid=C_LIB&category=520920
-https://www.freedesktop.org/wiki/Software/dbus/
-git-scm.com/book/ko/v2/
-
-
 vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-어떻게-사용하나)  
+[터미널에서일하기](https://medium.com/museion/터미널-환경에서-일하기-49164c7ca39b)  
+
