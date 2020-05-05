@@ -124,3 +124,28 @@ https://damduc.tistory.com/402
 vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-어떻게-사용하나)  
 [터미널에서일하기](https://medium.com/museion/터미널-환경에서-일하기-49164c7ca39b)  
 
+###  file manager 
+
+--------------
+||ranger|vifm|
+--------------
+|naviation|hjkl|hjkl|
+--------------
+|quick-view|default| w or e|
+---------------
+|quick-view-navie||shift-tab|
+--------------
+|panel-navi||space or tab|
+---------------
+|yank|yy|yy|
+--------------
+|paste|p|p|
+--------------
+|delete|dD|dd|
+--------------
+|move|dd p|dd p|
+--------------
+|selection| space | v |
+--------------
+|multi-rename| :bulkrename |r |
+--------------
