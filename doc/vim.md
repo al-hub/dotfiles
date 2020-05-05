@@ -131,6 +131,4 @@ https://www.freedesktop.org/wiki/Software/dbus/
 git-scm.com/book/ko/v2/
 
 
-
-
-
+vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-어떻게-사용하나)  
