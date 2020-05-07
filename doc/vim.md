@@ -123,6 +123,7 @@ https://damduc.tistory.com/402
 
 vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-어떻게-사용하나)  
 [터미널에서일하기](https://medium.com/museion/터미널-환경에서-일하기-49164c7ca39b)  
+[터미널생활](http://theyearlyprophet.com)
 [neovim샘플](https://seulcode.tistory.com/272)  
 [markdown샘플](https://inasie.github.io/it일반/마크다운-표-만들기/)  
 [vim-conf샘플](https://y0c.github.io/2019/07/14/vim-config-for-js-developer/)  
