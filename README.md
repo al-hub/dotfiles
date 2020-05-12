@@ -50,6 +50,6 @@ https://github.com/jongmin92/dev-settings
 https://github.com/lesstif/dotfiles  
 https://github.com/christoomey/dotfiles  
 https://github.com/johngrib/dotfiles  
-
+https://github.com/rr-/dotfiles/tree/master/cfg  
 
 Thanks all!!
