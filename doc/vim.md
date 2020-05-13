@@ -144,4 +144,5 @@ vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-
 |delete|dD|dd|
 |move|dd p|dd p|
 |selection| space | v |
+|multi-rename| a or cw | cw |
 |multi-rename| :bulkrename |r |
