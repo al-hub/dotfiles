@@ -148,4 +148,8 @@ vimwiki [git연동해야함](https://johngrib.github.io/wiki/my-wiki/#실제로-
 |multi-rename| :bulkrename |r |
 
 quit currnet folder
-[ranger](https://superuser.com/questions/1043806/how-to-exit-the-ranger-file-explorer-back-to-command-prompt-but-keep-the-current) [vifm](https://wiki.vifm.info/index.php/How_to_set_shell_working_directory_after_leaving_Vifm)
+[ranger](https://superuser.com/questions/1043806/how-to-exit-the-ranger-file-explorer-back-to-command-prompt-but-keep-the-current) [vifm](https://wiki.vifm.info/index.php/How_to_set_shell_working_directory_after_leaving_Vifm)  
+
+vifm
+nnoremap L :sync %c<cr>
+nnoremap <C-w>q :q!<cr>
