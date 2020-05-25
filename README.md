@@ -40,6 +40,7 @@ bind, : source-file ~/.tmux.conf
 
 ## ref
 - [endeavor but worth](https://www.bugsnag.com/blog/tmux-and-vim)  
+[terminal_life](https://black7375.tistory.com/15)
 https://tech.songyunseop.com/post/2017/07/develop-with-vim/  
 https://gitlab.com/dwt1/dotfiles/-/tree/master  
 https://jdhao.github.io/2018/09/30/tmux_settings_for_vim_users/  
