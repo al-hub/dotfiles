@@ -34,6 +34,10 @@ Learning
 
 Learning
 
+
+short cut
+default : c+b &, "
+
 reload  
 bind, : source-file ~/.tmux.conf  
 
