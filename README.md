@@ -41,6 +41,12 @@ default : c+b &, "
 reload  
 bind, : source-file ~/.tmux.conf  
 
+## 어려운문제  
+tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
+vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
+urxtvt 에 mouse scroll로 fontsize 수정 ( .Xresources의 URxvt keysym 이해 및 .urxvt/ext/resize-font 구조 이해필요  
+https://wiki.archlinux.org/title/Rxvt-unicode https://wiki.archlinux.org/title/Rxvt-unicode/Tips_and_tricks  
+
 
 ## ref
 - [endeavor but worth](https://www.bugsnag.com/blog/tmux-and-vim)  
