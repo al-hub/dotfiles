@@ -91,11 +91,6 @@ fi
 # colored GCC warnings and errors
 #export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
-# some more ls aliases
-alias ll='ls -alF'
-alias la='ls -A'
-alias l='ls -CF'
-
 # Add an "alert" alias for long running commands.  Use like so:
 #   sleep 10; alert
 alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
@@ -139,3 +134,107 @@ xrdb ~/.Xresources
 #other https://github.com/ranger/ranger/wiki/Integration-with-other-programs#changing-directories
 alias ranger='ranger --choosedir=$HOME/.rangerdir; LASTDIR=`cat $HOME/.rangerdir`; cd "$LASTDIR"'
 
+
+#vif 
+#####################################################################################################
+vif()
+{
+    local dst="$(command vifm --choose-dir - "$@")"
+    if [ -z "$dst" ]; then
+        echo 'Directory picking cancelled/failed'
+        return 1
+    fi
+    cd "$dst"
+}  
+#####################################################################################################
+
+
+#fzf #https://medium.com/harrythegreat/fzf%EB%A1%9C-%EC%BB%A4%EC%8A%A4%ED%84%B0%EB%A7%88%EC%9D%B4%EC%A7%95%ED%95%98%EA%B8%B0-cc9e8fee0fb
+#####################################################################################################
+#wget https://github.com/sharkdp/bat/releases/download/v0.18.3/bat_0.18.3_amd64.deb
+#sudo dpkg -i bat_0.18.3_amd64.deb
+
+#wget https://github.com/Peltoche/lsd/releases/download/0.20.1/lsd_0.20.1_amd64.deb
+#sudo dpkg -i lsd_0.20.1_amd64.deb
+
+#wget https://github.com/sharkdp/fd/releases/download/v8.3.0/fd_8.3.0_amd64.deb
+#sudo dpkg -i fd_8.3.0_amd64.deb
+function fif() {
+  if [ ! "$#" -gt 0 ]; then echo "검색어를 입력해주세요."; return 1; fi
+  file=$(rg --files-with-matches "$1" | fzf\
+  --border\
+  --height 80%\
+  --extended\
+  --ansi\
+  --reverse\
+  --cycle\
+  --header 'Find in File'\
+  --bind 'f1:execute(less -f {}),ctrl-y:execute-silent(echo {} | pbcopy)+abort'\
+  --bind 'page-up:preview-up,page-down:preview-down'\
+  --bind 'ctrl-u:preview-page-up,ctrl-d:preview-page-down'\
+  --bind '?:toggle-preview,alt-w:toggle-preview-wrap'\
+  --bind 'alt-v:execute(nvim {} >/dev/tty </dev/tty)'\
+  --preview "bat --theme='OneHalfDark' --style=numbers --color=always {} | rg --colors 'match:bg:51,51,51' --ignore-case --pretty --context 10 '$1' ") && vim "$file"
+}
+
+function vifz() {
+  local dir
+  dir=$(fd --type d --hidden --follow --exclude .git 2>/dev/null | fzf\
+  --header 'Search In Directory'\
+  --border\
+  --height 80%\
+  --extended\
+  --ansi\
+  --reverse\
+  --cycle\
+  --header 'Search Directory'\
+  --bind 'alt-p:preview-up,alt-n:preview-down'\
+  --bind 'ctrl-u:half-page-up,ctrl-d:half-page-down'\
+  --bind "alt-s:execute(lsd {})+abort"\
+  --bind '?:toggle-preview,alt-w:toggle-preview-wrap'\
+  --bind 'alt-v:execute($EDITOR {$FZF_PATH_LOC} >/dev/tty </dev/tty)'\
+  --preview 'lsd --color=always --tree --depth=2  {} | head -200 2>/dev/null'\
+  --preview-window=right:50%) && cd "$dir"
+}
+#####################################################################################################
+
+
+#w3m
+#####################################################################################################
+#alias google="w3m https://www.google.com/search?q='$@'"
+#alias namu="w3m https://namu.wiki/w/$1"
+#alias dic="w3m dict.naver.com/search.nhn?dicQuery=$1"
+
+function google(){
+	#echo \"$@\"
+	keyword=$@
+	w3m https://www.google.com/search?q="$keyword"
+}
+function naver(){
+	#echo \"$@\"
+	keyword=$@
+	w3m https://search.naver.com/search.naver?query="$keyword"
+}
+function namu() { 
+	w3m https://namu.wiki/w/$1
+}
+function duck() { 
+	keyword=$@
+	w3m https://duckduckgo.com/?q="$keyword"
+}
+function dic() { 
+	KEYWORD=$1
+	ENDWORD="영어사전"
+	SIZE=30
+	SITE="dict.naver.com/search.nhn?dicQuery="
+	w3m $SITE$KEYWORD | grep ^$KEYWORD.*play -A $SIZE | grep $ENDWORD -B $SIZE | grep -v $ENDWORD 
+}
+#####################################################################################################
+
+
+# some more ls aliases
+#####################################################################################################
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+#####################################################################################################
