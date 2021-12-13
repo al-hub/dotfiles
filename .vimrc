@@ -1,4 +1,4 @@
-"for light, fast, effective navigation
+"for light, fast, effective naviagtion
 "------------------------------------------------------------
 "install
 "curl -fLo ~/.vim/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
@@ -66,10 +66,14 @@ set softtabstop=4
 let mapleader      = ' '
 
 nmap <C-s> :w <CR>
+inoremap <C-s> <Esc> :w <CR>
+"xnoremap <C-s> <Esc> :w <CR>
 "https://devhints.io/vimscript "https://vi.stackexchange.com/questions/5484/get-the-current-window-buffer-tabpage-in-vimscript
 func! s:my_close()
     let current_win = winnr()
-    let current_buff = bufnr("%")
+    "https://superuser.com/questions/345520/vim-number-of-total-buffers
+    "let current_buff = bufnr("%")
+    let current_buff = len(filter(range(1, bufnr('$')), 'buflisted(v:val)'))
     let current_tabpage = tabpagenr()
     "echo current_buff current_win current_tabpage
 
@@ -187,16 +191,35 @@ let g:syntastic_c_compiler_options = "-std=c11 -Wall -Wextra -Wpedantic"
 
 "fzf
 "------------------------------------------------------------
+" https://github.com/junegunn/fzf.vim
+function! RipgrepFzf(query, fullscreen)
+  let command_fmt = 'rg --column --line-number --no-heading --color=always --smart-case -- %s|| true'
+  let initial_command = printf(command_fmt, shellescape(a:query))
+  let reload_command = printf(command_fmt, '{q}')
+  let spec = {'options': ['--phony', '--query', a:query, '--bind', 'change:reload:'.reload_command]}
+  call fzf#vim#grep(initial_command, 1, fzf#vim#with_preview(spec), a:fullscreen)
+endfunction
+
+command! -nargs=* -bang RG call RipgrepFzf(<q-args>, <bang>0)
+
 "https://github.com/junegunn/dotfiles/blob/master/vimrc
 "https://soooprmx.com/archives/6808
-nnoremap <silent> <expr> <Leader><Leader> (expand('%') =~ 'NERD_tree' ? "\<c-w>\<c-w>" : '').":Files\<cr>"
+"https://stackoverflow.com/questions/9051837/how-to-map-c-to-toggle-comments-in-vim
+nmap <C-_> :RG <C-R><C-W> 
+nnoremap <silent> <Leader><Leader> :RG <C-R><C-W><CR> 
+nnoremap <silent> <expr> <Leader>f (expand('%') =~ 'NERD_tree' ? "\<c-w>\<c-w>" : '').":Files\<cr>"
 nnoremap <silent> <Leader>C        :Colors<CR>
 nnoremap <silent> <Leader><Enter>  :Buffers<CR>
 nnoremap <silent> <Leader>L        :Lines<CR>
 nnoremap <silent> <Leader>rg       :Rg <C-R><C-W><CR>
-nnoremap <silent> <Leader>RG       :Rg <C-R><C-A><CR>
-xnoremap <silent> <Leader>rg       y:Rg <C-R>"<CR>
 nnoremap <silent> <Leader>`        :Marks<CR>
+
+"https://github.com/junegunn/fzf.vim
+let g:fzf_preview_window = ['right:50%', 'ctrl-/']
+
+let g:fzf_buffers_jump = 1
+let g:fzf_tags_command = 'ctags -R'
+let g:fzf_commands_expect = 'alt-enter,ctrl-x'
 "------------------------------------------------------------
 
 
