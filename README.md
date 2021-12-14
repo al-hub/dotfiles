@@ -323,6 +323,131 @@ keymap pp COMMAND "VIEW; MARK_URL; NEXT_LINK; GOTO_LINK;"
 #keymap po COMMAND "SHELL 'var=`echo $W3M_URL | sed \"s/blog/m.blog/g\"`;w3m $var'; EXIT;"
 ```
 
+## newsboat
+urls
+```
+filter:~/.newsboat/filter_google_US.sh:https://trends.google.com/trends/trendingsearches/daily/rss?geo=US
+filter:~/.newsboat/filter_google.sh:https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR
+https://news.google.com/rss/search?q=%EC%86%8D%EB%B3%B4%20-%EC%BD%94%EB%A1%9C%EB%82%98&hl=ko&gl=KR&ceid=KR%3Ako "~google fast"
+http://newssearch.naver.com/search.naver?where=rss&query=속보&field=0&nx_search_query=&nx_and_query=&nx_sub_query=&nx_search_hlquery=&is_dts=0 "~naver fast"
+https://www.schengenvisainfo.com/news/feed/
+http://feeds.feedburner.com/Clien_hot10_rss "~client 10"
+http://feeds.feedburner.com/c_hot50 "~client 50"
+https://alltimelegend.net/bbs/rss.php?bo_table=dcbest "~dcbest"
+"exec:~/.newsboat/filter_ppomppu.sh money" "~ppomppu money"
+"exec:~/.newsboat/filter_ppomppu.sh humor" "~ppomppu humor"
+"exec:~/.newsboat/filter_ppomppu.sh stock" "~ppomppu stock"
+"exec:~/.newsboat/filter_fmkorea.sh stock" "~fmkorea stock"
+#"file:///home-mc/core.choi/.newsboat/fmkorea.xml" "~fmkorea stock"
+https://www.dogdrip.net/stock/rss "~dogdrip stock"
+http://feeds.feedburner.com/clien_stock "~client stock"
+https://statstock.tistory.com/rss "~SB-kim_statics"
+"exec:~/.newsboat/filter_naverblog.sh cybermw" "~SB-report1"
+"exec:~/.newsboat/filter_naverblog.sh ionia17" "~SB-report2"
+"exec:~/.newsboat/filter_naverblog.sh yminsong" "~SB-100x"
+"exec:~/.newsboat/filter_naverblog.sh jyt4159" "~SB-value1"
+"exec:~/.newsboat/filter_naverblog.sh badajr" "~SB-value2"
+"exec:~/.newsboat/filter_naverblog.sh jakojako" "~SB-index"
+"exec:~/.newsboat/filter_naverblog.sh tama2020" "~SB-IT"
+"exec:~/.newsboat/filter_naverblog.sh yym0202" "~SB-longterm"
+"exec:~/.newsboat/filter_naverblog.sh furmea21" "~SB-invert"
+"exec:~/.newsboat/filter_naverblog.sh tosoha1" "~SB-basketball"
+"exec:~/.newsboat/filter_naverblog.sh haines" "~SB-MZ_20"
+"exec:~/.newsboat/filter_naverblog.sh caruspuer" "~SB-JCTV"
+"exec:~/.newsboat/filter_naverblog.sh k764676" "~SB-daily_info"
+"exec:~/.newsboat/filter_naverblog.sh sungdory" "~SB-daily_spread"
+"exec:~/.newsboat/filter_naverblog.sh crush212121" "~SB-analysis"
+"exec:~/.newsboat/filter_naverblog.sh realmanreal" "~SB-account"
+"exec:~/.newsboat/filter_naverblog.sh luy1978" "~SB-reserv00"
+"exec:~/.newsboat/filter_naverblog.sh kmsmir04" "~SB-reserv01"
+"exec:~/.newsboat/filter_naverblog.sh jjanjie3" "~SB-reserv02"
+"exec:~/.newsboat/filter_naverblog.sh hls2683445" "~SB-reserv03"
+"exec:~/.newsboat/filter_naverblog.sh morgoth" "~SB-reserv04"
+"exec:~/.newsboat/filter_naverblog.sh sum7788" "~SB-reserv05"
+"exec:~/.newsboat/filter_naverblog.sh shinook430" "~SB-old_jeju"
+"exec:~/.newsboat/filter_naverblog.sh zzayofactory" "~SB-old_bio"
+```
+
+filter
+```
+#!/bin/bash
+#lynx -source "https://www.fmkorea.com/index.php?mid=stock&sort_index=pop&order_type=desc" | sed "s|<\/a>|<\/a>\n|g" | sed '/hotdeal_var8/!d' | sed 's|.*srl=\(.*\)&amp;listStyle.*>\(.*\)<span.*|\1 \2|g' 
+id=$1
+url="https://www.fmkorea.com/index.php?mid="$1"&sort_index=pop&order_type=desc"
+url_link="https://www.fmkorea.com/"
+
+#cat <<EOF
+echo '<?xml version="1.0" encoding="UTF-8"?>'
+echo '<rss version="2.0">'
+echo '\t<channel>'
+echo '\t\t<title>fm-stock</title>'
+echo '\t\t<link>'$url'</link>'
+echo '\t\t<description>direct acess</description>'
+#EOF
+{
+  lynx -source $url | sed "s|<\/a>|<\/a>\n|g" | sed '/hotdeal_var8/!d' |sed 's|\t||g' | sed 's|.*srl=\(.*\)&amp;listStyle.*>\(.*\)<span.*|\t\t<item>\n\t\t\t<title>\2<\/title>\n\t\t\t<link>'$url_link'\1<\/link>\n\t\t\t<description>\2<\/description>\n\t\t<\/item>|g'
+  echo '\t</channel>'
+  echo '</rss>'
+}
+
+
+#!/bin/bash
+url=https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR
+#url=$1
+#echo $0 >> /tmp/tmp_newsboat.txt
+#echo $@ >> /tmp/tmp_newsboat.txt
+#echo $url >> /tmp/tmp_newsboat.txt
+
+cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+	<channel>
+		<title>google_trends</title>
+		<link>$url</link>
+		<description>Stable review patches</description>
+EOF
+{
+lynx -source $url | sed '/ht:/!d' | sed 's|ht:news_item_||g' | sed 's|ht:news_||g' | sed 's|snippet|description|g' | sed 's|url|link|g' | sed '/ht:/d' | sed 's|[^&]*;||g' 
+
+  echo '  </channel>'
+  echo '</rss>'
+}
+
+
+#!/bin/bash
+url=https://trends.google.com/trends/trendingsearches/daily/rss?geo=US
+#url=$1
+
+cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+	<channel>
+		<title>google_trends-US</title>
+		<link>$url</link>
+		<description>Stable review patches</description>
+EOF
+{
+lynx -source $url | sed '/ht:/!d' | sed 's|ht:news_item_||g' | sed 's|ht:news_||g' | sed 's|snippet|description|g' | sed 's|url|link|g' | sed '/ht:/d' | sed 's|[^&]*;||g' 
+
+  echo '  </channel>'
+  echo '</rss>'
+}
+
+
+#!/bin/bash
+id=$1
+rss=https://rss.blog.naver.com/
+
+lynx -source $rss$id | sed "s|blog\.|m\.blog\.|g"  
+
+
+#!/bin/bash
+id=$1
+rss=https://www.ppomppu.co.kr/rss.php?id=
+
+lynx -source $rss$id | sed "s|http:|https:|g"  
+```
+
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
