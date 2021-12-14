@@ -201,33 +201,32 @@ function vifz() {
 
 #w3m
 #####################################################################################################
-#alias google="w3m https://www.google.com/search?q='$@'"
+#alias google="w3m https://www.google.com/search?q="$@
 #alias namu="w3m https://namu.wiki/w/$1"
 #alias dic="w3m dict.naver.com/search.nhn?dicQuery=$1"
 
 function google(){
 	#echo \"$@\"
 	keyword=$@
-	w3m https://www.google.com/search?q="$keyword"
+	w3m "https://www.google.com/search?q=$keyword"
 }
 function naver(){
 	#echo \"$@\"
 	keyword=$@
-	w3m https://search.naver.com/search.naver?query="$keyword"
+	w3m "https://search.naver.com/search.naver?query=$keyword"
 }
 function namu() { 
-	w3m https://namu.wiki/w/$1
+	w3m "https://namu.wiki/w/$1"
 }
 function duck() { 
 	keyword=$@
-	w3m https://duckduckgo.com/?q="$keyword"
+	w3m "https://duckduckgo.com/?q=$keyword"
 }
 function dic() { 
 	KEYWORD=$1
 	ENDWORD="영어사전"
 	SIZE=30
-	SITE="dict.naver.com/search.nhn?dicQuery="
-	w3m $SITE$KEYWORD | grep ^$KEYWORD.*play -A $SIZE | grep $ENDWORD -B $SIZE | grep -v $ENDWORD 
+	w3m "https://dict.naver.com/search.nhn?dicQuery=$KEYWORD" | grep ^$KEYWORD -A $SIZE | grep $ENDWORD -B $SIZE | grep -v $ENDWORD 
 }
 #####################################################################################################
 
