@@ -160,21 +160,21 @@ vif()
 #wget https://github.com/sharkdp/fd/releases/download/v8.3.0/fd_8.3.0_amd64.deb
 #sudo dpkg -i fd_8.3.0_amd64.deb
 function fif() {
-  if [ ! "$#" -gt 0 ]; then echo "검색어를 입력해주세요."; return 1; fi
-  file=$(rg --files-with-matches "$1" | fzf\
-  --border\
-  --height 80%\
-  --extended\
-  --ansi\
-  --reverse\
-  --cycle\
-  --header 'Find in File'\
-  --bind 'f1:execute(less -f {}),ctrl-y:execute-silent(echo {} | pbcopy)+abort'\
-  --bind 'page-up:preview-up,page-down:preview-down'\
-  --bind 'ctrl-u:preview-page-up,ctrl-d:preview-page-down'\
-  --bind '?:toggle-preview,alt-w:toggle-preview-wrap'\
-  --bind 'alt-v:execute(nvim {} >/dev/tty </dev/tty)'\
-  --preview "bat --theme='OneHalfDark' --style=numbers --color=always {} | rg --colors 'match:bg:51,51,51' --ignore-case --pretty --context 10 '$1' ") && vim "$file"
+    INITIAL_QUERY=$1
+    #RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+    RG_PREFIX="rg -i --files-with-matches --color=always "
+    FZF_DEFAULT_COMMAND="$RG_PREFIX '$INITIAL_QUERY'" 
+
+    RG_POSTFIX="rg --colors 'match:bg:51,51,51' --ignore-case --pretty --context 10 "
+
+    FILE=$(fzf --bind "change:reload:$RG_PREFIX {q} || true"\
+	--bind 'page-up:preview-up,page-down:preview-down'\
+	--bind 'ctrl-u:preview-page-up,ctrl-d:preview-page-down'\
+	--bind '?:toggle-preview,alt-w:toggle-preview-wrap'\
+	--ansi --height=70% --disabled\
+	--query "$INITIAL_QUERY"\
+	--preview-window right:70%\
+	--preview "bat --color=always {} | $RG_POSTFIX {q} ") && vim $FILE
 }
 
 function vifz() {
