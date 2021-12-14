@@ -42,6 +42,7 @@ reload
 bind, : source-file ~/.tmux.conf  
 
 ## rg with fzf
+[examples](https://github.com/junegunn/fzf/wiki/Examples)
 ```shell
 #!/bin/bash
 # https://github.com/junegunn/fzf
