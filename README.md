@@ -100,6 +100,46 @@ $ source ~/.zshrc
 zsh
 ```
 
+## vifm  
+
+```
+fileviewer *.[ch],*.[ch]pp,*.[ch]xx env -uCOLORTERM bat --color always --wrap never --pager never %c -p  
+fileviewer *.java,*py,*.txt,*.sh,*.bat,*.md,*.xml,Makefile,*.mk,*.gradle env -uCOLORTERM bat --color always --wrap never --pager never %c -p  
+
+nnoremap <C-w>q :q!<cr>
+
+" https://wiki.vifm.info/index.php/How_to_integrate_fzf_for_fuzzy_finding
+command! FZFfind : set noquickview
+                \ | let $FZF_PICK = term('find | fzf --height 10 2>/dev/tty')
+                \ | if $FZF_PICK != ''
+                \ |     execute '!vim' $FZF_PICK
+                \ | endif
+
+command! FZFfindFOLDER : set noquickview
+                \ | let $FZF_PICK = term('find | fzf --height 10 2>/dev/tty')
+                \ | if $FZF_PICK != ''
+                \ |     let $FZF_PATH = term('dirname $FZF_PICK') 
+                \ |     execute 'cd' $FZF_PATH
+                \ | endif
+
+"
+" variation that automatically enters directories
+command! FZFlocate : set noquickview
+                \ | let $FZF_PICK = term('find | fzf-tmux --height 10 2>/dev/tty')
+                \ | if $FZF_PICK != ''
+                \ |     execute 'goto' fnameescape($FZF_PICK)
+                \ | endif
+
+nnoremap <c-g> :FZFfindFOLDER<cr>
+nnoremap <c-f> :FZFfind<cr>
+
+
+nnoremap <PageDown>  <C-w>w5j<C-w>w
+nnoremap <PageUp>    <C-w>w5k<C-w>w
+
+noremap <C-_> :!sh ~/.fzf/bin/fif-vifm.sh <cr>
+```
+
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
