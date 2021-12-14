@@ -41,7 +41,7 @@ default : c+b &, "
 reload  
 bind, : source-file ~/.tmux.conf  
 
-## fzf
+## rg with fzf
 ```shell
 #!/bin/bash
 # https://github.com/junegunn/fzf
