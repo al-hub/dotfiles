@@ -41,6 +41,28 @@ default : c+b &, "
 reload  
 bind, : source-file ~/.tmux.conf  
 
+## fzf
+```shell
+#!/bin/bash
+# https://github.com/junegunn/fzf
+
+INITIAL_QUERY=$1
+#RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+RG_PREFIX="rg -i --files-with-matches --color=always "
+FZF_DEFAULT_COMMAND="$RG_PREFIX '$INITIAL_QUERY'" 
+
+RG_POSTFIX="rg --colors 'match:bg:51,51,51' --ignore-case --pretty --context 10 "
+
+FILE=$(fzf --bind "change:reload:$RG_PREFIX {q} || true"\
+	--bind 'page-up:preview-up,page-down:preview-down'\
+	--bind 'ctrl-u:preview-page-up,ctrl-d:preview-page-down'\
+	--bind '?:toggle-preview,alt-w:toggle-preview-wrap'\
+	--ansi --height=70% --disabled\
+	--query "$INITIAL_QUERY"\
+	--preview-window right:70%\
+	--preview "bat --color=always {} | $RG_POSTFIX {q} ") && vim $FILE
+```
+
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
