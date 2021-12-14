@@ -101,7 +101,7 @@ zsh
 ```
 
 ## vifm  
-
+vifmrc
 ```
 fileviewer *.[ch],*.[ch]pp,*.[ch]xx env -uCOLORTERM bat --color always --wrap never --pager never %c -p  
 fileviewer *.java,*py,*.txt,*.sh,*.bat,*.md,*.xml,Makefile,*.mk,*.gradle env -uCOLORTERM bat --color always --wrap never --pager never %c -p  
