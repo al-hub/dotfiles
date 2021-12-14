@@ -87,7 +87,7 @@ git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-m
 
 $ vim ~/.zshrc
 ZSH_THEME="bureau" 
-pligins=( 
+plugins=( 
  	git
     	zsh-autosuggestions
     	zsh-syntax-highlighting
