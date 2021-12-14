@@ -264,6 +264,64 @@ w3m_command="0;1;$x;$y;$width;$height;;;;;$FILENAME\n4;\n3;"
 
 echo -e "$w3m_command" | $W3MIMGDISPLAY
 ```
+## w3m  
+keymap
+```
+#navigation similar to vimium
+#--------------------------------------------------------------------------------------------------------
+keymap j UP
+keymap k DOWN
+keymap f LIST_MENU
+keymap J NEXT_TAB
+keymap K PREV_TAB
+keymap ? HELP
+keymap H BACK
+keymap t TAB_LINK
+keymap x COMMAND "EXTERN 'echo %s >> ~/.w3m/tmp-restore'; CLOSE_TAB"
+keymap X COMMAND "EXTERN 'FILE=~/.w3m/tmp-restore; tail -n 1 $FILE > ~/.w3m/tmp; sed -i \"$ d\" $FILE'; TAB_GOTO ~/.w3m/tmp; MARK_URL;NEXT_LINK;GOTO_LINK"
+keymap yy EXTERN 'echo %s | xclip -in -selection clipboar'
+keymap yx EXTERN_LINK 'printf %s | xclip -i -selection clipboard'
+keymap L SHELL "$EDITOR ~/.w3m/tmp-restore"
+#--------------------------------------------------------------------------------------------------------
+
+
+#split windows with tmux as vim
+#--------------------------------------------------------------------------------------------------------
+keymap o EXTERN_LINK
+keymap C-ws COMMAND "SET_OPTION extbrowser='tmux split-window -v w3m %s'; EXTERN" 
+keymap C-w_ COMMAND "SET_OPTION extbrowser='tmux split-window -v w3m %s'; EXTERN_LINK" 
+keymap C-wv COMMAND "SET_OPTION extbrowser='tmux split-window -h w3m %s'; EXTERN"
+keymap C-w| COMMAND "SET_OPTION extbrowser='tmux split-window -h w3m %s'; EXTERN_LINK"
+keymap C-wq COMMAND "EXTERN 'FILE=~/.w3m/tmp-restore; echo %s >> $FILE; echo \"$(uniq $FILE | sed \"/^http/!d\")\" > $FILE'; EXIT"
+keymap q COMMAND "EXTERN 'FILE=~/.w3m/tmp-restore; echo %s >> $FILE; echo \"$(uniq $FILE | sed \"/^http/!d\")\" > $FILE'; EXIT"
+keymap vi COMMAND "EXTERN 'FILE=~/.w3m/tmp-vim; echo %s > $FILE; vim $FILE'"
+keymap vv VIEW
+keymap O OPTIONS
+#--------------------------------------------------------------------------------------------------------
+
+
+#image toggle
+#--------------------------------------------------------------------------------------------------------
+keymap i COMMAND "SET_OPTION display_image=toggle; RELOAD"
+#--------------------------------------------------------------------------------------------------------
+
+
+#java script issue
+#--------------------------------------------------------------------------------------------------------
+keymap pp COMMAND "VIEW; MARK_URL; NEXT_LINK; GOTO_LINK;"
+#keymap pp COMMAND "EXTERN 'var=`echo $W3M_URL | sed \"s/blog/m.blog/g\" | sed \"s/http:/https:/g\"`;w3m $var'; EXIT;"
+#--------------------------------------------------------------------------------------------------------
+
+
+#script example
+#https://github.com/gotbletu
+#https://vitalyparnas.com/tools/
+#keymap po COMMAND "READ_SHELL 'readable $W3M_URL -p html-title,html-content > /tmp/readable.html' ; LOAD /tmp/readable.html; DELETE_PREVBUF"
+#keymap po COMMAND "READ_SHELL 'var=`echo $W3M_URL | sed \"s/blog/m.blog/g\"`;w3m $var'; "
+#keymap po EXTERN "url=%s; w3m $url"
+#keymap po SHELL 'w3m $W3M_URL'
+#keymap po COMMAND "SHELL 'var=`echo $W3M_URL | sed \"s/blog/m.blog/g\"`;w3m $var'; EXIT;"
+```
 
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
