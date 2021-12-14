@@ -24,7 +24,7 @@ PlugClean
 
 ```
 [vim-plug]: https://github.com/junegunn/vim-plug
-
+[TBD-vimspector](https://gilee.kr/vimeul-idero-sayonghagi-4-cocro-gangryeoghan-jadongwanseong-gineung-iyonghagi/)
 
 ## urxvt
 
