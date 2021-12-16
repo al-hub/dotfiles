@@ -25,11 +25,12 @@ PlugClean
 ```
 [vim-plug]: https://github.com/junegunn/vim-plug
 [TBD-vimspector](https://gilee.kr/vimeul-idero-sayonghagi-4-cocro-gangryeoghan-jadongwanseong-gineung-iyonghagi/)  
-Profiling [How to see which plugins are making Vim slow?)](https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow)
 vim keymap debugging
 ```
 :verbose map <keyword>
 ```
+Pure Check: vim --clean file.txt  
+Profiling [How to see which plugins are making Vim slow?](https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow)
 
 ## urxvt
 
