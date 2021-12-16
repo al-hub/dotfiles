@@ -31,6 +31,7 @@ vim keymap debugging
 ```
 Pure Check: vim --clean file.txt  
 Profiling [How to see which plugins are making Vim slow?](https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow)
+[minivimrc](https://github.com/bling/minivimrc)  
 
 ## urxvt
 
