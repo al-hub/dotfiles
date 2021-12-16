@@ -1,4 +1,4 @@
-"for light, fast, effective naviagtion
+"for light, fast, effective navigation
 "------------------------------------------------------------
 "install
 "curl -fLo ~/.vim/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
@@ -20,12 +20,14 @@ Plug 'frazrepo/vim-rainbow'
 Plug 'valloric/youcompleteme'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
+Plug 'wfxr/minimap.vim'
 "Plug 'puremourning/vimspector' #not ready yet
 Plug 'scrooloose/nerdtree'
 Plug 'majutsushi/tagbar'
 Plug 'vim-scripts/taglist.vim'
 Plug 'wesleyche/srcexpl'
-Plug 'vim-scripts/Mark'
+Plug 'al-hub/vim-mark'
+Plug 'inkarkat/vim-ingo-library'
 Plug 'vim-scripts/Marks-Browser'
 Plug 'scrooloose/syntastic'
 Plug 'ctrlpvim/ctrlp.vim'
@@ -58,6 +60,12 @@ set softtabstop=4
 "set expandtab
 "set smartindent cinwords=if,elif,else,for,while,try,except,finally,def,class
 "set nocindent
+
+"for speedup https://vi.stackexchange.com/questions/10495/most-annoying-slow-down-of-a-plain-text-editor
+set regexpengine=1
+set lazyredraw
+set ttyfast
+"syntax off
 "------------------------------------------------------------
 
 
@@ -65,8 +73,9 @@ set softtabstop=4
 "------------------------------------------------------------
 let mapleader      = ' '
 
-nmap <C-s> :w <CR>
+nnoremap <C-s> :w <CR>
 inoremap <C-s> <Esc> :w <CR>
+nnoremap Q :qa <CR>
 "xnoremap <C-s> <Esc> :w <CR>
 "https://devhints.io/vimscript "https://vi.stackexchange.com/questions/5484/get-the-current-window-buffer-tabpage-in-vimscript
 func! s:my_close()
@@ -75,7 +84,6 @@ func! s:my_close()
     "let current_buff = bufnr("%")
     let current_buff = len(filter(range(1, bufnr('$')), 'buflisted(v:val)'))
     let current_tabpage = tabpagenr()
-    "echo current_buff current_win current_tabpage
 
     if ( current_win != 1 )
 	    :close
@@ -94,15 +102,17 @@ nmap <C-w>\| :vsplit <CR>
 nmap <C-w>% :vsplit <CR>
 nmap <C-w>_ :split <CR>
 nmap <C-w>" :split <CR>
+nnoremap <C-w>t  :bNext<CR>
+nnoremap <S-tab>  :bNext<CR>
 
 "weird but <S-F8> is Shift-F10 for build
-autocmd FileType python nmap <S-F8> :w !python<CR>
-autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
-autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
-autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
+"autocmd FileType python nmap <S-F8> :w !python<CR>
+"autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
+"autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
+"autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
 "autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :term ./a.out<CR>
 
-noremap <F2> :NERDTreeToggle<CR> :vertical resize 45<CR>
+noremap <F2> :NERDTreeToggle<CR>
 noremap <F3> :Tagbar<CR>
 
 ""nnoremap <F4> :vimgrep <C-R><C-W> **/*.c **/*.h <Bar> cw <CR><C-W><C-J>
@@ -152,12 +162,17 @@ colorscheme hybrid
 "filetype plugin indent on 
 
 "https://github.com/vim-airline/vim-airline/issues/421
-"let g:airline_extensions = []
+"let g:airline_extensions = ['branch','ctrlp','fugitiveline','fzf','keymap','netrw','po','quickfix','searchcount','syntastic','tabline','tagbar','taglist','term','whitespace','wordcount']
 let g:airline_theme='hybrid'
 let g:airline#extensions#tabline#enabled = 1              " vim-airline ?? ?? ??
 let g:airline#extensions#tabline#fnamemod = ':t'          " vim-airline ?? ?? ???? ??
 let g:airline#extensions#tabline#buffer_nr_show = 1       " buffer number? ????
 let g:airline#extensions#tabline#buffer_nr_format = '%s:' " buffer number format
+
+"for speedup
+"let g:airline_extensions = []
+let g:airline#extensions#searchcount#enabled = 0
+let g:airline#extensions#tagbar#enabled = 0
 
 let g:rainbow_active = 1
 
@@ -173,11 +188,11 @@ set statusline+=%*
 "let g:loaded_youcompleteme = 1
 "let g:enable_ycm_at_startup = 1
 let g:ycm_server_python_interpreter = '/usr/bin/python'
-"let g:ycm_global_ycm_extra_conf = '/home-mc/core.choi/.vim/plugged/youcompleteme/third_party/ycmd/.ycm_extra_conf.py'
+let g:ycm_global_ycm_extra_conf = '~/.vim/plugged/youcompleteme/third_party/ycmd/.ycm_extra_conf.py'
 
 "let g:ycm_filetype_specific_completion_to_disable = { 'cpp': 1 }
 "set completeopt-=preview
-"
+
 let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 1
 let g:syntastic_check_on_open = 0
@@ -205,7 +220,7 @@ command! -nargs=* -bang RG call RipgrepFzf(<q-args>, <bang>0)
 "https://github.com/junegunn/dotfiles/blob/master/vimrc
 "https://soooprmx.com/archives/6808
 "https://stackoverflow.com/questions/9051837/how-to-map-c-to-toggle-comments-in-vim
-nmap <C-_> :RG <C-R><C-W> 
+nnoremap <C-_> :RG <C-R><C-W> 
 nnoremap <silent> <Leader><Leader> :RG <C-R><C-W><CR> 
 nnoremap <silent> <expr> <Leader>f (expand('%') =~ 'NERD_tree' ? "\<c-w>\<c-w>" : '').":Files\<cr>"
 nnoremap <silent> <Leader>C        :Colors<CR>
@@ -261,6 +276,21 @@ endfun
 "------------------------------------------------------------
 
 
+"hlsearch with minimap
+"------------------------------------------------------------
+let g:minimap_width = 10
+let g:minimap_auto_start = 0 
+let g:minimap_auto_start_win_enter = 0
+let g:minimap_highlight_search=0
+
+nnoremap <silent> <Leader>mm :MinimapToggle<CR>
+nnoremap <silent> <Leader>* *``:Minimap<CR>:call minimap#vim#UpdateColorSearch(1)<CR>
+"https://vi.stackexchange.com/questions/2614/why-does-this-esc-normal-mode-mapping-affect-startup
+"nnoremap <silent> <esc> :noh<CR>:MinimapClose<CR><esc>
+nnoremap <silent> ** :noh<CR>:MinimapClose<CR><esc>
+"------------------------------------------------------------
+
+
 "Advanced keymap
 "------------------------------------------------------------
 "https://vi.stackexchange.com/questions/8451/is-it-possible-to-have-vim-show-the-list-of-available-marks-when-using-marks
@@ -272,7 +302,7 @@ xnoremap jk <Esc>
 cnoremap jk <C-c>
 
 " qq to record, Q to replay
-nnoremap Q @q
+"nnoremap Q @q
 
 " Zoom
 function! s:zoom()
@@ -287,7 +317,6 @@ nnoremap <silent> <leader>z :call <sid>zoom()<cr>
 
 " Last inserted text
 " nnoremap g. :normal! `[v`]<cr><left>
-
 
 "urxvt 에서 정상동작되지 않는 이슈
 "https://rampart81.github.io/post/vim-clipboard-share/
