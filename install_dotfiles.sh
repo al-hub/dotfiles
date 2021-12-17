@@ -7,7 +7,9 @@ LISTS="vim\
     tmux\
     bat\
     lsd\
-    fd"
+    fd\
+    ctags\
+    code-minimap"
 
 install_process() 
 {
@@ -41,6 +43,13 @@ install_process()
 	lsd)
 	    wget https://github.com/Peltoche/lsd/releases/download/0.20.1/lsd_0.20.1_amd64.deb
 	    sudo dpkg -i lsd_0.20.1_amd64.deb
+	;;
+	code-minimap)
+	    wget https://github.com/wfxr/code-minimap/releases/download/v0.6.2/code-minimap_0.6.2_amd64.deb
+	    sudo dpkg -i code-minimap_0.6.2_amd64.deb
+	;;
+	ctags)
+	    sudo apt-get install exuberant-ctags
 	;;
 	*)
 	    sudo apt-get install $1
