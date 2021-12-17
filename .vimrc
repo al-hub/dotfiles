@@ -158,6 +158,7 @@ hi IndentGuidesOdd ctermbg=237
 "hi SpecialKey cterm=None ctermfg=darkgrey
 
 "https://www.slant.co/topics/480/~best-vim-color-schemes etc: ghdark dracula desert256
+set background=dark
 colorscheme hybrid
 "filetype plugin indent on 
 
