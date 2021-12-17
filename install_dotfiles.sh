@@ -2,6 +2,8 @@
 #install dotfiles for debian(ubuntu)
 
 LISTS="vim\
+    fzf\
+    rg\
     w3m\
     vifm\
     tmux\
@@ -31,6 +33,14 @@ install_process()
 		sudo apt-get update
 		sudo apt-get install vim
 	    fi 
+	;;
+	fzf)
+	    git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+	    ~/.fzf/install
+	;;
+	rg)
+	    curl -LO https://github.com/BurntSushi/ripgrep/releases/download/13.0.0/ripgrep_13.0.0_amd64.deb
+	    sudo dpkg -i ripgrep_13.0.0_amd64.deb
 	;;
 	bat)
 	    wget https://github.com/sharkdp/bat/releases/download/v0.18.3/bat_0.18.3_amd64.deb
