@@ -2,15 +2,15 @@
 #install dotfiles for debian(ubuntu)
 
 LISTS="vim\
-    fzf\
-    rg\
     w3m\
     vifm\
     tmux\
+    ctags\
     bat\
     lsd\
     fd\
-    ctags\
+    fzf\
+    rg\
     code-minimap"
 
 install_process() 
