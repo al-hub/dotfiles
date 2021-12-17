@@ -60,7 +60,6 @@ backup_dotfiles()
     done
 }
 
-
 copy_dotfiles()
 {
     cp .myrc ~/.myrc
@@ -83,6 +82,7 @@ copy_dotfiles()
     echo "TIP) :PlugUpdate in you vim"
 }
 
+
 #initial update
 sudo apt-get update
 
@@ -91,7 +91,6 @@ for program in $LISTS; do install_process $program; done
 
 #backup config 
 backup_dotfiles
-
 
 #copy config (forced)
 read -p "will you force copy .dotfiles configure files?(y/n) :" yn 

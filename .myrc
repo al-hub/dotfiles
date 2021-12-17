@@ -14,14 +14,6 @@ vif()
 
 #fzf #https://medium.com/harrythegreat/fzf%EB%A1%9C-%EC%BB%A4%EC%8A%A4%ED%84%B0%EB%A7%88%EC%9D%B4%EC%A7%95%ED%95%98%EA%B8%B0-cc9e8fee0fb
 #####################################################################################################
-#wget https://github.com/sharkdp/bat/releases/download/v0.18.3/bat_0.18.3_amd64.deb
-#sudo dpkg -i bat_0.18.3_amd64.deb
-
-#wget https://github.com/Peltoche/lsd/releases/download/0.20.1/lsd_0.20.1_amd64.deb
-#sudo dpkg -i lsd_0.20.1_amd64.deb
-
-#wget https://github.com/sharkdp/fd/releases/download/v8.3.0/fd_8.3.0_amd64.deb
-#sudo dpkg -i fd_8.3.0_amd64.deb
 function fif() {
     INITIAL_QUERY=$1
     #RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
