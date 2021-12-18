@@ -107,6 +107,18 @@ $ source ~/.zshrc
 zsh
 ```
 
+## swap for low memory system
+```
+sudo swapoff -a
+sudo dd if=/dev/zero of=/swapfile bs=1M count=8000
+(sudo dd if=/dev/zero of=/swapfile bs=1G count=8)
+sudo mkswap /swapfile
+sudo swapon /swapfile
+grep SwapTotal /proc/meminfo
+
+also you can check it by top
+```
+
 ## vifm  
 vifmrc
 ```
