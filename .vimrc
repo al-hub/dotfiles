@@ -17,7 +17,7 @@ Plug 'dracula/vim'
 Plug 'vv9k/vim-github-dark'
 Plug 'brafales/vim-desert256'
 Plug 'frazrepo/vim-rainbow'
-Plug 'valloric/youcompleteme'
+Plug 'valloric/youcompleteme', { 'do': 'python3 ./install.py --clang-completer --verbose'}
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
 Plug 'wfxr/minimap.vim'
@@ -188,7 +188,7 @@ set statusline+=%*
 " https://johngrib.github.io/wiki/vim-ycm-python3/
 "let g:loaded_youcompleteme = 1
 "let g:enable_ycm_at_startup = 1
-let g:ycm_server_python_interpreter = '/usr/bin/python'
+let g:ycm_server_python_interpreter = '/usr/bin/python3'
 let g:ycm_global_ycm_extra_conf = '~/.vim/plugged/youcompleteme/third_party/ycmd/.ycm_extra_conf.py'
 
 "let g:ycm_filetype_specific_completion_to_disable = { 'cpp': 1 }

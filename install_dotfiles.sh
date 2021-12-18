@@ -2,6 +2,7 @@
 #install dotfiles for debian(ubuntu)
 
 LISTS="vim\
+    cmake\
     w3m\
     vifm\
     tmux\
