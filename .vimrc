@@ -11,13 +11,14 @@
 call plug#begin('~/.vim/plugged')
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
-Plug 'blueyed/vim-diminactive'
 Plug 'w0ng/vim-hybrid'
 Plug 'dracula/vim'
 Plug 'vv9k/vim-github-dark'
 Plug 'brafales/vim-desert256'
 Plug 'frazrepo/vim-rainbow'
 Plug 'valloric/youcompleteme', { 'do': 'python3 ./install.py --clang-completer --verbose'}
+Plug 'SirVer/ultisnips'
+Plug 'al-hub/vim-snippets'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
 Plug 'wfxr/minimap.vim'
@@ -75,6 +76,7 @@ let mapleader      = ' '
 
 nnoremap <C-s> :w <CR>
 inoremap <C-s> <Esc> :w <CR>
+inoremap <C-w> <Esc><C-w>
 nnoremap Q :qa <CR>
 "xnoremap <C-s> <Esc> :w <CR>
 "https://devhints.io/vimscript "https://vi.stackexchange.com/questions/5484/get-the-current-window-buffer-tabpage-in-vimscript
@@ -112,7 +114,7 @@ nnoremap <S-tab>  :bNext<CR>
 "autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
 "autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :term ./a.out<CR>
 
-noremap <F2> :NERDTreeToggle<CR>
+noremap <F2> :NERDTreeToggle<CR><C-w><C-w>
 noremap <F3> :Tagbar<CR>
 
 ""nnoremap <F4> :vimgrep <C-R><C-W> **/*.c **/*.h <Bar> cw <CR><C-W><C-J>
@@ -191,6 +193,9 @@ set statusline+=%*
 let g:ycm_server_python_interpreter = '/usr/bin/python3'
 let g:ycm_global_ycm_extra_conf = '~/.vim/plugged/youcompleteme/third_party/ycmd/.ycm_extra_conf.py'
 
+let g:ycm_key_list_select_completion = ['<C-n>']
+let g:ycm_key_list_previous_completion=['<C-p>']
+
 "let g:ycm_filetype_specific_completion_to_disable = { 'cpp': 1 }
 "set completeopt-=preview
 
@@ -202,6 +207,13 @@ let g:syntastic_check_on_wq = 0
 let g:syntastic_cpp_compiler = 'g++'
 let g:syntastic_cpp_compiler_options = "-std=c++11 -Wall -Wextra -Wpedantic"
 let g:syntastic_c_compiler_options = "-std=c11 -Wall -Wextra -Wpedantic"
+
+abbr wq1 wq!
+abbr wqa1 wqa!
+abbr q1 q!
+
+"usefull when I use snips
+let g:UltiSnipsJumpForwardTrigger="<Tab>"
 "------------------------------------------------------------
 
 
@@ -299,8 +311,8 @@ nnoremap <silent> ** :noh<CR>:MinimapClose<CR><esc>
 
 " jk | Escaping!
 inoremap jk <Esc>
-xnoremap jk <Esc>
-cnoremap jk <C-c>
+"xnoremap jk <Esc>
+"cnoremap jk <C-c>
 
 " qq to record, Q to replay
 "nnoremap Q @q
