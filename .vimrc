@@ -108,11 +108,12 @@ nnoremap <C-w>t  :bNext<CR>
 nnoremap <S-tab>  :bNext<CR>
 
 "weird but <S-F8> is Shift-F10 for build
-"autocmd FileType python nmap <S-F8> :w !python<CR>
-"autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
-"autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
-"autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
+autocmd FileType python nmap <S-F8> :w !python<CR>
+autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
+autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
+autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
 "autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :term ./a.out<CR>
+autocmd FileType java    nmap <S-F8> :w <CR> :!javac % && java %:r<CR>
 
 noremap <F2> :NERDTreeToggle<CR><C-w><C-w>
 noremap <F3> :Tagbar<CR>
