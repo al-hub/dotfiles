@@ -73,42 +73,6 @@ FILE=$(fzf --bind "change:reload:$RG_PREFIX {q} || true"\
 	--preview "bat --color=always {} | $RG_POSTFIX {q} ") && vim $FILE
 ```
 
-## zsh & oh-my-zsh
-
-```
-■ install: 
-sudo apt-get update
-sudo apt-get insatll zsh
-sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-Do you want to change your default shell to zsh? [Y/n] Y
-upgrade_oh_my_zsh
-
-■ uninstall: 
-sudo chmod 777 ~/.oh-my-zsh/tools/uninstall.sh
-~/.oh-my-zsh/tools/uninstall.sh
-
-■ plugin
-# zsh-syntax-highlighting
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
-
-# zsh-autosuggestions
-git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-
-$ vim ~/.zshrc
-ZSH_THEME="bureau" 
-plugins=( 
- 	git
-    	zsh-autosuggestions
-    	zsh-syntax-highlighting
-)
-source ~/.rc.custom 
- 
-$ source ~/.zshrc
-
-■ run
-zsh
-```
-
 ## swap for low memory system
 ```
 sudo swapoff -a
