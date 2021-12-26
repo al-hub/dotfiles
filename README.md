@@ -1,7 +1,7 @@
 dotfiles
 ===
 
-I hope to update my dotfiles.
+This is my personal dotfiles.
 
 command! mycmd : if filetype('%%f') == 'non-file' | execute '!vim %%f' | else | execute '!vim -d %%f %%F' | endif  
 nnoremap <cr> :mycmd<cr>
