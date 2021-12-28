@@ -108,12 +108,19 @@ nnoremap <C-w>t  :bNext<CR>
 nnoremap <S-tab>  :bNext<CR>
 
 "weird but <S-F8> is Shift-F10 for build
-autocmd FileType python nmap <S-F8> :w !python<CR>
-autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
-autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
-autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
-"autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :term ./a.out<CR>
-autocmd FileType java    nmap <S-F8> :w <CR> :!javac % && java %:r<CR>
+"autocmd FileType python nmap <S-F8> :w !python<CR>
+"autocmd FileType sh     nmap <S-F8> :w !/bin/bash<CR>
+"autocmd FileType c      nmap <S-F8> :w <CR> :!gcc % && ./a.out<CR>
+"autocmd FileType cpp    nmap <S-F8> :w <CR> :!g++ % <CR> :!./a.out<CR>
+"autocmd FileType java    nmap <S-F8> :w <CR> :!javac % && java %:r<CR>
+
+"for v8.0 https://vi.stackexchange.com/questions/14519/how-to-run-internal-vim-terminal-at-current-files-dir
+"autocmd FileType c      nmap <S-F8> :call <SID>build_with_term() <CR> notworking propery
+autocmd FileType python nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> python $vim_file<CR> exit 
+autocmd FileType sh     nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> sh $vim_file<CR> exit 
+autocmd FileType c      nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> gcc $vim_file && ./a.out<CR> exit 
+autocmd FileType cpp    nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> g++ $vim_file && ./a.out<CR> exit 
+autocmd FileType java   nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :let $vim_jname=expand('%:r')<CR> :terminal<CR> javac $vim_file && java $vim_jname<CR> exit 
 
 noremap <F2> :NERDTreeToggle<CR><C-w><C-w>
 noremap <F3> :Tagbar<CR>
