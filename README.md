@@ -31,6 +31,20 @@ vim keymap debugging
 ```
 :verbose map <keyword>
 ```
+
+[debugging](https://github.com/vim-airline/vim-airline/issues/421) : the (slowing) issue on vim-airline extention
+```
+1. found All loaded extension 
+:AirlineExtensions
+
+2. disabled the loaded extension one by one 
+let g:airline_extensions = ['ex1','ex2',.....'extention_name']
+
+3. remove the slow extention as
+let g:airline#extensions#searchcount#enabled = 0
+at .vimrc
+
+```
 Pure Check: vim --clean file.txt  
 Profiling [How to see which plugins are making Vim slow?](https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow)
 [minivimrc](https://github.com/bling/minivimrc)  
