@@ -34,13 +34,13 @@ vim keymap debugging
 
 [debugging](https://github.com/vim-airline/vim-airline/issues/421) : the (slowing) issue on vim-airline extention
 ```
-1. found All loaded extension 
+1. find the all loaded extension 
 :AirlineExtensions
 
-2. disabled the loaded extension one by one 
+2. disabled the extension one by one 
 let g:airline_extensions = ['ex1','ex2',.....'extention_name']
 
-3. remove the slow extention as
+3. remove the issued extention as
 let g:airline#extensions#searchcount#enabled = 0
 at .vimrc
 
