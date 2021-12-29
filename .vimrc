@@ -11,7 +11,7 @@
 call plug#begin('~/.vim/plugged')
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
-Plug 'w0ng/vim-hybrid'
+Plug 'al-hub/vim-hybrid'
 Plug 'dracula/vim'
 Plug 'vv9k/vim-github-dark'
 Plug 'brafales/vim-desert256'

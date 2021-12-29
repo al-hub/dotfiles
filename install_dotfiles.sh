@@ -12,7 +12,8 @@ LISTS="vim\
     fd\
     fzf\
     rg\
-    code-minimap"
+    code-minimap\
+    shellcheck"
 
 install_process() 
 {
@@ -20,7 +21,9 @@ install_process()
     if [ "$(which $1)" = "" ] || [ "$(which $1)" = "/usr/bin/vim" ]; then
 	echo $1 "installing..."
     else
-	echo $1 "already installed!!!"
+	YELLOW='\033[0;33m'
+	NC='\033[0m'
+	echo "${YELLOW} $1 already installed!!! ${NC}"
 	return 
     fi
 
@@ -94,12 +97,12 @@ copy_dotfiles()
     source_myrc="source ~/.myrc"
     check=`cat ~/.bashrc | grep "$source_myrc"`
     if [ ! "$check" ]; then
-	echo "" >> ~/.bashrc
-	echo $source_myrc >> ~/.bashrc
+	    echo "" >> ~/.bashrc
+	    echo $source_myrc >> ~/.bashrc
     fi
-    source ~/.bashrc
 
-    echo "TIP) :PlugUpdate in you vim"
+    echo "TRY) source ~/.bashrc"
+    echo "     :PlugUpdate in you vim"
 }
 
 
