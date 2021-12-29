@@ -30,7 +30,7 @@ Plug 'wesleyche/srcexpl'
 Plug 'al-hub/vim-mark'
 Plug 'inkarkat/vim-ingo-library'
 Plug 'vim-scripts/Marks-Browser'
-Plug 'scrooloose/syntastic'
+Plug 'vim-syntastic/syntastic'
 Plug 'ctrlpvim/ctrlp.vim'
 Plug 'nathanaelkane/vim-indent-guides'
 Plug 'valloric/python-indent'
@@ -99,7 +99,8 @@ func! s:my_close()
 endfunc
 nmap <C-w>q :call <SID>my_close() <CR>
 nmap <C-w>d :qa <CR>
-nmap <C-w>z :resize 4096 <CR> :vertical-resize 4096 <CR>
+"nmap <C-w>z :resize 4096 <CR> :vertical-resize 4096 <CR>
+nmap <C-w>z :call <sid>zoom()<cr>
 nmap <C-w>\| :vsplit <CR>
 nmap <C-w>% :vsplit <CR>
 nmap <C-w>_ :split <CR>
@@ -115,12 +116,12 @@ nnoremap <S-tab>  :bNext<CR>
 "autocmd FileType java    nmap <S-F8> :w <CR> :!javac % && java %:r<CR>
 
 "for v8.0 https://vi.stackexchange.com/questions/14519/how-to-run-internal-vim-terminal-at-current-files-dir
-"autocmd FileType c      nmap <S-F8> :call <SID>build_with_term() <CR> notworking propery
-autocmd FileType python nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> python $vim_file<CR> exit 
-autocmd FileType sh     nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> sh $vim_file<CR> exit 
-autocmd FileType c      nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> gcc $vim_file && ./a.out<CR> exit 
-autocmd FileType cpp    nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :terminal<CR> g++ $vim_file && ./a.out<CR> exit 
-autocmd FileType java   nmap <S-F8> :w<CR> :let $vim_file=expand('%:p')<CR> :let $vim_jname=expand('%:r')<CR> :terminal<CR> javac $vim_file && java $vim_jname<CR> exit 
+"https://vi.stackexchange.com/questions/20577/send-cr-to-ipython-in-term
+autocmd FileType python nmap <S-F8> :w<CR>:let $vim_file=expand('%:p')<CR>:term<CR><C-l>python $vim_file<CR>exit
+autocmd FileType sh     nmap <S-F8> :w<CR>:let $vim_file=expand('%:p')<CR>:term<CR><C-l>sh $vim_file<CR>exit
+autocmd FileType c      nmap <S-F8> :w<CR>:let $vim_file=expand('%:p')<CR>:term<CR><C-l>gcc $vim_file && ./a.out<CR>exit
+autocmd FileType cpp    nmap <S-F8> :w<CR>:let $vim_file=expand('%:p')<CR>:term<CR><C-l>g++ $vim_file && ./a.out<CR>exit
+autocmd FileType java   nmap <S-F8> :w<CR>:let $vim_file=expand('%:p')<CR>:let $vim_jname=expand('%:r')<CR> :terminal<CR><C-l> javac $vim_file && java $vim_jname<CR>exit
 
 noremap <F2> :NERDTreeToggle<CR><C-w><C-w>
 noremap <F3> :Tagbar<CR>
@@ -148,19 +149,6 @@ noremap <F3> :Tagbar<CR>
 set cursorline
 "set cursorcolumn
 
-"filetype plugin indent on
-let g:indent_guides_auto_colors = 0
-let g:indent_guides_enable_on_vim_startup = 1
-"let g:indent_guides_start_level = 2
-"let g:indent_guides_guide_size = 1
-"set ts=4 sw=4 noet
-"hi IndentGuidesOdd  ctermbg=darkgrey
-"hi IndentGuidesEven ctermbg=black
-hi IndentGuidesEven ctermbg=0
-hi IndentGuidesOdd ctermbg=237
-"hi IndentGuidesOdd  guibg=red   ctermbg=3
-"hi IndentGuidesEven guibg=green ctermbg=4
-
 "set list
 "set list lcs=tab:\│\
 "nmap <leader>l :set list!<CR>
@@ -170,13 +158,12 @@ hi IndentGuidesOdd ctermbg=237
 "https://www.slant.co/topics/480/~best-vim-color-schemes etc: ghdark dracula desert256
 set background=dark
 colorscheme hybrid
-"filetype plugin indent on 
 
 "https://github.com/vim-airline/vim-airline/issues/421
 "let g:airline_extensions = ['branch','ctrlp','fugitiveline','fzf','keymap','netrw','po','quickfix','searchcount','syntastic','tabline','tagbar','taglist','term','whitespace','wordcount']
 let g:airline_theme='hybrid'
-let g:airline#extensions#tabline#enabled = 1              " vim-airline ?? ?? ??
-let g:airline#extensions#tabline#fnamemod = ':t'          " vim-airline ?? ?? ???? ??
+let g:airline#extensions#tabline#enabled = 1              " vim-airline
+let g:airline#extensions#tabline#fnamemod = ':t'          " vim-airline
 let g:airline#extensions#tabline#buffer_nr_show = 1       " buffer number? ????
 let g:airline#extensions#tabline#buffer_nr_format = '%s:' " buffer number format
 
@@ -190,6 +177,18 @@ let g:rainbow_active = 1
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
 set statusline+=%*
+
+"https://github.com/nathanaelkane/vim-indent-guides
+"filetype plugin indent on
+let g:indent_guides_auto_colors = 0
+let g:indent_guides_enable_on_vim_startup = 1
+"let g:indent_guides_start_level = 0 '0' is error
+let g:indent_guides_guide_size = 4
+set ts=4 sw=4 et
+"hi IndentGuidesOdd  ctermbg=green
+"hi IndentGuidesEven guibg=red ctermbg=4
+hi IndentGuidesOdd ctermbg=234
+hi IndentGuidesEven ctermbg=0
 "------------------------------------------------------------
 
 
@@ -207,14 +206,41 @@ let g:ycm_key_list_previous_completion=['<C-p>']
 "let g:ycm_filetype_specific_completion_to_disable = { 'cpp': 1 }
 "set completeopt-=preview
 
+"for speedup
 let g:syntastic_always_populate_loc_list = 1
-let g:syntastic_auto_loc_list = 1
+let g:syntastic_auto_loc_list = 0
 let g:syntastic_check_on_open = 0
 let g:syntastic_check_on_wq = 0
 
+let g:ycm_show_diagnostics_ui = 0
+
+"sh: sudo apt-get install shellcheck
 let g:syntastic_cpp_compiler = 'g++'
-let g:syntastic_cpp_compiler_options = "-std=c++11 -Wall -Wextra -Wpedantic"
-let g:syntastic_c_compiler_options = "-std=c11 -Wall -Wextra -Wpedantic"
+let g:syntastic_cpp_compiler_options = "-ansi -std=c++11 -Wall -Wextra -Wpedantic"
+let g:syntastic_c_compiler_options = "-ansi -std=c11 -Wall -Wextra -Wpedantic"
+"could not find java syntatic method
+"let g:syntastic_java_checkers=['javac']
+"let g:syntastic_java_javac_config_file_enabled = 1
+
+"set listchars=eol:$,tab:>-,trail:·,extends:>,precedes:<
+"https://stackoverflow.com/questions/11269066/toggling-a-match-in-vimrc
+let s:hilightws = 1
+hi ExtraWhitespace ctermbg=52 ctermfg=darkred
+match ExtraWhitespace /\s\+$/
+
+function ToggleWhitespaceMatching()
+  if s:hilightws
+    match ExtraWhitespace //
+  else
+    match ExtraWhitespace /\s\+$/
+  endif
+  let s:hilightws = !s:hilightws
+endfunction
+
+nnoremap s <esc>
+nnoremap <leader>w :call ToggleWhitespaceMatching()<CR>
+nnoremap <leader>s :SyntasticCheck<CR>:lwindow<CR>
+nnoremap <leader>S :lclose<CR> ToggleWhitespaceMatching()<CR>
 
 abbr wq1 wq!
 abbr wqa1 wqa!
@@ -241,8 +267,8 @@ command! -nargs=* -bang RG call RipgrepFzf(<q-args>, <bang>0)
 "https://github.com/junegunn/dotfiles/blob/master/vimrc
 "https://soooprmx.com/archives/6808
 "https://stackoverflow.com/questions/9051837/how-to-map-c-to-toggle-comments-in-vim
-nnoremap <C-_> :RG <C-R><C-W> 
-nnoremap <silent> <Leader><Leader> :RG <C-R><C-W><CR> 
+nnoremap <C-_> :RG <C-R><C-W>
+nnoremap <silent> <Leader><Leader> :RG <C-R><C-W><CR>
 nnoremap <silent> <expr> <Leader>f (expand('%') =~ 'NERD_tree' ? "\<c-w>\<c-w>" : '').":Files\<cr>"
 nnoremap <silent> <Leader>C        :Colors<CR>
 nnoremap <silent> <Leader><Enter>  :Buffers<CR>
@@ -300,12 +326,13 @@ endfun
 "hlsearch with minimap
 "------------------------------------------------------------
 let g:minimap_width = 10
-let g:minimap_auto_start = 0 
+let g:minimap_auto_start = 0
 let g:minimap_auto_start_win_enter = 0
 let g:minimap_highlight_search=0
 
 nnoremap <silent> <Leader>mm :MinimapToggle<CR>
-nnoremap <silent> <Leader>* *``:Minimap<CR>:call minimap#vim#UpdateColorSearch(1)<CR>
+"nnoremap <silent> <Leader>* *``:Minimap<CR>:call minimap#vim#UpdateColorSearch(1)<CR>
+nnoremap <silent> * *``:Minimap<CR>:call minimap#vim#UpdateColorSearch(1)<CR>
 "https://vi.stackexchange.com/questions/2614/why-does-this-esc-normal-mode-mapping-affect-startup
 "nnoremap <silent> <esc> :noh<CR>:MinimapClose<CR><esc>
 nnoremap <silent> ** :noh<CR>:MinimapClose<CR><esc>
