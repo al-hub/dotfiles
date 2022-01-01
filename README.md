@@ -49,7 +49,7 @@ Pure Check: vim --clean file.txt
 Profiling [How to see which plugins are making Vim slow?](https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow)
 [minivimrc](https://github.com/bling/minivimrc)  
 
-[debugging]()
+[clip debugging](https://unix.stackexchange.com/questions/212360/copying-pasting-with-urxvt)
 ```
 xclip -o -sel c
 xclip -o -sel p
