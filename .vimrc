@@ -206,11 +206,13 @@ let g:ycm_key_list_previous_completion=['<C-p>']
 "let g:ycm_filetype_specific_completion_to_disable = { 'cpp': 1 }
 "set completeopt-=preview
 
+"manual runnig :SyntasticCheck
 "for speedup
 let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 0
 let g:syntastic_check_on_open = 0
 let g:syntastic_check_on_wq = 0
+let g:syntastic_mode_map = { 'mode': 'passive', 'active_filetypes': [],'passive_filetypes': [] }
 
 let g:ycm_show_diagnostics_ui = 0
 
