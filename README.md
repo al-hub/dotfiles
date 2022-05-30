@@ -58,6 +58,18 @@ xclip -o -sel p
 ## urxvt
 
 Learning
+```
+sudo mkidr ~/.urxvt/ext
+cd ~/.urxvt/ext
+wget https://raw.githubusercontent.com/simmel/urxvt-resize-font/master/resize-font
+
+wget https://github.com/naver/d2codingfont/releases/download/VER1.3.2/D2Coding-Ver1.3.2-20180524.zip
+unzip D2Coding-Ver1.3.2-20180524.zip
+sudo mkdir /usr/share/fonts/truetype/D2Coding
+sudo cp ./D2Coding/*.ttf /usr/share/fonts/truetype/D2Coding/
+fc-cache -v
+suro rm D2Coding -rf	
+```
 
 ## tmux
 
