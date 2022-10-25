@@ -5,5 +5,5 @@ shift x2   : find
 
 ### github  
 e : edit  
-ctrl+s, tab, enter : save  
+ctrl+s, enter : save  
 
