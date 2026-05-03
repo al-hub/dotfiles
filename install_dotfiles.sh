@@ -85,10 +85,10 @@ backup_dotfiles()
 
 copy_dotfiles()
 {
-    cp .myrc ~/.myrc
-    cp .vimrc ~/.vimrc
-    cp .tmux.conf ~/.tmux.conf
-    cp .Xresources ~/.Xresources
+    cp dotfiles/myrc ~/.myrc
+    cp dotfiles/vimrc ~/.vimrc
+    cp dotfiles/tmux.conf ~/.tmux.conf
+    cp dotfiles/Xresources ~/.Xresources
   
     #install vim plugin
     curl -fLo ~/.vim/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
