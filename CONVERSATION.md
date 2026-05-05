@@ -27,6 +27,43 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-05 - tmux-zshrc 제거와 단순화
+
+사용자 요청:
+- 실제 설치 결과를 공유하며 원하는 형태가 프롬프트 `$`와 하단 현재 경로임을 명확히 했습니다.
+
+해석/결정:
+- `tmux-zshrc`를 별도 enabled 항목으로 두면 사용자가 `1`만 선택했을 때 설치되지 않아 문제가 재발합니다.
+- `ZDOTDIR`만 지정하고 rc 파일이 없으면 zsh new user 설정 화면이 뜰 수 있어 구조가 불안정합니다.
+- 따라서 `tmux.conf` 하나로 처리하고 `tmux-zshrc`는 제거하기로 했습니다.
+
+작업 결과:
+- zsh는 tmux 안에서 `PROMPT="$ " RPROMPT="" /bin/zsh -f`로 실행합니다.
+- 현재 경로는 tmux status bar 하단 오른쪽에 `#{pane_current_path}`로 표시합니다.
+- `install.toml`의 `tmux-zshrc` 항목과 `dotfiles/tmux-zshrc` 파일을 제거했습니다.
+
+남은 질문:
+- tmux 안에서 사용자 `~/.zshrc`의 alias/function도 필요하면 별도 방식이 필요합니다. 현재는 단순 프롬프트 안정성을 우선했습니다.
+
+## 2026-05-05 - tmux 실제 설치 후 프롬프트 재조정
+
+사용자 요청:
+- `curl ... install.sh | bash` 실행 후 설치 메뉴에서 `1`만 선택해 `tmux`를 설치했습니다.
+- tmux 진입 후 Enter를 누르면 `LAPTOP-4482G7PC%`가 반복된다고 보고했습니다.
+- 원하는 형태는 프롬프트 줄에는 `$`만 나오고, 현재 경로는 tmux 맨 아래에 `/mnt/c/Users/82108`처럼 표시되는 것입니다.
+
+해석/결정:
+- 사용자가 `tmux-zshrc` 항목을 설치하지 않아 tmux 전용 zsh rc가 없는 상태로 zsh 기본 프롬프트가 나온 것으로 판단했습니다.
+- 선택 설치에서 `tmux`만 설치해도 최소한 `$` 프롬프트가 나오도록 `tmux.conf`의 `default-command`에 `PROMPT`와 `RPROMPT` 환경값을 넣기로 했습니다.
+- 경로는 shell 프롬프트가 아니라 tmux 하단 status bar의 `status-right`에 `#{pane_current_path}`로 표시하기로 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`: prompt 환경값 추가, `status-right`를 현재 경로로 변경
+- `dotfiles/tmux-zshrc`: prompt를 `$ `로 고정하고 `precmd`에서 유지
+
+남은 질문:
+- 사용자가 날짜/시간도 하단에 함께 유지하기 원하는지는 아직 확인되지 않았습니다.
+
 ## 2026-05-05 - 문서 중복 정리
 
 사용자 요청:

@@ -25,7 +25,6 @@ dotfiles/
 ├── install.toml
 ├── dotfiles/
 │   ├── tmux.conf
-│   ├── tmux-zshrc
 │   ├── vimrc
 │   ├── myrc
 │   └── Xresources

@@ -27,6 +27,45 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 프롬프트 설정을 tmux.conf로 단순화
+
+요약:
+- `tmux-zshrc`가 설치되지 않은 상태에서 `ZDOTDIR`만 바꾸면 zsh new user 설정 화면이 뜰 수 있음을 확인했습니다.
+- tmux 프롬프트 요구사항은 `tmux.conf` 하나로 처리하도록 단순화했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: zsh를 `-f`로 실행하고 `PROMPT="$ "`, `RPROMPT=""` 환경값을 전달
+- `install.toml`: `tmux-zshrc` 설치 항목 제거
+- `dotfiles/tmux-zshrc`: 제거
+- `README.md`, `AGENTS.md`: enabled 항목과 구조 설명 정리
+
+검증:
+- `git diff --check`: 통과
+- `bash -n install.sh`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test capture-pane -p`: `$` 프롬프트 확인
+
+후속 주의:
+- zsh를 `-f`로 실행하므로 tmux 안에서는 사용자 `~/.zshrc`를 읽지 않습니다. 현재 요구사항인 단순 `$` 프롬프트에는 이 방식이 가장 덜 꼬입니다.
+
+## 2026-05-05 - tmux 프롬프트를 `$` 전용으로 조정
+
+요약:
+- 실제 설치 후 tmux에서 `LAPTOP-...%`가 반복되는 문제를 확인했습니다.
+- 프롬프트에는 `$`만 표시하고, 현재 경로는 tmux 하단 status bar에 표시하도록 조정했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `PROMPT="$ "`와 `RPROMPT=""` 기본 환경값을 넘기고, `status-right`에 `#{pane_current_path}` 표시
+- `dotfiles/tmux-zshrc`: 기존 `.zshrc`가 prompt를 다시 덮어써도 `$ `가 유지되도록 `precmd` 재정의
+
+검증:
+- `git diff --check`: 통과
+- `zsh -n dotfiles/tmux-zshrc`: 통과
+- `bash -n install.sh`: 통과
+
+후속 주의:
+- 이 항목의 `tmux-zshrc` 방식은 이후 단순화 작업에서 제거됐습니다. 최신 방식은 `tmux.conf`만 사용합니다.
+
 ## 2026-05-05 - 인수인계 문서 역할 정리
 
 요약:

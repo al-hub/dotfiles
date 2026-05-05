@@ -8,15 +8,6 @@ packages = ["tmux", "zsh", "bc", "xclip"]
 description = "tmux configuration"
 
 [[dotfiles]]
-name = "tmux-zshrc"
-enabled = true
-source = "dotfiles/tmux-zshrc"
-target = "~/.config/tmux-zsh/.zshrc"
-commands = ["zsh"]
-packages = ["zsh"]
-description = "zsh prompt used inside tmux"
-
-[[dotfiles]]
 name = "vim"
 enabled = false
 source = "dotfiles/vimrc"

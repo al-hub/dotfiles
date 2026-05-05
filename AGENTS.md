@@ -6,9 +6,9 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- 기본 enabled 설치 항목은 `tmux`, `tmux-zshrc`입니다.
+- 기본 enabled 설치 항목은 `tmux`입니다.
 - `vim`, `shell`, `tmux-xresources`는 manifest에 있지만 disabled입니다.
-- 현재 주요 변경은 tmux 안의 zsh 프롬프트를 `현재경로$ ` 형태로 만들고 tmux status bar를 하단에 고정하는 것입니다.
+- 현재 주요 변경은 tmux 안의 zsh 프롬프트를 `$ ` 형태로 만들고, 현재 경로를 tmux 하단 status bar에 표시하는 것입니다.
 
 ## 문서 역할
 
@@ -33,7 +33,6 @@
 bash -n install.sh
 sh -n get_dotfiles.sh
 sh -n install_dotfiles.sh
-zsh -n dotfiles/tmux-zshrc
 git diff --check
 ```
 
