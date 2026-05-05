@@ -1,0 +1,8 @@
+# zsh startup file used only for shells launched by tmux.
+
+if [ -r "$HOME/.zshrc" ]; then
+    . "$HOME/.zshrc"
+fi
+
+PROMPT='%~$ '
+RPROMPT=''

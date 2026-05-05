@@ -3,6 +3,9 @@
 개인 Linux dotfiles 저장소입니다. 현재는 `install.toml` 목록을 읽어 설치하는 manifest 기반 설치 구조로 관리합니다.
 
 기존 README 내용은 [README.legacy.md](README.legacy.md)에 백업해 두었습니다.
+다음 에이전트가 작업 맥락을 이어받기 위한 문서는 [AGENTS.md](AGENTS.md)에 정리합니다.
+주요 작업 이력은 [HISTORY.md](HISTORY.md)에 누적합니다.
+주제별 대화 맥락은 [CONVERSATION.md](CONVERSATION.md)에 요약합니다.
 
 ## 빠른 설치
 
@@ -22,6 +25,7 @@ dotfiles/
 ├── install.toml
 ├── dotfiles/
 │   ├── tmux.conf
+│   ├── tmux-zshrc
 │   ├── vimrc
 │   ├── myrc
 │   └── Xresources
