@@ -27,6 +27,32 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 경로를 상단 status bar로 이동
+
+요약:
+- `precmd`로 경로를 출력하는 방식은 `cd` 시 터미널 본문에 새 경로가 추가되어, 사용자가 원하는 “최상단 경로 갱신”과 달랐습니다.
+- 현재 경로는 tmux 상단 status bar에서 갱신하고, shell 본문은 `$ ` 프롬프트만 남기도록 되돌렸습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `default-command`를 `PROMPT="$ "`와 `zsh -f` 실행으로 단순화
+- `dotfiles/tmux.conf`: `status-position top`, `status-left`에 `#{pane_current_path}` 표시
+- `dotfiles/tmux.conf`: status bar에 경로만 보이도록 window status format을 비움
+- `AGENTS.md`, `CONVERSATION.md`: 최신 tmux 표시 의도 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test capture-pane -p`: pane 본문에는 `$`만 표시 확인
+- `tmux -L codex-dotfiles-test show-options -gqv status-position`: `top` 확인
+- `tmux -L codex-dotfiles-test display-message -p '#{pane_current_path}'`: 초기 경로 확인
+- `tmux -L codex-dotfiles-test send-keys 'cd /tmp' Enter` 후 display: `/tmp`로 갱신 확인
+
+후속 주의:
+- tmux 상단 status bar는 pane capture 출력에는 포함되지 않으므로 `display-message -p '#{pane_current_path}'`로 갱신을 확인합니다.
+
 ## 2026-05-05 - tmux 경로 반복 출력 방지
 
 요약:

@@ -8,7 +8,7 @@
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
 - 기본 enabled 설치 항목은 `tmux`입니다.
 - `vim`, `shell`, `tmux-xresources`는 manifest에 있지만 disabled입니다.
-- 현재 주요 변경은 tmux 안에서 현재 경로를 최초 1회와 경로 변경 시에만 표시하고, 평소 프롬프트는 `$ `만 표시하는 것입니다.
+- 현재 주요 변경은 tmux 상단 status bar에 현재 경로를 표시하고, pane 안의 zsh 프롬프트는 `$ `만 표시하는 것입니다.
 
 ## 문서 역할
 
