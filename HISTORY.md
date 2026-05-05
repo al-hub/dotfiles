@@ -27,6 +27,26 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 경로 반복 출력 방지
+
+요약:
+- 이전 변경은 현재 경로를 prompt 자체에 넣어 Enter를 누를 때마다 경로가 반복 출력됐습니다.
+- 사용자는 최초 진입 시 경로를 한 번 표시하고, 같은 위치에서는 `$`만 반복되며, `cd`로 위치가 바뀔 때만 새 경로가 표시되기를 원했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: tmux 시작 시 전용 `~/.cache/dotfiles/.zshrc`를 생성하고 `ZDOTDIR`로 읽게 변경
+- `dotfiles/tmux.conf`: zsh `precmd`에서 이전 `PWD`와 현재 `PWD`를 비교해 변경된 경우에만 경로 출력
+- `AGENTS.md`, `CONVERSATION.md`: 최신 tmux 표시 의도 기록
+
+검증:
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test capture-pane -p`: 최초 경로 1회와 `$` 확인
+- `tmux -L codex-dotfiles-test send-keys Enter Enter Enter` 후 capture: `$`만 반복 확인
+- `tmux -L codex-dotfiles-test send-keys 'cd /tmp' Enter Enter` 후 capture: `/tmp`는 1회만 표시되고 이후 `$`만 반복 확인
+
+후속 주의:
+- tmux 안에서는 사용자 `~/.zshrc` 대신 `~/.cache/dotfiles/.zshrc`의 최소 설정을 읽습니다.
+
 ## 2026-05-05 - tmux 프롬프트 상단에 현재 경로 표시
 
 요약:
