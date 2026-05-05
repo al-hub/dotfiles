@@ -27,6 +27,33 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 하단 status bar와 탭 복원
+
+요약:
+- 현재 경로를 상단 status bar로 옮기며 기존 하단 status bar와 신규 window tab 표시가 사라지는 회귀가 생겼습니다.
+- 하단 status bar와 window tab은 원래 동작으로 복원하고, 현재 경로는 pane border 상단에 표시하도록 변경했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `status-position bottom`, 기존 `status-left` 구성을 복원
+- `dotfiles/tmux.conf`: 빈 `window-status-format`과 `window-status-current-format` 설정 제거
+- `dotfiles/tmux.conf`: `pane-border-status top`, `pane-border-format "#{pane_current_path}"` 추가
+- `AGENTS.md`, `CONVERSATION.md`: 최신 표시 방식 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test show-options -gqv status-position`: `bottom` 확인
+- `tmux -L codex-dotfiles-test show-options -gqv window-status-format`: 기본 window tab format 확인
+- `tmux -L codex-dotfiles-test show-options -gqv pane-border-status`: `top` 확인
+- `tmux -L codex-dotfiles-test show-options -gqv pane-border-format`: `#{pane_current_path}` 확인
+- `tmux -L codex-dotfiles-test capture-pane -p`: pane 본문에는 `$`만 표시 확인
+
+후속 주의:
+- pane border 상단 경로는 tmux pane border 기능을 사용하므로, status bar의 window tab 표시와 별도로 동작합니다.
+
 ## 2026-05-05 - tmux 설치 시 기존 런타임 정리
 
 요약:

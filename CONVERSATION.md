@@ -27,6 +27,24 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-05 - tmux 하단 status와 window tab 회귀 수정
+
+사용자 요청:
+- 본래 있던 하단 상태창이 사라졌고, 신규 창을 만들 때 나오던 tab도 보이지 않는 심각한 회귀를 보고했습니다.
+
+해석/결정:
+- 상단 status bar에 경로만 표시하면서 기존 하단 status bar와 window status format을 사실상 제거한 것이 원인입니다.
+- 하단 status bar와 window tab은 기존 방식으로 복원합니다.
+- 현재 경로는 status bar가 아니라 `pane-border-status top`의 pane border title로 표시합니다.
+
+작업 결과:
+- 하단 status bar와 window tab 표시를 복원했습니다.
+- 현재 경로는 `pane-border-status top`과 `pane-border-format "#{pane_current_path}"`로 pane 상단 border에 표시하도록 변경했습니다.
+- tmux 옵션 검증으로 status bar 위치, window tab format, pane border 경로 설정을 확인했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-05 - tmux 설치 시 기존 server 종료
 
 사용자 요청:
