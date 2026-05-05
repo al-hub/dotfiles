@@ -27,6 +27,30 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 프롬프트 상단에 현재 경로 표시
+
+요약:
+- 실제 설치 후 tmux 안에서 `$` 프롬프트는 정상 표시되지만 현재 경로가 보이지 않는다고 보고했습니다.
+- 경로를 tmux status bar 대신 zsh 프롬프트의 첫 줄에 표시하도록 조정했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `printf`로 실제 newline이 들어간 `PROMPT`를 만들어 현재 작업 디렉터리를 `$` 위에 표시
+- `dotfiles/tmux.conf`: status bar 오른쪽 경로 표시는 중복을 피하기 위해 비움
+- `AGENTS.md`, `CONVERSATION.md`: 최신 tmux 표시 의도 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test capture-pane -p`: 현재 경로와 `$` 프롬프트 확인
+- `tmux -L codex-dotfiles-test send-keys 'cd /tmp' Enter` 후 capture: `/tmp`로 갱신 확인
+
+후속 주의:
+- zsh를 `-f`로 실행하므로 tmux 안에서는 사용자 `~/.zshrc`를 읽지 않습니다.
+- tmux socket 접근은 sandbox 제한 때문에 승격 실행으로 검증했습니다.
+
 ## 2026-05-05 - tmux 프롬프트 설정을 tmux.conf로 단순화
 
 요약:
