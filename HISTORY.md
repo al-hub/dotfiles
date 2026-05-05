@@ -27,6 +27,29 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux 설치 시 기존 런타임 정리
+
+요약:
+- 사용자가 tmux server를 완전히 끊고 다시 실행하면 새 설정이 적용된다고 확인했습니다.
+- `install.sh`에서 tmux 설치 후 기존 tmux server와 이전 임시 zsh rc를 정리하도록 추가했습니다.
+
+변경 파일:
+- `install.sh`: tmux 항목 설치 또는 이미 설치됨 확인 후 `~/.cache/dotfiles/.zshrc` 제거
+- `install.sh`: 기존 tmux session이 있으면 `tmux kill-server`를 실행해 다음 tmux 실행부터 새 설정을 사용하게 함
+- `CONVERSATION.md`: 설치 과정에서 tmux 런타임을 정리해야 한다는 결정 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `HOME`, `TMUX_TMPDIR`, `REPO_RAW_URL=file://...`로 `install.sh` 실행: tmux 설치 성공
+- 같은 격리 테스트에서 기존 `~/.cache/dotfiles/.zshrc` 제거 확인
+- 같은 격리 테스트에서 기존 tmux server 종료 확인
+
+후속 주의:
+- 설치 중 실행 중인 tmux session은 종료됩니다. 사용자가 요청한 동작이지만, tmux 안에서 설치하면 해당 세션도 끊길 수 있습니다.
+
 ## 2026-05-05 - tmux 경로를 상단 status bar로 이동
 
 요약:

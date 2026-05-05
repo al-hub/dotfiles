@@ -27,6 +27,25 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-05 - tmux 설치 시 기존 server 종료
+
+사용자 요청:
+- `tmux kill-server`와 임시 zsh rc 제거 후 다시 설치/실행하면 원하는 상태로 돌아간다고 확인했습니다.
+- 이 완전 정리 작업을 `install.sh` 설치 과정에서 자동으로 수행해야 한다고 했습니다.
+
+해석/결정:
+- tmux 설정 파일이 새로 설치되어도 기존 tmux server와 기존 pane shell은 이전 설정을 유지하므로 설치 단계에서 runtime 정리가 필요합니다.
+- `tmux` 항목을 설치했거나 이미 같은 파일이 설치되어 있더라도 `after_install_item`에서 정리를 실행합니다.
+- 정리 범위는 `~/.cache/dotfiles/.zshrc` 제거와 기존 tmux server 종료입니다.
+
+작업 결과:
+- `install.sh`에 tmux 설치 후 정리 hook을 추가했습니다.
+- tmux 항목이 설치되거나 이미 같은 파일이 설치된 경우에도 `~/.cache/dotfiles/.zshrc`를 제거하고 기존 tmux server를 종료합니다.
+- 임시 `HOME`과 `TMUX_TMPDIR`를 사용한 격리 설치 테스트에서 rc 제거와 tmux server 종료를 확인했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-05 - tmux 경로는 최상단에서 갱신
 
 사용자 요청:

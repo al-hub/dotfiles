@@ -252,6 +252,27 @@ ensure_commands()
 # Install engine
 # -----------------------------------------------------------------------------
 
+cleanup_tmux_runtime()
+{
+    command_exists tmux || return 0
+
+    rm -f "$HOME/.cache/dotfiles/.zshrc"
+
+    if tmux has-session >/dev/null 2>&1; then
+        log "Stopping existing tmux server so the new tmux config is used."
+        tmux kill-server >/dev/null 2>&1 || true
+    fi
+}
+
+after_install_item()
+{
+    name="$1"
+
+    case "$name" in
+        tmux) cleanup_tmux_runtime ;;
+    esac
+}
+
 install_item()
 {
     name="$1"
@@ -276,6 +297,7 @@ install_item()
     if [ -f "$target_path" ] && cmp -s "$target_path" "$tmp_file"; then
         log "$name is already installed: $target_path"
         rm -f "$tmp_file"
+        after_install_item "$name"
         return
     fi
 
@@ -298,6 +320,7 @@ install_item()
     rm -f "$tmp_file"
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log "Installed $name to $target_path"
+    after_install_item "$name"
 }
 
 install_by_index()
