@@ -27,6 +27,23 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-05 - tmux 탭 이동을 Ctrl+a Tab으로 변경
+
+사용자 요청:
+- PowerShell에서 WSL로 들어와 tmux를 사용할 때 `Ctrl+Tab`이 동작하지 않는다고 했습니다.
+- `Ctrl+a` 후 `Tab`으로 탭을 옮길 수 있는지 물었습니다.
+
+해석/결정:
+- Windows Terminal/PowerShell이 `Ctrl+Tab`을 먼저 처리할 수 있으므로 tmux prefix 기반 바인딩으로 변경합니다.
+- `Ctrl+a Tab`은 다음 window, `Ctrl+a Shift+Tab`은 이전 window로 매핑합니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`에서 prefix 기반 `Tab`/`BTab` window 이동 바인딩으로 변경했습니다.
+- tmux test server에서 `list-keys`로 `prefix Tab next-window`, `prefix BTab previous-window`가 로드되는 것을 확인했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-05 - tmux 하단 status와 window tab 회귀 수정
 
 사용자 요청:

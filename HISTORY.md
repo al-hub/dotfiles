@@ -27,6 +27,27 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-05 - tmux window 이동을 prefix Tab으로 변경
+
+요약:
+- PowerShell/Windows Terminal에서 `Ctrl+Tab`이 tmux까지 전달되지 않을 수 있어 탭 이동 단축키를 prefix 기반으로 변경했습니다.
+- 이제 `Ctrl+a` 후 `Tab`으로 다음 window, `Ctrl+a` 후 `Shift+Tab`으로 이전 window로 이동합니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `bind-key -n 'C-Tab'`/`C-S-Tab`을 `bind-key Tab`/`BTab`으로 변경
+
+검증:
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys Tab`: `bind-key -T prefix Tab next-window` 확인
+- `tmux -L codex-dotfiles-test list-keys BTab`: `bind-key -T prefix BTab previous-window` 확인
+
+후속 주의:
+- 터미널에 따라 `Shift+Tab`은 `BTab`으로 전달되지 않을 수 있습니다. 이 경우 추가 대체 키를 지정할 수 있습니다.
+
 ## 2026-05-05 - tmux 하단 status bar와 탭 복원
 
 요약:
