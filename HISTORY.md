@@ -27,6 +27,30 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher rename 종료와 Tab prompt 전환 수정
+
+요약:
+- 선택 session rename 후 launcher가 종료될 수 있는 `set -e` 조건식 경로를 `if` 문으로 수정했습니다.
+- session list 단일 UI는 유지하면서 `Tab`으로 prompt가 `Commands>`와 `Sessions>` 사이에서 전환되도록 복구했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: rename 후 current session 갱신 조건을 `if`로 변경, `tab` expect와 prompt 전환 상태 추가
+- `README.md`: `Tab` prompt 전환 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 이력과 버그 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: popup launcher 바인딩 확인
+- `fzf --filter=base --expect=tab,c,d,r,enter`: session row 출력 파싱 형태 확인
+
+후속 주의:
+- `Commands>`와 `Sessions>`는 같은 session list UI의 prompt 상태이며, 별도 command list 화면은 없습니다.
+
 ## 2026-05-09 - tmux session launcher 단일 list UI로 정리
 
 요약:

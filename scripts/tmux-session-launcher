@@ -4,6 +4,7 @@ set -euo pipefail
 current_session="$(tmux display-message -p '#S')"
 current_path="$(tmux display-message -p '#{pane_current_path}')"
 selected_session="$current_session"
+prompt_mode="Commands"
 
 die()
 {
@@ -98,7 +99,9 @@ rename_session()
 
     tmux rename-session -t "=$old_name" "$new_name"
     selected_session="$new_name"
-    [ "$current_session" = "$old_name" ] && current_session="$new_name"
+    if [ "$current_session" = "$old_name" ]; then
+        current_session="$new_name"
+    fi
 }
 
 list_sessions()
@@ -118,9 +121,9 @@ select_session()
         fzf \
             --delimiter='\t' \
             --with-nth=2,1,3,4,5 \
-            --prompt='Commands > ' \
-            --header='Enter: switch | c: new | d: delete | r: rename | Esc: close' \
-            --expect=c,d,r,enter \
+            --prompt="$prompt_mode> " \
+            --header='Enter: switch | Tab: toggle prompt | c: new | d: delete | r: rename | Esc: close' \
+            --expect=tab,c,d,r,enter \
             --no-clear
 }
 
@@ -130,7 +133,7 @@ parse_selection()
     second_line="$(printf '%s\n' "$1" | sed -n '2p')"
 
     case "$first_line" in
-        c|d|r|enter)
+        tab|c|d|r|enter)
             selection_key="$first_line"
             selection_row="$second_line"
             ;;
@@ -154,6 +157,12 @@ run_launcher()
     fi
 
     case "$selection_key" in
+        tab)
+            case "$prompt_mode" in
+                Commands) prompt_mode="Sessions" ;;
+                *) prompt_mode="Commands" ;;
+            esac
+            ;;
         c)
             new_session
             ;;

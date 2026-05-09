@@ -83,6 +83,7 @@ description = "tmux configuration"
 tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립니다.
 
 - `Enter`: 선택한 session으로 이동
+- `Tab`: `Commands>` / `Sessions>` prompt 전환
 - `c`: 새 session 생성
 - `d`: 선택한 session 삭제
 - `r`: 선택한 session 이름 변경

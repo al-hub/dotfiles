@@ -27,6 +27,24 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher rename 종료와 Tab 전환 버그
+
+사용자 요청:
+- rename 후 launcher가 바로 종료되면 안 된다고 했습니다.
+- `Tab`을 누르면 `Commands>`와 `Sessions>`가 서로 전환되어야 한다고 했습니다.
+
+해석/결정:
+- rename 종료는 `set -e` 상태에서 `[ "$current_session" = "$old_name" ] && ...` 조건식이 false를 반환하며 함수/스크립트가 종료될 수 있는 문제로 판단했습니다.
+- 이전 단일 session list UI 요구는 유지하고, `Commands>`/`Sessions>`는 같은 list의 prompt 상태만 전환하는 것으로 해석했습니다.
+
+작업 결과:
+- rename 후 current session 갱신 조건을 안전한 `if` 문으로 변경했습니다.
+- fzf `--expect`에 `tab`을 추가하고 prompt 상태를 `Commands>`/`Sessions>`로 토글하도록 변경했습니다.
+- README에 Tab prompt 전환 설명을 추가했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher 단일 session list UI
 
 사용자 요청:
