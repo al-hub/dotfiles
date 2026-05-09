@@ -83,7 +83,10 @@ description = "tmux configuration"
 tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립니다.
 
 - `Enter`: 선택한 session으로 이동
-- `Ctrl+n`: 새 session 생성
+- `Tab`: Commands/Sessions 화면 전환
+- `Commands > c:`: 새 session 생성
+- `Commands > d:`: 선택한 session 삭제
+- `Commands > r:`: 선택한 session 이름 변경
 - `Esc`: 닫기
 
 이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.

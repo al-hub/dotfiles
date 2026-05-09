@@ -27,6 +27,31 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux session launcher command UI 확장
+
+요약:
+- popup launcher 시작 화면을 `Commands >`로 바꾸고 `Tab`으로 `Sessions >`와 전환하도록 변경했습니다.
+- `Ctrl+n`은 제거하고 command 목록의 `c`, `d`, `r`로 새 session 생성, 삭제, 이름 변경을 수행하도록 확장했습니다.
+- command 실행 후 popup을 닫지 않고 launcher로 돌아오게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: command/session 모드 루프 추가, `c`/`d`/`r` command 구현, 새 session 생성 시 기존 session 유지
+- `README.md`: launcher 키 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: 변경 이력과 사용자 의도 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: popup launcher 바인딩 확인
+- `fzf --filter='c:' --expect=tab,enter`: command row 출력 파싱 형태 확인
+
+후속 주의:
+- 현재 session 삭제는 원래 창을 닫는 위험을 피하기 위해 launcher에서 막습니다.
+
 ## 2026-05-09 - tmux 개별 설치 시 session launcher 누락 방지
 
 요약:

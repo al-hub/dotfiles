@@ -27,6 +27,27 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher command UI 요구사항
+
+사용자 요청:
+- `Enter`, `Esc`는 유지하고 `Ctrl+n`은 제거하길 원했습니다.
+- 시작 화면은 `Commands >`가 먼저 나오고, `Tab`으로 `Sessions >`와 전환되길 원했습니다.
+- command 화면에서 `c`는 새 session, `d`는 선택 session 삭제, `r`은 선택 session rename으로 동작하길 원했습니다.
+- 새 session 생성, 삭제 확인, rename 입력은 popup 하단 prompt에서 처리하고 command 실행 후 launcher로 돌아오길 원했습니다.
+
+해석/결정:
+- launcher popup은 하나로 유지하고, fzf 모드만 commands/sessions 사이에서 바뀌도록 했습니다.
+- 선택 대상 session은 `Sessions >`에서 highlight 후 `Tab`으로 command 화면에 돌아오면 command가 그 session에 적용되는 방식으로 해석했습니다.
+- 새 session 생성은 기존 창/session을 유지하고 detached session만 만든 뒤 launcher로 돌아오도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`를 command/session 모드 루프로 변경했습니다.
+- `Commands >`에서 `c`, `d`, `r` command를 추가하고 각 command 후 launcher로 돌아오게 했습니다.
+- `README.md`의 launcher 키 설명을 새 UI에 맞게 갱신했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher 원격 설치 누락 점검
 
 사용자 요청:
