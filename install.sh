@@ -264,12 +264,23 @@ cleanup_tmux_runtime()
     fi
 }
 
+ensure_executable()
+{
+    target="$1"
+    target_path="$(expand_path "$target")"
+
+    [ -f "$target_path" ] || return 0
+    chmod +x "$target_path"
+}
+
 after_install_item()
 {
     name="$1"
+    target="$2"
 
     case "$name" in
         tmux) cleanup_tmux_runtime ;;
+        tmux-session-launcher) ensure_executable "$target" ;;
     esac
 }
 
@@ -297,7 +308,7 @@ install_item()
     if [ -f "$target_path" ] && cmp -s "$target_path" "$tmp_file"; then
         log "$name is already installed: $target_path"
         rm -f "$tmp_file"
-        after_install_item "$name"
+        after_install_item "$name" "$target"
         return
     fi
 
@@ -320,7 +331,7 @@ install_item()
     rm -f "$tmp_file"
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log "Installed $name to $target_path"
-    after_install_item "$name"
+    after_install_item "$name" "$target"
 }
 
 install_by_index()

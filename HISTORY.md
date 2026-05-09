@@ -27,6 +27,32 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux popup session launcher 추가
+
+요약:
+- `Ctrl+a s` 기본 session chooser를 popup 기반 fzf session launcher로 교체했습니다.
+- session 목록 선택, Enter로 이동, `Ctrl+n`으로 새 session 생성이 가능하도록 별도 스크립트로 분리했습니다.
+- 향후 rename/delete/worktree/project launcher로 확장하기 쉽도록 `scripts/tmux-session-launcher`에 UI 로직을 모았습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `unbind-key s` 후 `display-popup` 기반 launcher 바인딩 추가
+- `scripts/tmux-session-launcher`: fzf 기반 tmux session 선택/생성 스크립트 추가
+- `install.toml`: `fzf` 의존성 추가, launcher 설치 항목 추가
+- `install.sh`: launcher 설치 후 실행 권한 부여 hook 추가
+- `README.md`, `AGENTS.md`, `CONVERSATION.md`: 설치/운영 맥락 갱신
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: `display-popup` launcher 바인딩 확인
+
+후속 주의:
+- launcher 실행에는 `fzf`가 필요합니다. 현재 검증 환경에는 `fzf`가 없어 실제 fzf 선택 UI는 설치 후 확인해야 합니다.
+
 ## 2026-05-05 - tmux window 이동을 prefix Tab으로 변경
 
 요약:

@@ -3,9 +3,18 @@ name = "tmux"
 enabled = true
 source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip"]
-packages = ["tmux", "zsh", "bc", "xclip"]
+commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
+packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
 description = "tmux configuration"
+
+[[dotfiles]]
+name = "tmux-session-launcher"
+enabled = true
+source = "scripts/tmux-session-launcher"
+target = "~/.local/bin/tmux-session-launcher"
+commands = ["bash", "tmux", "fzf"]
+packages = ["bash", "tmux", "fzf"]
+description = "tmux popup session launcher"
 
 [[dotfiles]]
 name = "vim"

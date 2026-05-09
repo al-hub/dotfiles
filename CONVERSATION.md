@@ -27,6 +27,26 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux popup session launcher
+
+사용자 요청:
+- `Ctrl+a s`를 누르면 tmux popup 안에서 session 목록을 보고 fzf로 선택하고 싶다고 했습니다.
+- Enter로 선택 session 이동, `Ctrl+n`으로 새 session 생성이 가능한 1단계 구현을 원했습니다.
+- 이후 rename/delete/worktree/project launcher로 확장하기 쉬운 구조를 선호한다고 했습니다.
+
+해석/결정:
+- 기존 tmux 기본 `prefix s` session chooser를 `unbind-key s` 후 새 popup launcher로 교체합니다.
+- popup은 tmux native `display-popup`을 사용하고, 선택 UI는 `fzf`, orchestration은 shell script로 둡니다.
+- 확장성을 위해 복잡한 로직은 `dotfiles/tmux.conf`에 인라인으로 넣지 않고 `scripts/tmux-session-launcher`에 분리합니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`를 추가해 session 목록 표시, 선택 session 이동, `Ctrl+n` 새 session 생성을 구현했습니다.
+- `dotfiles/tmux.conf`의 `Ctrl+a s`를 launcher popup으로 연결했습니다.
+- `install.toml`에 `fzf` 의존성과 launcher 설치 항목을 추가했습니다.
+
+남은 질문:
+- 다음 단계에서 rename/delete/worktree/project launcher의 키맵과 데이터 소스를 정해야 합니다.
+
 ## 2026-05-05 - tmux 탭 이동을 Ctrl+a Tab으로 변경
 
 사용자 요청:

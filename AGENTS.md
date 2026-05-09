@@ -6,9 +6,9 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- 기본 enabled 설치 항목은 `tmux`입니다.
+- 기본 enabled 설치 항목은 `tmux`와 `tmux-session-launcher`입니다.
 - `vim`, `shell`, `tmux-xresources`는 manifest에 있지만 disabled입니다.
-- 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하는 것입니다.
+- 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 popup 기반 session launcher를 여는 것입니다.
 
 ## 문서 역할
 
@@ -31,6 +31,7 @@
 
 ```sh
 bash -n install.sh
+bash -n scripts/tmux-session-launcher
 sh -n get_dotfiles.sh
 sh -n install_dotfiles.sh
 git diff --check

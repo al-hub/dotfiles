@@ -28,6 +28,8 @@ dotfiles/
 │   ├── vimrc
 │   ├── myrc
 │   └── Xresources
+├── scripts/
+│   └── tmux-session-launcher
 ├── get_dotfiles.sh
 ├── install_dotfiles.sh
 ├── shortcut.md
@@ -69,12 +71,27 @@ name = "tmux"
 enabled = true
 source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip"]
-packages = ["tmux", "zsh", "bc", "xclip"]
+commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
+packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
 description = "tmux configuration"
 ```
 
-현재 enabled 항목은 tmux 하나입니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
+현재 enabled 항목은 tmux와 tmux session launcher입니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
+
+## tmux session launcher
+
+tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립니다.
+
+- `Enter`: 선택한 session으로 이동
+- `Ctrl+n`: 새 session 생성
+- `Esc`: 닫기
+
+이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.
+
+```sh
+sudo apt-get update
+sudo apt-get install -y fzf
+```
 
 ## 로컬 검증
 
