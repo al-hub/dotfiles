@@ -27,6 +27,23 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher 원격 설치 누락 점검
+
+사용자 요청:
+- `curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash`를 다른 곳에서 실행하면 popup 기반 session launcher가 동작하지 않는다고 했고, 오류 여부 점검을 요청했습니다.
+
+해석/결정:
+- Enter로 enabled 전체 설치하면 launcher도 설치되지만, 번호 `1`만 선택하면 `tmux` 설정만 설치되고 launcher 스크립트가 빠지는 구조가 문제라고 판단했습니다.
+- 사용자가 tmux 항목만 선택해도 `Ctrl+a s` 바인딩 대상이 존재해야 하므로 `tmux` 설치 hook에서 launcher 설치를 보장하기로 했습니다.
+
+작업 결과:
+- `install.sh`에 이름으로 manifest 항목을 설치하는 helper를 추가했습니다.
+- `tmux` after-install hook에서 `tmux-session-launcher`도 설치하도록 변경했습니다.
+- 임시 HOME 재현에서 번호 `1` 선택만으로 `.tmux.conf`와 `.local/bin/tmux-session-launcher`가 함께 설치되는 것을 확인했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux popup session launcher
 
 사용자 요청:

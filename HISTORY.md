@@ -27,6 +27,21 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux 개별 설치 시 session launcher 누락 방지
+
+요약:
+- `curl ... install.sh | bash` 실행 후 번호 `1`만 선택하면 `tmux` 설정만 설치되고 `~/.local/bin/tmux-session-launcher`가 없어 `Ctrl+a s` popup launcher가 동작하지 않는 경로를 확인했습니다.
+- `tmux` 설치 후 hook에서 launcher 항목도 함께 설치하도록 보강했습니다.
+
+변경 파일:
+- `install.sh`: `install_by_name` helper 추가, `tmux` after-install hook에서 `tmux-session-launcher` 설치 보장
+
+검증:
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 입력값 `1`로 `install.sh` 실행: `.tmux.conf`와 `.local/bin/tmux-session-launcher`가 함께 설치되고 launcher에 실행 권한이 붙는 것을 확인
+
+후속 주의:
+- `Ctrl+a s` 실행에는 여전히 `fzf`가 필요합니다. 설치 시 dependency 설치 질문에서 거절하면 launcher 항목은 건너뜁니다.
+
 ## 2026-05-09 - tmux popup session launcher 추가
 
 요약:

@@ -279,7 +279,10 @@ after_install_item()
     target="$2"
 
     case "$name" in
-        tmux) cleanup_tmux_runtime ;;
+        tmux)
+            cleanup_tmux_runtime
+            install_by_name tmux-session-launcher
+            ;;
         tmux-session-launcher) ensure_executable "$target" ;;
     esac
 }
@@ -348,6 +351,20 @@ install_by_index()
     done < "$ITEMS_FILE"
 
     log "Unknown selection: $wanted"
+}
+
+install_by_name()
+{
+    wanted_name="$1"
+
+    while IFS='|' read -r name enabled source target commands packages description; do
+        if [ "$name" = "$wanted_name" ]; then
+            install_item "$name" "$source" "$target" "$commands" "$packages"
+            return
+        fi
+    done < "$ITEMS_FILE"
+
+    log "Unknown item: $wanted_name"
 }
 
 install_enabled()
