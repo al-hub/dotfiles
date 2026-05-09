@@ -27,6 +27,31 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux session launcher 단일 list UI로 정리
+
+요약:
+- command 목록 화면을 제거하고 session list 하나만 보이도록 launcher UI를 정리했습니다.
+- prompt는 `Commands >`로 유지하되, list 항목은 항상 session 목록이며 `c`, `d`, `r` 키가 선택 session에 바로 동작합니다.
+- 새 session 생성, 삭제 확인, rename 입력은 같은 popup 아래 prompt에서 진행한 뒤 session list로 돌아옵니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: commands/sessions 이중 모드 제거, 단일 session list에서 `c`/`d`/`r`/`Enter` 처리
+- `README.md`: launcher 키 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: 변경 이력과 사용자 의도 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: popup launcher 바인딩 확인
+- `fzf --filter=base --expect=c,d,r,enter`: session row 출력 파싱 형태 확인
+
+후속 주의:
+- `c`, `d`, `r` 키는 fzf 검색 입력이 아니라 launcher command로 처리됩니다.
+
 ## 2026-05-09 - tmux session launcher command UI 확장
 
 요약:

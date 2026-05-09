@@ -27,6 +27,25 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher 단일 session list UI
+
+사용자 요청:
+- session list가 보이는 창 하나만 있어야 하며 모든 기능이 그 UI에서 진행되어야 한다고 정정했습니다.
+- `Sessions >` 대신 `Commands >`가 먼저 나오되, command 목록을 고르는 방식은 원하지 않았습니다.
+- session list를 계속 유지한 상태에서 `c`, `d`, `r` 키를 누르면 선택 session에 대해 각 기능이 바로 동작하길 원했습니다.
+
+해석/결정:
+- 별도의 Commands list와 Tab 전환 모드를 제거하고, fzf에는 session list만 표시합니다.
+- `Commands >`는 prompt 이름으로만 사용하고, `c`/`d`/`r`은 fzf `--expect` command key로 처리합니다.
+- command 실행을 위해 fzf가 잠시 종료될 때도 `--no-clear`로 list 화면을 남기고 하단 prompt에서 입력을 받도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`를 단일 session list 루프로 단순화했습니다.
+- README의 launcher 사용법에서 Tab 전환과 command list 설명을 제거했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher command UI 요구사항
 
 사용자 요청:
