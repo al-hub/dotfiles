@@ -27,6 +27,30 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher Commands query 처리 수정
+
+요약:
+- `Commands>`에서 `c`, `d`, `r`을 입력 후 Enter로 실행하면 query만 남아 session switch/종료 분기로 떨어질 수 있는 버그를 수정했습니다.
+- `Commands>`의 Enter 입력 query가 `c`, `d`, `r`, `exit`일 때는 session row 처리보다 먼저 command로 해석합니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `Commands>` Enter query command 분기 추가
+- `HISTORY.md`, `CONVERSATION.md`: 버그 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: popup launcher 바인딩 확인
+- `fzf --filter=c --expect=tab,c,d,r,enter --print-query`: `c` query와 session row 출력 형태 확인
+- `fzf --filter=exit --expect=tab,c,d,r,enter --print-query`: `exit` query 출력 형태 확인
+
+후속 주의:
+- `Commands>`에서 `c`, `d`, `r`은 단축키로 눌러도, 입력 후 Enter로 실행해도 command로 처리됩니다.
+
 ## 2026-05-09 - tmux launcher exit 입력과 Sessions prompt 명령 차단
 
 요약:

@@ -27,6 +27,21 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher Commands query 버그
+
+사용자 요청:
+- `Commands>` 기본 동작이 되지 않고 명령 keyword를 입력하면 바로 종료되는 버그를 보고했습니다.
+
+해석/결정:
+- `--print-query` 도입 후 `Commands>`에서 `c`, `d`, `r`을 입력 후 Enter로 실행하면 선택 row가 비고 query만 남아 Enter 기본 동작인 session switch/exit로 떨어지는 문제로 판단했습니다.
+- `Commands>`에서는 Enter query가 `c`, `d`, `r`, `exit`일 때 row 선택보다 먼저 command로 처리하도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 `run_launcher`에 `Commands>` Enter query command 분기를 추가했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher exit 입력과 Sessions 명령 차단
 
 사용자 요청:

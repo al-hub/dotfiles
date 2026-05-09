@@ -164,8 +164,24 @@ run_launcher()
     parse_selection "$selection"
     session_name="$(printf '%s\n' "$selection_row" | cut -f 1)"
 
-    if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ] && [ "$selection_query" = "exit" ]; then
-        exit 0
+    if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ]; then
+        case "$selection_query" in
+            c)
+                new_session
+                return 0
+                ;;
+            d)
+                delete_session
+                return 0
+                ;;
+            r)
+                rename_session
+                return 0
+                ;;
+            exit)
+                exit 0
+                ;;
+        esac
     fi
 
     if [ -n "$session_name" ]; then
