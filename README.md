@@ -87,7 +87,9 @@ tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립�
 - `c`: 새 session 생성
 - `d`: 선택한 session 삭제
 - `r`: 선택한 session 이름 변경
-- `Esc`: 닫기
+- `Esc`, `Commands> exit`: 닫기
+
+`c`, `d`, `r`은 `Commands>` prompt에서만 명령으로 동작합니다. `Sessions>` prompt에서는 session 검색 입력으로 처리됩니다.
 
 이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.
 

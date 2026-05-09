@@ -27,6 +27,25 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher exit 입력과 Sessions 명령 차단
+
+사용자 요청:
+- `Commands>`에서 `exit`라고 직접 입력하면 `Esc(exit): close`처럼 launcher가 닫히길 원했습니다.
+- `Sessions>` 입력에서는 `Commands>`의 `c`, `d`, `r` 명령이 동작하지 않아야 한다고 했습니다.
+
+해석/결정:
+- 같은 session list UI는 유지하되, prompt 상태별로 fzf expect key를 다르게 설정합니다.
+- `Commands>`에서는 `c`/`d`/`r`을 command key로 받고, `Sessions>`에서는 `tab`/`enter`만 expect key로 받아 `c`/`d`/`r`이 검색 query에 남게 합니다.
+- `--print-query`로 입력 query를 받아 `Commands>`에서 query가 정확히 `exit`이면 종료합니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 prompt별 expect key와 header를 분리했습니다.
+- `Commands> exit` 닫기를 추가했습니다.
+- README에 `Sessions>`에서 `c`/`d`/`r`은 검색 입력으로 처리된다는 설명을 추가했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher rename 종료와 Tab 전환 버그
 
 사용자 요청:

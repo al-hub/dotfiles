@@ -117,13 +117,22 @@ list_sessions()
 
 select_session()
 {
+    expect_keys="tab,enter"
+    header='Enter: switch | Tab: toggle prompt | Esc(exit): close'
+
+    if [ "$prompt_mode" = "Commands" ]; then
+        expect_keys="tab,c,d,r,enter"
+        header='Enter: switch | Tab: toggle prompt | c: new | d: delete | r: rename | Esc(exit): close'
+    fi
+
     list_sessions |
         fzf \
             --delimiter='\t' \
             --with-nth=2,1,3,4,5 \
             --prompt="$prompt_mode> " \
-            --header='Enter: switch | Tab: toggle prompt | c: new | d: delete | r: rename | Esc: close' \
-            --expect=tab,c,d,r,enter \
+            --header="$header" \
+            --expect="$expect_keys" \
+            --print-query \
             --no-clear
 }
 
@@ -131,15 +140,18 @@ parse_selection()
 {
     first_line="$(printf '%s\n' "$1" | sed -n '1p')"
     second_line="$(printf '%s\n' "$1" | sed -n '2p')"
+    third_line="$(printf '%s\n' "$1" | sed -n '3p')"
 
     case "$first_line" in
         tab|c|d|r|enter)
             selection_key="$first_line"
-            selection_row="$second_line"
+            selection_query="$second_line"
+            selection_row="$third_line"
             ;;
         *)
             selection_key="enter"
-            selection_row="$first_line"
+            selection_query="$first_line"
+            selection_row="$second_line"
             ;;
     esac
 }
@@ -151,6 +163,10 @@ run_launcher()
 
     parse_selection "$selection"
     session_name="$(printf '%s\n' "$selection_row" | cut -f 1)"
+
+    if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ] && [ "$selection_query" = "exit" ]; then
+        exit 0
+    fi
 
     if [ -n "$session_name" ]; then
         selected_session="$session_name"

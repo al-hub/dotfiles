@@ -27,6 +27,32 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-09 - tmux launcher exit 입력과 Sessions prompt 명령 차단
+
+요약:
+- `Commands>`에서 `exit`를 입력하고 Enter를 누르면 launcher가 닫히도록 추가했습니다.
+- `Sessions>`에서는 `c`, `d`, `r`이 command로 실행되지 않고 session 검색 입력으로만 처리되도록 prompt별 expect key를 분리했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `--print-query`로 입력 query를 파싱하고, `Commands>`에서만 `c`/`d`/`r` expect key를 활성화
+- `README.md`: `Commands> exit` 닫기와 `Sessions>` 검색 동작 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 이력과 버그 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: popup launcher 바인딩 확인
+- `fzf --filter=base --expect=tab,c,d,r,enter --print-query`: query/session row 출력 형태 확인
+- `fzf --filter=exit --expect=tab,c,d,r,enter --print-query`: `exit` query 출력 형태 확인
+- `fzf --filter=c --expect=tab,enter --print-query`: `Sessions>`에서 `c`가 command key가 아닌 query로 처리되는 형태 확인
+
+후속 주의:
+- `Commands>`에서 `exit` 이름의 session을 검색해 Enter를 눌러도 닫기 명령으로 우선 처리됩니다.
+
 ## 2026-05-09 - tmux launcher rename 종료와 Tab prompt 전환 수정
 
 요약:
