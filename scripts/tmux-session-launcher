@@ -188,7 +188,13 @@ run_launcher()
     session_name="$(printf '%s\n' "$selection_row" | cut -f 1)"
 
     if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ]; then
-        if run_query_command "$selection_query"; then
+        if [ -n "$selection_query" ]; then
+            if run_query_command "$selection_query"; then
+                return 0
+            fi
+
+            printf '\nUnknown command: %s\n' "$selection_query"
+            prompt_continue
             return 0
         fi
     fi
@@ -215,13 +221,11 @@ run_launcher()
             ;;
         enter)
             if [ -z "$session_name" ] && [ -n "$selection_query" ]; then
-                if [ "$prompt_mode" = "Commands" ]; then
-                    printf '\nUnknown command: %s\n' "$selection_query"
-                else
+                if [ "$prompt_mode" != "Commands" ]; then
                     printf '\nNo matching session: %s\n' "$selection_query"
+                    prompt_continue
+                    return 0
                 fi
-                prompt_continue
-                return 0
             fi
             switch_session "$selected_session"
             exit 0

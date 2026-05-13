@@ -27,6 +27,22 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-13 - tmux launcher Commands query와 session row 충돌
+
+사용자 요청:
+- 이전 커밋에서 고쳤다고 한 버그가 아직 수정되지 않았다고 했습니다.
+
+해석/결정:
+- `Commands>`에서 알 수 없는 query를 입력해도 fzf가 매칭한 session row가 있으면 Enter가 여전히 switch/exit 경로로 떨어지는 잔여 버그로 판단했습니다.
+- `Commands>`에서는 non-empty query Enter를 항상 command 해석으로 고정하고, session 검색 이동은 `Sessions>` prompt에서만 허용하도록 정리했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 `Commands>` Enter 분기를 수정해 invalid query가 session row와 충돌해도 launcher가 종료되지 않게 했습니다.
+- README에 `Commands>`와 `Sessions>`의 역할 차이를 더 명확히 기록했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-13 - tmux launcher Commands 입력 시 종료 버그
 
 사용자 요청:

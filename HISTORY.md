@@ -27,6 +27,29 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-13 - tmux launcher Commands query/session 충돌 수정
+
+요약:
+- 이전 수정 후에도 `Commands>` prompt에서 인식되지 않은 query가 session row와 함께 남아 있으면 Enter가 session switch로 떨어져 launcher가 종료될 수 있는 경로가 남아 있었습니다.
+- `Commands>`에서 Enter를 누를 때 query가 비어 있지 않으면 항상 command로만 해석하고, 알 수 없는 명령은 오류를 보여준 뒤 launcher로 복귀하도록 정리했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `Commands>` Enter 분기에서 non-empty query를 session row보다 우선 처리하도록 수정
+- `README.md`: `Commands>` query는 command 전용이며 session 검색 이동은 `Sessions>`에서 해야 한다는 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 버그 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- `Commands>` prompt에서는 session 이름과 같은 문자열을 입력해도 command 해석이 우선이며, session 검색/이동은 `Sessions>` prompt로 전환해야 합니다.
+
 ## 2026-05-13 - tmux launcher query 입력 종료 방지
 
 요약:
