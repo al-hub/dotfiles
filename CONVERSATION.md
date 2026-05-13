@@ -43,6 +43,22 @@
 남은 질문:
 - 없음
 
+## 2026-05-13 - tmux launcher fzf 출력 순서 오해
+
+사용자 요청:
+- 설치 후 tmux에서 `Commands>`에 어떤 key를 입력해도 종료된다고 했고, 어디가 문제인지 확인한 뒤 수정하길 원했습니다.
+
+해석/결정:
+- `parse_selection()`이 `fzf --print-query --expect` 출력을 `key, query, row` 순서로 잘못 가정한 것이 원인이라고 판단했습니다.
+- 실제 출력인 `query, key, row` 순서에 맞춰 파싱을 수정하고, `Commands>` key 입력이 session 이름으로 오인되지 않게 정리했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 `parse_selection()`을 수정했습니다.
+- README와 기록 문서에 실제 원인과 제약을 남겼습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-13 - tmux launcher Commands 입력 시 종료 버그
 
 사용자 요청:

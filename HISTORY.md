@@ -50,6 +50,30 @@
 후속 주의:
 - `Commands>` prompt에서는 session 이름과 같은 문자열을 입력해도 command 해석이 우선이며, session 검색/이동은 `Sessions>` prompt로 전환해야 합니다.
 
+## 2026-05-13 - tmux launcher fzf 출력 파싱 수정
+
+요약:
+- 설치 후 실제 tmux popup에서 `Commands>`에 어떤 key를 눌러도 launcher가 종료되는 문제를 다시 확인했습니다.
+- 원인은 `fzf --print-query --expect` 출력 순서를 잘못 해석해 key 입력이 session 이름으로 오인되던 것이었고, query/key 파싱 순서를 실제 출력에 맞게 수정했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `parse_selection()`이 `fzf` 출력의 첫 줄을 query, 둘째 줄을 pressed key로 읽도록 수정
+- `README.md`: launcher가 의존하는 `fzf` 출력 순서 제약 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 원인과 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `printf 'alpha\nbeta\n' | fzf --filter=alpha --expect=c,d,r,enter --print-query`: 첫 줄 query, 둘째 줄 selected row 출력 형식 재확인
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- launcher 동작은 `fzf --print-query --expect` 출력 형식에 의존하므로, 관련 옵션 조합을 바꿀 때는 반환 줄 순서를 다시 확인해야 합니다.
+
 ## 2026-05-13 - tmux launcher query 입력 종료 방지
 
 요약:

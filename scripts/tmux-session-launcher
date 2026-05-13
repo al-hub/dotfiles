@@ -142,10 +142,10 @@ parse_selection()
     second_line="$(printf '%s\n' "$1" | sed -n '2p')"
     third_line="$(printf '%s\n' "$1" | sed -n '3p')"
 
-    case "$first_line" in
+    case "$second_line" in
         tab|c|d|r|enter)
-            selection_key="$first_line"
-            selection_query="$second_line"
+            selection_key="$second_line"
+            selection_query="$first_line"
             selection_row="$third_line"
             ;;
         *)

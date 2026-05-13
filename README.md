@@ -91,6 +91,7 @@ tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립�
 
 `c`, `d`, `r`은 `Commands>` prompt에서만 명령으로 동작합니다. `Sessions>` prompt에서는 session 검색 입력으로 처리됩니다.
 `Commands>`에서 `create`/`new`, `delete`/`remove`, `rename`, `q`/`quit`/`exit`를 입력하고 `Enter`로 실행할 수도 있습니다. `Commands>`에서 query를 입력한 뒤 `Enter`를 누르면 session row가 보여도 command로만 해석되며, 알 수 없는 명령은 launcher를 닫지 않고 오류만 보여준 뒤 prompt로 돌아갑니다. session 검색 후 이동은 `Sessions>` prompt를 사용해야 합니다.
+내부적으로는 `fzf --print-query --expect` 출력의 첫 줄을 query, 둘째 줄을 pressed key로 해석합니다. 이 순서가 바뀌면 `Commands>`의 단축키 입력이 session 이름으로 잘못 해석되어 launcher가 종료될 수 있습니다.
 
 이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.
 
