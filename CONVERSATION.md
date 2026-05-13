@@ -27,6 +27,23 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-13 - tmux launcher Commands 입력 시 종료 버그
+
+사용자 요청:
+- 프로젝트를 분석하고, `Ctrl+a s` popup의 `Commands>` prompt에 명령을 입력하면 launcher가 종료되는 버그를 확인해 달라고 했습니다.
+
+해석/결정:
+- `Commands>`에서 Enter를 누를 때 query가 명령으로 해석되지 않으면, 선택 row가 비어 있어도 기존 Enter 기본 동작인 session switch 후 종료로 떨어지는 것이 원인이라고 판단했습니다.
+- `Commands>`에서는 query 기반 명령 alias를 명시적으로 처리하고, row 없이 알 수 없는 명령이 들어오면 종료하지 않고 오류를 보여준 뒤 launcher로 복귀하도록 변경했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 query command dispatcher를 추가했습니다.
+- `Commands>`에서 `create/new`, `delete/remove`, `rename`, `q/quit/exit` alias를 지원하게 했습니다.
+- invalid command와 no-match session Enter 시 launcher가 종료되지 않도록 수정했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-09 - tmux launcher Commands query 버그
 
 사용자 요청:

@@ -27,6 +27,30 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-13 - tmux launcher query 입력 종료 방지
+
+요약:
+- `Commands>` prompt에 명령 문자열을 입력하고 `Enter`를 눌렀을 때, 해석되지 않은 query가 기존 Enter 기본 동작으로 흘러 launcher가 종료되는 버그를 수정했습니다.
+- query 명령 dispatcher를 추가해 textual alias를 지원하고, 알 수 없는 명령이나 매칭 없는 session 검색은 종료 대신 안내 메시지 후 launcher로 복귀하게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: query command dispatcher 추가, invalid query/no-match Enter 처리 보강
+- `README.md`: `Commands>` textual alias와 invalid command 복귀 동작 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 이력과 사용자 의도 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `bash -n install.sh`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `printf 'alpha\n' | fzf --filter=rename --expect=tab,c,d,r,enter --print-query`: no-match query 출력 형태 확인
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- `Commands>`에서 query 명령은 단일 문자뿐 아니라 alias도 허용하지만, session 이름과 동일한 keyword를 `Commands>`에서 입력하면 명령이 우선합니다.
+
 ## 2026-05-09 - tmux launcher Commands query 처리 수정
 
 요약:

@@ -156,6 +156,29 @@ parse_selection()
     esac
 }
 
+run_query_command()
+{
+    case "$1" in
+        c|create|new)
+            new_session
+            return 0
+            ;;
+        d|delete|remove)
+            delete_session
+            return 0
+            ;;
+        r|rename)
+            rename_session
+            return 0
+            ;;
+        q|quit|exit)
+            exit 0
+            ;;
+    esac
+
+    return 1
+}
+
 run_launcher()
 {
     selection="$(select_session || true)"
@@ -165,23 +188,9 @@ run_launcher()
     session_name="$(printf '%s\n' "$selection_row" | cut -f 1)"
 
     if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ]; then
-        case "$selection_query" in
-            c)
-                new_session
-                return 0
-                ;;
-            d)
-                delete_session
-                return 0
-                ;;
-            r)
-                rename_session
-                return 0
-                ;;
-            exit)
-                exit 0
-                ;;
-        esac
+        if run_query_command "$selection_query"; then
+            return 0
+        fi
     fi
 
     if [ -n "$session_name" ]; then
@@ -205,6 +214,15 @@ run_launcher()
             rename_session
             ;;
         enter)
+            if [ -z "$session_name" ] && [ -n "$selection_query" ]; then
+                if [ "$prompt_mode" = "Commands" ]; then
+                    printf '\nUnknown command: %s\n' "$selection_query"
+                else
+                    printf '\nNo matching session: %s\n' "$selection_query"
+                fi
+                prompt_continue
+                return 0
+            fi
             switch_session "$selected_session"
             exit 0
             ;;
