@@ -27,6 +27,24 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-13 - tmux git completion과 짧은 prompt 병행
+
+사용자 요청:
+- tmux 안에서 git 명령어 자동완성이 되지 않는 원인을 물었고, 단순히 `zsh -f`를 제거하면 경로 prompt가 다시 나오는 것 아닌지 확인했습니다.
+- 짧은 prompt는 유지하면서 git completion을 복구하는 변경을 원했습니다.
+
+해석/결정:
+- 기존 `default-command '... /bin/zsh -f'`가 zsh init 파일을 건너뛰어 `compinit`이 로드되지 않는 것이 원인입니다.
+- 사용자 기본 `~/.zshrc`를 직접 읽으면 prompt가 바뀔 수 있으므로 tmux 전용 `ZDOTDIR`를 사용하기로 했습니다.
+
+작업 결과:
+- tmux가 `ZDOTDIR="$HOME/.cache/dotfiles"`로 zsh를 실행하도록 변경했습니다.
+- `dotfiles/tmux.zshrc`를 추가해 `$ ` prompt와 `compinit -u`만 로드하도록 했습니다.
+- install manifest와 tmux install hook에 `tmux-zshrc` 설치를 추가했습니다.
+
+남은 질문:
+- tmux 안에서 추가로 필요한 alias나 zsh 옵션이 있으면 `dotfiles/tmux.zshrc`에 선별적으로 추가해야 합니다.
+
 ## 2026-05-13 - 설치된 launcher 구버전 유지 문제
 
 사용자 요청:

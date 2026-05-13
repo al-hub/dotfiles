@@ -256,8 +256,6 @@ cleanup_tmux_runtime()
 {
     command_exists tmux || return 0
 
-    rm -f "$HOME/.cache/dotfiles/.zshrc"
-
     if tmux has-session >/dev/null 2>&1; then
         log "Stopping existing tmux server so the new tmux config is used."
         tmux kill-server >/dev/null 2>&1 || true
@@ -282,6 +280,7 @@ after_install_item()
         tmux)
             cleanup_tmux_runtime
             install_by_name tmux-session-launcher
+            install_by_name tmux-zshrc
             ;;
         tmux-session-launcher) ensure_executable "$target" ;;
     esac

@@ -27,6 +27,35 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-13 - tmux 전용 zsh init으로 git completion 복구
+
+요약:
+- tmux 안에서 git 자동완성이 되지 않는 원인은 `default-command`가 `/bin/zsh -f`를 실행해 `~/.zshrc`와 `compinit`을 건너뛰는 것이었습니다.
+- 단순히 `-f`를 제거하면 사용자 기본 prompt가 로드되어 경로 prompt가 다시 나타날 수 있으므로, tmux 전용 `ZDOTDIR`와 `.zshrc`를 추가했습니다.
+- tmux 전용 zsh init은 짧은 `$ ` prompt를 유지하면서 `compinit -u`만 로드합니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: zsh를 `ZDOTDIR="$HOME/.cache/dotfiles"`로 실행하도록 변경
+- `dotfiles/tmux.zshrc`: tmux 전용 prompt와 `compinit -u` 추가
+- `install.toml`: `tmux-zshrc` 설치 항목 추가
+- `install.sh`: tmux 설치 후 launcher와 함께 `tmux-zshrc`도 설치하고, runtime cleanup에서 tmux zshrc 삭제 제거
+- `README.md`, `AGENTS.md`, `HISTORY.md`, `CONVERSATION.md`: 현재 상태와 의사결정 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `ZDOTDIR`에 `dotfiles/tmux.zshrc`를 `.zshrc`로 배치 후 `zsh -ic '...'`: `PROMPT=$ `, `compinit: function`, `_git` 확인
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+- 임시 `HOME`, `REPO_RAW_URL=file://...`로 `install.sh` 실행: `tmux-zshrc`가 `~/.cache/dotfiles/.zshrc`에 설치되고 managed 상태로 기록됨
+- 설치된 임시 `ZDOTDIR`로 `zsh -ic '...'`: `PROMPT=$ `, `compinit: function`, `_git` 확인
+
+후속 주의:
+- tmux 안에서 개인 `~/.zshrc` 전체를 읽지는 않으므로, tmux pane에 필요한 zsh 설정은 `dotfiles/tmux.zshrc`에 명시적으로 추가해야 합니다.
+
 ## 2026-05-13 - managed 설치 항목 자동 갱신
 
 요약:

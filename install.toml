@@ -17,6 +17,15 @@ packages = ["bash", "tmux", "fzf"]
 description = "tmux popup session launcher"
 
 [[dotfiles]]
+name = "tmux-zshrc"
+enabled = true
+source = "dotfiles/tmux.zshrc"
+target = "~/.cache/dotfiles/.zshrc"
+commands = ["zsh"]
+packages = ["zsh"]
+description = "tmux-specific zsh initialization"
+
+[[dotfiles]]
 name = "vim"
 enabled = false
 source = "dotfiles/vimrc"
