@@ -27,6 +27,22 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-13 - 설치된 launcher 구버전 유지 문제
+
+사용자 요청:
+- 최신 수정 후에도 설치해서 tmux를 실행하면 `Commands>` key 입력 시 문제가 계속된다고 했습니다.
+
+해석/결정:
+- repo의 `scripts/tmux-session-launcher`는 `c` 입력 시 `New session name:`까지 정상 진입하지만, 실제 `~/.local/bin/tmux-session-launcher`는 이전 `parse_selection()` 구현이 남아 있음을 확인했습니다.
+- 설치 스크립트가 기존 target 파일에 대해 항상 force install 확인을 요구하므로, managed 항목도 사용자가 거절하면 갱신되지 않는 것이 문제라고 판단했습니다.
+- manifest에 기록된 managed 항목은 재설치 시 자동 백업 후 갱신하도록 변경하기로 했습니다.
+
+작업 결과:
+- `install.sh`에서 managed target은 확인 없이 업데이트하도록 수정했습니다.
+
+남은 질문:
+- manifest가 없는 기존 설치 환경에서는 최초 1회 force install 확인이 여전히 필요합니다.
+
 ## 2026-05-13 - tmux launcher Commands query와 session row 충돌
 
 사용자 요청:

@@ -77,6 +77,7 @@ description = "tmux configuration"
 ```
 
 현재 enabled 항목은 tmux와 tmux session launcher입니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
+이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 
 ## tmux session launcher
 

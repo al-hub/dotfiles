@@ -27,6 +27,32 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-13 - managed 설치 항목 자동 갱신
+
+요약:
+- 실제 설치 환경에서 `~/.local/bin/tmux-session-launcher`가 이전 버전으로 남아 있어, repo 수정 후에도 tmux popup은 계속 오래된 launcher를 실행하는 문제를 확인했습니다.
+- 기존 설치 파일이 있으면 항상 확인 프롬프트를 띄우는 구조 때문에 사용자가 force install을 거절하면 managed 항목도 갱신되지 않았습니다.
+- manifest에 이미 기록된 managed 항목은 재설치 시 자동으로 백업 후 갱신하고, 비관리 파일만 기존처럼 확인을 요구하도록 변경했습니다.
+
+변경 파일:
+- `install.sh`: `is_managed "$name"`인 기존 target은 확인 없이 백업 후 새 파일로 갱신
+- `README.md`: managed 항목은 재설치 시 자동 갱신된다는 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 설치된 launcher가 오래된 상태로 남는 원인 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 기존 managed launcher를 오래된 내용으로 바꾼 뒤 `install.sh` 실행: 확인 프롬프트 없이 백업 후 최신 launcher로 갱신됨
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+- `tmux -L launcher-test ... './scripts/tmux-session-launcher'` 후 `send-keys c`: `New session name:` prompt 진입 확인
+
+후속 주의:
+- manifest가 없는 환경에서 이미 존재하는 파일은 여전히 비관리 파일로 취급되어 덮어쓰기 확인이 필요합니다.
+
 ## 2026-05-13 - tmux launcher Commands query/session 충돌 수정
 
 요약:

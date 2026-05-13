@@ -317,11 +317,15 @@ install_item()
 
     backup_path="-"
     if [ -e "$target_path" ]; then
-        log "$target_path already exists."
-        if ! confirm "Force install $name and backup existing file? [y/N]" "n"; then
-            log "Skipped $name."
-            rm -f "$tmp_file"
-            return
+        if is_managed "$name"; then
+            log "Updating managed file: $target_path"
+        else
+            log "$target_path already exists."
+            if ! confirm "Force install $name and backup existing file? [y/N]" "n"; then
+                log "Skipped $name."
+                rm -f "$tmp_file"
+                return
+            fi
         fi
 
         backup_path="$BACKUP_DIR/${name}.$(date +%Y%m%d_%H%M%S)"
