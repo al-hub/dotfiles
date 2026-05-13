@@ -73,10 +73,11 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
 packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
+depends = ["tmux-session-launcher", "tmux-zshrc"]
 description = "tmux configuration"
 ```
 
-현재 enabled 항목은 tmux, tmux session launcher, tmux 전용 zsh 초기화 파일입니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 tmux입니다. tmux session launcher와 tmux 전용 zsh 초기화 파일은 hidden dependency로 설치됩니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 
 tmux는 `ZDOTDIR="$HOME/.cache/dotfiles"`로 zsh를 실행합니다. 이 전용 `.zshrc`는 짧은 `$ ` 프롬프트를 유지하면서 `compinit`을 로드해 git 자동완성을 사용할 수 있게 합니다.

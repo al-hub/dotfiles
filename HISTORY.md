@@ -27,6 +27,33 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-13 - tmux 하위 설치 항목 hidden dependency 전환
+
+요약:
+- 설치 화면에서 `tmux-session-launcher`, `tmux-zshrc`가 독립 enabled 항목처럼 보여 사용자 관점에서 혼란스러운 문제를 정리했습니다.
+- `tmux`에 `depends = ["tmux-session-launcher", "tmux-zshrc"]`를 추가하고, 하위 항목은 `hidden = true`, `enabled = false`로 변경했습니다.
+- 설치 목록과 번호 선택은 hidden 항목을 건너뛰고, 실제 설치는 dependency를 따라 하위 파일까지 함께 설치합니다.
+
+변경 파일:
+- `install.toml`: `hidden`, `depends` 메타데이터 추가 및 tmux 하위 항목 hidden dependency화
+- `install.sh`: TOML parser, 설치 목록, 번호 선택, enabled 설치에 hidden/dependency 처리 추가
+- `README.md`, `AGENTS.md`, `HISTORY.md`, `CONVERSATION.md`: 설치 모델 설명 갱신
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 입력 `q`: 설치 목록에 `tmux`, `vim`, `shell`, `tmux-xresources`만 표시되고 hidden 항목은 숨겨짐
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 입력 `Enter`: `tmux` 설치 시 `tmux-session-launcher`, `tmux-zshrc`가 함께 설치되고 manifest에 기록됨
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 입력 `2`: hidden 항목을 건너뛴 번호 매핑으로 `vim`이 설치됨
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- hidden 항목은 사용자 목록에서 보이지 않지만 `install_by_name` dependency 경로로는 설치됩니다.
+
 ## 2026-05-13 - tmux 전용 zsh init으로 git completion 복구
 
 요약:

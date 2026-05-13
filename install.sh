@@ -114,13 +114,14 @@ parse_install_toml()
         }
         function emit() {
             if (in_item && name != "") {
-                printf "%s|%s|%s|%s|%s|%s|%s\n", name, enabled, source, target, commands, packages, description
+                hidden = (hidden == "") ? "false" : hidden
+                printf "%s|%s|%s|%s|%s|%s|%s|%s|%s\n", name, enabled, hidden, source, target, commands, packages, depends, description
             }
         }
         /^\[\[dotfiles\]\]/ {
             emit()
             in_item = 1
-            name = enabled = source = target = commands = packages = description = ""
+            name = enabled = hidden = source = target = commands = packages = depends = description = ""
             next
         }
         in_item && /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
@@ -133,10 +134,12 @@ parse_install_toml()
 
             if (key == "name") name = clean(value)
             else if (key == "enabled") enabled = value
+            else if (key == "hidden") hidden = value
             else if (key == "source") source = clean(value)
             else if (key == "target") target = clean(value)
             else if (key == "commands") commands = clean_array(value)
             else if (key == "packages") packages = clean_array(value)
+            else if (key == "depends") depends = clean_array(value)
             else if (key == "description") description = clean(value)
         }
         END { emit() }
@@ -277,22 +280,30 @@ after_install_item()
     target="$2"
 
     case "$name" in
-        tmux)
-            cleanup_tmux_runtime
-            install_by_name tmux-session-launcher
-            install_by_name tmux-zshrc
-            ;;
+        tmux) cleanup_tmux_runtime ;;
         tmux-session-launcher) ensure_executable "$target" ;;
     esac
+}
+
+install_dependencies()
+{
+    depends="$1"
+    [ -n "$depends" ] || return 0
+
+    for dependency_name in $depends; do
+        install_by_name "$dependency_name"
+    done
 }
 
 install_item()
 {
     name="$1"
-    source="$2"
-    target="$3"
-    commands="$4"
-    packages="$5"
+    hidden="$2"
+    source="$3"
+    target="$4"
+    commands="$5"
+    packages="$6"
+    depends="$7"
 
     target_path="$(expand_path "$target")"
     source_url="$(source_url "$source")"
@@ -311,6 +322,7 @@ install_item()
         log "$name is already installed: $target_path"
         rm -f "$tmp_file"
         after_install_item "$name" "$target"
+        install_dependencies "$depends"
         return
     fi
 
@@ -338,6 +350,7 @@ install_item()
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log "Installed $name to $target_path"
     after_install_item "$name" "$target"
+    install_dependencies "$depends"
 }
 
 install_by_index()
@@ -345,9 +358,11 @@ install_by_index()
     wanted="$1"
     index=1
 
-    while IFS='|' read -r name enabled source target commands packages description; do
+    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
+        [ "$hidden" = "true" ] && continue
+
         if [ "$index" = "$wanted" ]; then
-            install_item "$name" "$source" "$target" "$commands" "$packages"
+            install_item "$name" "$hidden" "$source" "$target" "$commands" "$packages" "$depends"
             return
         fi
         index=$((index + 1))
@@ -360,9 +375,9 @@ install_by_name()
 {
     wanted_name="$1"
 
-    while IFS='|' read -r name enabled source target commands packages description; do
+    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
         if [ "$name" = "$wanted_name" ]; then
-            install_item "$name" "$source" "$target" "$commands" "$packages"
+            install_item "$name" "$hidden" "$source" "$target" "$commands" "$packages" "$depends"
             return
         fi
     done < "$ITEMS_FILE"
@@ -372,9 +387,9 @@ install_by_name()
 
 install_enabled()
 {
-    while IFS='|' read -r name enabled source target commands packages description; do
-        if [ "$enabled" = "true" ]; then
-            install_item "$name" "$source" "$target" "$commands" "$packages"
+    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
+        if [ "$enabled" = "true" ] && [ "$hidden" != "true" ]; then
+            install_item "$name" "$hidden" "$source" "$target" "$commands" "$packages" "$depends"
         fi
     done < "$ITEMS_FILE"
 }
@@ -389,7 +404,9 @@ show_items()
     printf '%-4s %-9s %-12s %-10s %-9s %s\n' "No" "State" "Target" "Command" "Managed" "Name"
     index=1
 
-    while IFS='|' read -r name enabled source target commands packages description; do
+    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
+        [ "$hidden" = "true" ] && continue
+
         target_path="$(expand_path "$target")"
         target_state="missing"
         command_state="-"

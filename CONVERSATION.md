@@ -27,6 +27,22 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-13 - tmux 구성요소를 hidden dependency로 정리
+
+사용자 요청:
+- 설치 화면에서 `tmux-session-launcher`, `tmux-zshrc`가 따로 보이지만 실제로는 tmux에 연결되는 구성요소가 아니냐고 지적했고, 이를 정리하길 원했습니다.
+
+해석/결정:
+- 사용자 선택 단위는 `tmux` 하나이고, launcher와 tmux 전용 zshrc는 파일 설치 단위로만 남겨야 한다고 판단했습니다.
+- manifest에 `depends`와 `hidden`을 추가해 UI 표시와 실제 설치 파일 단위를 분리하기로 했습니다.
+
+작업 결과:
+- `tmux`가 `tmux-session-launcher`, `tmux-zshrc`를 dependency로 설치하도록 변경했습니다.
+- 하위 항목은 hidden 처리해 설치 목록과 번호 선택에서 제외했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-05-13 - tmux git completion과 짧은 prompt 병행
 
 사용자 요청:

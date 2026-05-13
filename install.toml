@@ -1,53 +1,65 @@
 [[dotfiles]]
 name = "tmux"
 enabled = true
+hidden = false
 source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
 packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
+depends = ["tmux-session-launcher", "tmux-zshrc"]
 description = "tmux configuration"
 
 [[dotfiles]]
 name = "tmux-session-launcher"
-enabled = true
+enabled = false
+hidden = true
 source = "scripts/tmux-session-launcher"
 target = "~/.local/bin/tmux-session-launcher"
 commands = ["bash", "tmux", "fzf"]
 packages = ["bash", "tmux", "fzf"]
+depends = []
 description = "tmux popup session launcher"
 
 [[dotfiles]]
 name = "tmux-zshrc"
-enabled = true
+enabled = false
+hidden = true
 source = "dotfiles/tmux.zshrc"
 target = "~/.cache/dotfiles/.zshrc"
 commands = ["zsh"]
 packages = ["zsh"]
+depends = []
 description = "tmux-specific zsh initialization"
 
 [[dotfiles]]
 name = "vim"
 enabled = false
+hidden = false
 source = "dotfiles/vimrc"
 target = "~/.vimrc"
 commands = ["vim"]
 packages = ["vim"]
+depends = []
 description = "vim configuration"
 
 [[dotfiles]]
 name = "shell"
 enabled = false
+hidden = false
 source = "dotfiles/myrc"
 target = "~/.myrc"
 commands = ["sh"]
 packages = []
+depends = []
 description = "shared shell configuration"
 
 [[dotfiles]]
 name = "tmux-xresources"
 enabled = false
+hidden = false
 source = "dotfiles/Xresources"
 target = "~/.Xresources"
 commands = ["xrdb"]
 packages = ["x11-xserver-utils"]
+depends = []
 description = "X resources configuration"
