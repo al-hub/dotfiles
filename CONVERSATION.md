@@ -27,6 +27,25 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-20 - tmux 설치에 URxvt Ctrl+마우스 확대/축소 포함
+
+사용자 요청:
+- tmux 안에서 `Ctrl+마우스 스크롤`로 화면 확대/축소를 하고 싶다고 했습니다.
+- `Ctrl+마우스휠 클릭`은 기본 크기(100%)로 복원되면 좋겠다고 했습니다.
+
+해석/결정:
+- 폰트 크기 변경은 tmux가 아니라 URxvt terminal layer에서 처리해야 한다고 판단했습니다.
+- 대상 터미널은 URxvt만으로 한정하고, `tmux` 설치 시 URxvt resize-font 설정도 hidden dependency로 함께 설치하기로 했습니다.
+- `Ctrl+WheelUp`은 확대, `Ctrl+WheelDown`은 축소, `Ctrl+WheelClick`은 reset으로 고정했습니다.
+
+작업 결과:
+- URxvt resize-font extension을 repo에 추가했습니다.
+- `tmux` dependency에 `urxvt-resize-font`, `tmux-xresources`를 추가하고 `tmux-xresources`를 hidden 처리했습니다.
+- Xresources 설치 후 가능한 경우 `xrdb -merge ~/.Xresources`를 자동 실행하도록 했습니다.
+
+남은 질문:
+- 실제 URxvt GUI 환경에서 `Ctrl+마우스` 입력 동작을 확인해야 합니다.
+
 ## 2026-05-13 - tmux 구성요소를 hidden dependency로 정리
 
 사용자 요청:

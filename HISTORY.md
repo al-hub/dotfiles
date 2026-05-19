@@ -27,6 +27,36 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-20 - URxvt Ctrl+마우스 font resize 설치 포함
+
+요약:
+- tmux 설치 시 URxvt font resize 설정도 hidden dependency로 함께 설치되도록 확장했습니다.
+- URxvt resize-font extension을 repo에 포함하고, `Ctrl+WheelUp/Down`은 확대/축소, `Ctrl+WheelClick`은 기본 크기 복원으로 처리합니다.
+- Xresources 설치 후 X 세션에서는 `xrdb -merge`를 자동으로 시도하고, X 세션이 아니면 수동 적용 안내를 출력합니다.
+
+변경 파일:
+- `install.toml`: `tmux` dependency에 `urxvt-resize-font`, `tmux-xresources` 추가 및 Xresources 항목 hidden dependency화
+- `install.sh`: Xresources load hook과 URxvt extension 권한 처리 추가
+- `dotfiles/Xresources`: URxvt resource 키 정규화, `C-equal` 오타 수정
+- `dotfiles/urxvt/ext/resize-font`: URxvt font resize extension 추가
+- `README.md`, `AGENTS.md`, `HISTORY.md`, `CONVERSATION.md`: 설치 모델과 사용법 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `HOME`, `REPO_RAW_URL=file://...`, 입력 `q`: 설치 목록에 `tmux`, `vim`, `shell`만 표시되고 hidden 항목은 숨겨짐
+- 임시 `HOME`, fake `urxvt`, `REPO_RAW_URL=file://...`, 입력 `Enter`: `tmux`, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`가 함께 설치되고 manifest에 기록됨
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- 실제 `Ctrl+마우스` 동작은 GUI URxvt 세션에서 수동 확인이 필요합니다.
+- D2Coding 폰트 설치는 자동화하지 않으므로 없는 환경에서는 URxvt가 fallback font를 사용할 수 있습니다.
+
 ## 2026-05-13 - tmux 하위 설치 항목 hidden dependency 전환
 
 요약:

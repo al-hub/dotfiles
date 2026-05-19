@@ -6,7 +6,7 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
 packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
-depends = ["tmux-session-launcher", "tmux-zshrc"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
 description = "tmux configuration"
 
 [[dotfiles]]
@@ -54,12 +54,23 @@ depends = []
 description = "shared shell configuration"
 
 [[dotfiles]]
+name = "urxvt-resize-font"
+enabled = false
+hidden = true
+source = "dotfiles/urxvt/ext/resize-font"
+target = "~/.urxvt/ext/resize-font"
+commands = ["urxvt"]
+packages = ["rxvt-unicode"]
+depends = []
+description = "URxvt resize-font extension"
+
+[[dotfiles]]
 name = "tmux-xresources"
 enabled = false
-hidden = false
+hidden = true
 source = "dotfiles/Xresources"
 target = "~/.Xresources"
-commands = ["xrdb"]
-packages = ["x11-xserver-utils"]
-depends = []
+commands = ["xrdb", "urxvt"]
+packages = ["x11-xserver-utils", "rxvt-unicode"]
+depends = ["urxvt-resize-font"]
 description = "X resources configuration"

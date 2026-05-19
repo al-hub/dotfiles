@@ -25,9 +25,13 @@ dotfiles/
 ├── install.toml
 ├── dotfiles/
 │   ├── tmux.conf
+│   ├── tmux.zshrc
 │   ├── vimrc
 │   ├── myrc
-│   └── Xresources
+│   ├── Xresources
+│   └── urxvt/
+│       └── ext/
+│           └── resize-font
 ├── scripts/
 │   └── tmux-session-launcher
 ├── get_dotfiles.sh
@@ -73,14 +77,32 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
 packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
-depends = ["tmux-session-launcher", "tmux-zshrc"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
 description = "tmux configuration"
 ```
 
-현재 사용자에게 보이는 enabled 항목은 tmux입니다. tmux session launcher와 tmux 전용 zsh 초기화 파일은 hidden dependency로 설치됩니다. Vim, shell, Xresources 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 tmux입니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 
 tmux는 `ZDOTDIR="$HOME/.cache/dotfiles"`로 zsh를 실행합니다. 이 전용 `.zshrc`는 짧은 `$ ` 프롬프트를 유지하면서 `compinit`을 로드해 git 자동완성을 사용할 수 있게 합니다.
+
+## URxvt font resize
+
+tmux 설치에는 URxvt용 font resize 설정도 hidden dependency로 포함됩니다. URxvt 안에서 tmux를 사용할 때 아래 입력으로 터미널 폰트 크기를 조정합니다.
+
+- `Ctrl+WheelUp`: 확대
+- `Ctrl+WheelDown`: 축소
+- `Ctrl+WheelClick`: 기본 크기로 복원
+- `Ctrl+-`: 축소
+- `Ctrl++`: 확대
+- `Ctrl+=`: 기본 크기로 복원
+- `Ctrl+?`: 현재 크기 표시
+
+이 기능은 tmux가 아니라 URxvt Perl extension이 처리합니다. 설치 중 X 세션에서 실행 중이면 `xrdb -merge ~/.Xresources`를 자동으로 시도하고, X 세션이 아니면 다음 로그인 후 아래 명령을 직접 실행해야 적용됩니다.
+
+```sh
+xrdb -merge ~/.Xresources
+```
 
 ## tmux session launcher
 
@@ -110,6 +132,8 @@ sudo apt-get install -y fzf
 
 ```sh
 bash -n install.sh
+bash -n scripts/tmux-session-launcher
+perl -c dotfiles/urxvt/ext/resize-font
 sh -n get_dotfiles.sh
 sh -n install_dotfiles.sh
 git diff --check

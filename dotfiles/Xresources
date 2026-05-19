@@ -25,7 +25,7 @@ URxvt*foreground: #CCCCCC
 !! -- Fonts -- !
 
 !https://blog.khmersite.net/2017/12/change-the-urxvt-font-size-on-the-fly/
-Urxvt.perl-ext-common: default,resize-font,tabbed
+URxvt.perl-ext-common: default,resize-font,tabbed
 
 
 !tabbed
@@ -111,7 +111,7 @@ URxvt.keysym.Control-Tab: \033[27;5;9~
 
 URxvt.keysym.C-minus:     resize-font:smaller
 URxvt.keysym.C-plus:      resize-font:bigger
-UURxvt.keysym.C-equal:     resize-font:reset
+URxvt.keysym.C-equal:     resize-font:reset
 URxvt.keysym.C-question:  resize-font:show
 
 !  black    red    green    yellow    blue    purple    cyan    white
@@ -137,5 +137,4 @@ URxvt.keysym.C-question:  resize-font:show
 !
 !URxvt*font: xft:Ubuntu Mono:size=10
 !URxvt*boldFont: xft:Ubuntu Mono:bold:size=10
-
 

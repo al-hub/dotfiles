@@ -1,0 +1,148 @@
+#! perl
+
+# resize-font extension for rxvt-unicode.
+#
+# Based on the public urxvt-resize-font extension by Mikhail Gusarov and
+# contributors. This vendored copy keeps the keyboard actions compatible and
+# adds Ctrl+mouse wheel/click handling for this dotfiles setup.
+# SPDX-License-Identifier: ISC
+
+use strict;
+use warnings;
+
+my $min_size = 6;
+my $max_size = 64;
+my $step = 1;
+my $control_mask = 4;
+
+sub on_start {
+    my ($self) = @_;
+
+    $self->{resize_font_default_font} = $self->resource('font') || '';
+    $self->{resize_font_default_bold_font} = $self->resource('boldFont') || '';
+    $self->{resize_font_default_size} = _font_size($self->{resize_font_default_font}) || 0;
+
+    ()
+}
+
+sub on_action {
+    my ($self, $action) = @_;
+
+    if ($action eq 'bigger') {
+        _change_size($self, $step);
+    }
+    elsif ($action eq 'smaller') {
+        _change_size($self, -$step);
+    }
+    elsif ($action eq 'reset') {
+        _reset_size($self);
+    }
+    elsif ($action eq 'show') {
+        _show_size($self);
+    }
+
+    ()
+}
+
+sub on_button_press {
+    my ($self, $event) = @_;
+
+    my $state = $event->{state} || 0;
+    return () unless $state & $control_mask;
+
+    if ($event->{button} == 4) {
+        _change_size($self, $step);
+        return 1;
+    }
+    elsif ($event->{button} == 5) {
+        _change_size($self, -$step);
+        return 1;
+    }
+    elsif ($event->{button} == 2) {
+        _reset_size($self);
+        return 1;
+    }
+
+    ()
+}
+
+sub _change_size {
+    my ($self, $delta) = @_;
+
+    my $font = $self->resource('font') || $self->{resize_font_default_font};
+    my $size = _font_size($font) || $self->{resize_font_default_size} || 17;
+    my $new_size = $size + $delta;
+
+    $new_size = $min_size if $new_size < $min_size;
+    $new_size = $max_size if $new_size > $max_size;
+    return if $new_size == $size;
+
+    _set_size($self, $new_size);
+}
+
+sub _reset_size {
+    my ($self) = @_;
+
+    if ($self->{resize_font_default_font}) {
+        $self->cmd_parse("\033]710;$self->{resize_font_default_font}\007");
+    }
+    if ($self->{resize_font_default_bold_font}) {
+        $self->cmd_parse("\033]711;$self->{resize_font_default_bold_font}\007");
+    }
+
+    _show_size($self);
+}
+
+sub _set_size {
+    my ($self, $size) = @_;
+
+    my $font = _font_with_size($self->resource('font') || $self->{resize_font_default_font}, $size);
+    my $bold_font = _font_with_size($self->resource('boldFont') || $self->{resize_font_default_bold_font}, $size);
+
+    $self->cmd_parse("\033]710;$font\007") if $font;
+    $self->cmd_parse("\033]711;$bold_font\007") if $bold_font;
+
+    _show_size($self);
+}
+
+sub _show_size {
+    my ($self) = @_;
+
+    my $term = $self->{term};
+    my $font = $self->resource('font') || $self->{resize_font_default_font};
+    return unless $font;
+
+    $term->{resize_font_overlay} = {
+        ov => $term->overlay_simple(0, -1, "font: $font"),
+        to => urxvt::timer->new->start(urxvt::NOW() + 1)->cb(
+            sub { delete $term->{resize_font_overlay}; }
+        ),
+    };
+}
+
+sub _font_size {
+    my ($font) = @_;
+
+    return unless defined $font;
+    return $1 if $font =~ /(?:^|:)pixelsize=([0-9]+)(?::|$)/;
+    return $1 if $font =~ /(?:^|:)size=([0-9]+)(?::|$)/;
+    return;
+}
+
+sub _font_with_size {
+    my ($font, $size) = @_;
+
+    return unless defined $font && length $font;
+
+    if ($font =~ /(?:^|:)pixelsize=[0-9]+(?::|$)/) {
+        $font =~ s/(^|:)pixelsize=[0-9]+(?=:|$)/${1}pixelsize=$size/;
+    }
+    elsif ($font =~ /(?:^|:)size=[0-9]+(?::|$)/) {
+        $font =~ s/(^|:)size=[0-9]+(?=:|$)/${1}size=$size/;
+    }
+    else {
+        $font .= ":pixelsize=$size";
+    }
+
+    $font
+}

@@ -274,6 +274,24 @@ ensure_executable()
     chmod +x "$target_path"
 }
 
+load_xresources()
+{
+    target="$1"
+    target_path="$(expand_path "$target")"
+
+    [ -f "$target_path" ] || return 0
+
+    if [ -n "${DISPLAY:-}" ] && command_exists xrdb; then
+        if xrdb -merge "$target_path"; then
+            log "Loaded X resources from $target_path"
+        else
+            log "X resources installed, but xrdb could not load them. Run 'xrdb -merge $target_path' inside a working X session."
+        fi
+    else
+        log "X resources installed. Run 'xrdb -merge $target_path' inside an X session to apply them."
+    fi
+}
+
 after_install_item()
 {
     name="$1"
@@ -282,6 +300,8 @@ after_install_item()
     case "$name" in
         tmux) cleanup_tmux_runtime ;;
         tmux-session-launcher) ensure_executable "$target" ;;
+        urxvt-resize-font) ensure_executable "$target" ;;
+        tmux-xresources) load_xresources "$target" ;;
     esac
 }
 
