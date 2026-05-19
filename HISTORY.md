@@ -27,6 +27,29 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-05-20 - URxvt Ctrl+wheel event mask 추가
+
+요약:
+- `Ctrl+마우스 휠`이 동작하지 않는 문제를 점검해 URxvt extension이 button press event mask를 요청하지 않았던 경로를 보강했습니다.
+- `resize-font` extension 시작 시 `vt_emask_add(urxvt::ButtonPressMask())`를 호출해 wheel/click hook이 호출되도록 했습니다.
+
+변경 파일:
+- `dotfiles/urxvt/ext/resize-font`: button press event mask 등록 추가, Control modifier 판정은 URxvt 상수 사용
+- `HISTORY.md`, `CONVERSATION.md`: 문제 원인과 후속 확인 기록
+
+검증:
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- 설치된 환경에서는 `install.sh` 재실행 후 URxvt를 새로 열어야 extension 변경이 반영됩니다.
+
 ## 2026-05-20 - URxvt Ctrl+마우스 font resize 설치 포함
 
 요약:

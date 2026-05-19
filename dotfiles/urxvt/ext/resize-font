@@ -13,7 +13,6 @@ use warnings;
 my $min_size = 6;
 my $max_size = 64;
 my $step = 1;
-my $control_mask = 4;
 
 sub on_start {
     my ($self) = @_;
@@ -21,6 +20,7 @@ sub on_start {
     $self->{resize_font_default_font} = $self->resource('font') || '';
     $self->{resize_font_default_bold_font} = $self->resource('boldFont') || '';
     $self->{resize_font_default_size} = _font_size($self->{resize_font_default_font}) || 0;
+    $self->vt_emask_add(urxvt::ButtonPressMask());
 
     ()
 }
@@ -48,7 +48,7 @@ sub on_button_press {
     my ($self, $event) = @_;
 
     my $state = $event->{state} || 0;
-    return () unless $state & $control_mask;
+    return () unless $state & urxvt::ControlMask();
 
     if ($event->{button} == 4) {
         _change_size($self, $step);

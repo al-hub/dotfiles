@@ -27,6 +27,21 @@
 - 다음에 확인할 점
 ```
 
+## 2026-05-20 - URxvt Ctrl+wheel 미동작 보강
+
+사용자 요청:
+- 구현 후 `Ctrl+휠키`가 동작하지 않는다고 보고했습니다.
+
+해석/결정:
+- URxvt Perl extension의 `on_button_press` hook은 유지하되, vt window에서 button press event를 받도록 event mask 등록이 필요하다고 판단했습니다.
+- 설치된 파일 갱신 후 URxvt 새 창에서 다시 확인해야 합니다.
+
+작업 결과:
+- `resize-font` extension에 `vt_emask_add(urxvt::ButtonPressMask())`를 추가했습니다.
+
+남은 질문:
+- 실제 URxvt GUI에서 `Ctrl+WheelUp/Down/Click` 동작을 재확인해야 합니다.
+
 ## 2026-05-20 - tmux 설치에 URxvt Ctrl+마우스 확대/축소 포함
 
 사용자 요청:
