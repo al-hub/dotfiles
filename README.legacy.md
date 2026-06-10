@@ -385,7 +385,49 @@ unset CEREBRAS_API_KEY
   }
 }
 ```
+```
+{
+  "agent": {
+    "plan": {
+      "description": "Read-only planning agent. Analyze code and propose plans only.",
+      "mode": "primary",
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "lsp": true,
+        "bash": false,
+        "edit": false,
+        "write": false,
+        "patch": false
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
 
+    "build": {
+      "description": "Implementation agent. Can modify files after plan is accepted.",
+      "mode": "primary",
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "lsp": true,
+        "bash": true,
+        "edit": true,
+        "write": true,
+        "patch": true
+      },
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      }
+    }
+  }
+}
+```
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
