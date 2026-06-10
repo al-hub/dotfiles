@@ -453,6 +453,123 @@ unset CEREBRAS_API_KEY
   "default_agent": "plan"
 }
 ```
+-**handoff** plan → /handoff → build
+```
+mkdir -p ~/.config/opencode-personal/commands
+
+cat > ~/.config/opencode-personal/opencode.jsonc <<'EOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "default_agent": "plan",
+  "share": "disabled",
+
+  "permission": {
+    "*": "ask",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "edit": "ask",
+    "bash": "ask",
+    "webfetch": "ask",
+    "websearch": "ask",
+    "external_directory": "deny"
+  },
+
+  "instructions": [
+    "AGENTS.md",
+    "opencode-instructions.md"
+  ]
+}
+EOF
+
+cat > ~/.config/opencode-personal/opencode-instructions.md <<'EOF'
+# MK opencode workflow
+
+## Default workflow
+
+Use the built-in plan and build agents.
+
+Preferred flow:
+1. Plan: analyze, discuss, narrow scope. Do not modify files.
+2. In Plan, when the user runs `/handoff` or asks for handoff, create one `## Plan Handoff`.
+3. Build: if a latest `## Plan Handoff` exists in the conversation, use it as the primary implementation contract.
+4. If no `## Plan Handoff` exists, Build may proceed normally, but must keep changes minimal.
+
+## Plan behavior
+
+When in plan mode:
+- Do not edit, write, patch, delete, rename, or create files.
+- Do not run bash unless the user explicitly asks.
+- Analyze and discuss normally.
+- Do not create a Plan Handoff on every response.
+- Only create a Plan Handoff when the user asks for handoff or runs `/handoff`.
+
+## Build behavior
+
+When in build mode:
+- First look for the latest `## Plan Handoff` in the current conversation.
+- If it exists, treat it as the primary implementation contract.
+- Follow `Relevant files`, `Build steps`, and `Do not touch`.
+- Modify only files listed in the handoff unless another file is clearly required.
+- If another file is required, explain why before editing.
+- If no handoff exists, proceed as a normal build request, but keep changes minimal.
+- Before broad changes, state the files you intend to change.
+- After editing, summarize changed files and verification.
+
+## Plan Handoff format
+
+When asked for handoff, output exactly this:
+
+## Plan Handoff
+
+### Problem
+One or two sentences describing the task, bug, or requested change.
+
+### Decision
+The chosen approach and why.
+
+### Relevant files
+- path/to/file: why it matters
+
+### Root cause
+Best current hypothesis. Use "unknown" if there is not enough evidence.
+
+### Build steps
+1. Minimal implementation step.
+2. Next implementation step.
+3. Verification step.
+
+### Do not touch
+- Files, modules, APIs, or behavior that should not be changed.
+
+### Open questions
+- Remaining uncertainty, if any.
+
+### Verification
+- How build should verify the change.
+EOF
+
+
+/handoff 명령 만들기
+cat > ~/.config/opencode-personal/commands/handoff.md <<'EOF'
+---
+description: Create a final Plan Handoff for build
+agent: plan
+---
+
+Create one final `## Plan Handoff` from the current plan discussion.
+
+Do not modify files.
+Do not run bash.
+Do not add new analysis unless necessary.
+Condense the current discussion into the handoff format defined in the instructions.
+
+The handoff must be practical enough that build can proceed from it.
+EOF
+```
 
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
