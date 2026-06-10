@@ -301,6 +301,89 @@ rss=https://www.ppomppu.co.kr/rss.php?id=
 lynx -source $rss$id | sed "s|http:|https:|g"  
 ```
 
+## opencode
+1. 개인적으로 집에서 사용할 때는 chatGTP Plus 계정으로 codex 와 opencode 의 무료 llm 구성으로 사용하려고한다. 
+2. 사내에서는 enterprise로 chatGPT, claude, gemini 그리고 사내 gauss 사용가능하다. codex 와 각 cli 도 사용하지만 사내에서도 opencode 를 사용하고자 한다. 단 보안 이슈로 chatGPT, claude, gemini, gauss 만 써야하고 다른 LLM은 미사용이다.
+
+```
+~/.config/opencode/opencode.personal.jsonc
+~/.config/opencode/opencode.work.jsonc
+
+export OPENCODE_CONFIG_DIR="$HOME/.config/opencode-personal"
+export OPENCODE_CONFIG_DIR="$HOME/.config/opencode-work"
+
+unset OPENROUTER_API_KEY
+unset GROQ_API_KEY
+unset NVIDIA_API_KEY
+unset CEREBRAS_API_KEY
+```
+
+- 사내 opencode를 쓰되, provider allowlist를 강제”
+```shell
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // 사내 승인 provider만 허용
+  "enabled_providers": [
+    "openai",
+    "anthropic",
+    "gemini",
+    "gauss"
+  ],
+
+  // 실수 방지용: 개인용/무료 라우터 차단
+  "disabled_providers": [
+    "openrouter",
+    "groq",
+    "nvidia",
+    "cerebras",
+    "together",
+    "mistral",
+    "ollama"
+  ],
+
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "gemini/gemini-2.5-flash",
+
+  "provider": {
+    "gauss": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Samsung Gauss Internal",
+      "options": {
+        "baseURL": "https://YOUR_INTERNAL_GAUSS_ENDPOINT/v1"
+      },
+      "models": {
+        "gauss-coder": {
+          "name": "Gauss Coder"
+        }
+      }
+    }
+  },
+
+  "tools": {
+    "bash": true,
+    "write": true
+  },
+
+  "watcher": {
+    "ignore": [
+      ".git/**",
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      ".gradle/**",
+      ".idea/**",
+      "*.keystore",
+      "*.pem",
+      "*.key",
+      "*.p12",
+      "*.jks",
+      "**/secrets/**"
+    ]
+  }
+}
+```
+
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
@@ -308,9 +391,6 @@ urxtvt 에 mouse scroll로 fontsize 수정 ( .Xresources의 URxvt keysym 이해 
 https://www.reddit.com/r/archlinux/comments/n7n1ah/urxvt_keysym_for_mouse_buttons_singleline/  
 https://wiki.archlinux.org/title/Rxvt-unicode  
 https://wiki.archlinux.org/title/Rxvt-unicode/Tips_and_tricks  
-
-
-
 
 ## ref
 - [endeavor but worth](https://www.bugsnag.com/blog/tmux-and-vim)  
