@@ -428,6 +428,32 @@ unset CEREBRAS_API_KEY
   }
 }
 ```
+```
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "enabled_providers": [
+    "openai",
+    "anthropic",
+    "gemini",
+    "gauss"
+  ],
+
+  "disabled_providers": [
+    "openrouter",
+    "groq",
+    "nvidia",
+    "cerebras",
+    "together",
+    "mistral",
+    "ollama"
+  ],
+
+  "share": "disabled",
+  "default_agent": "plan"
+}
+```
+
 ## 어려운문제  
 tmux상 vim split 을 mouse로 조정 (tmux와 vim이 mouse focus를 2중으로 가져가는 문제)  
 vim airline의 buff tab을 mouse로 클릭하여 선택하기 (미구현 문제)  
