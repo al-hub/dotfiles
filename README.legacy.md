@@ -302,8 +302,10 @@ lynx -source $rss$id | sed "s|http:|https:|g"
 ```
 
 ## opencode
+```
 1. 개인적으로 집에서 사용할 때는 chatGTP Plus 계정으로 codex 와 opencode 의 무료 llm 구성으로 사용하려고한다. 
 2. 사내에서는 enterprise로 chatGPT, claude, gemini 그리고 사내 gauss 사용가능하다. codex 와 각 cli 도 사용하지만 사내에서도 opencode 를 사용하고자 한다. 단 보안 이슈로 chatGPT, claude, gemini, gauss 만 써야하고 다른 LLM은 미사용이다.
+```
 
 ```
 ~/.config/opencode/opencode.personal.jsonc
