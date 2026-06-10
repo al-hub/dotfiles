@@ -1,0 +1,89 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // MK final practical config
+  // ~/.config/opencode/opencode.jsonc
+  // 역할:
+  // - build: 평소 구현/수정/문서 작업
+  // - plan: 수정 전 설계/범위 판단
+  // - heavy: 어려운 버그/복잡한 구조 분석
+  //
+  // 제외:
+  // - Groq: 무료 TPM 한도 때문에 small_model/quick에 부적합
+  // - OpenRouter: 백업용으로만 보유, 기본 흐름 제외
+  // - Cerebras: 실험용, 기본 흐름 제외
+  // - Copilot: /connect로 별도 연결 가능하지만 기본 흐름 제외
+
+  "model": "nvidia/stepfun-ai/step-3.5-flash",
+  "small_model": "gemini/gemini-2.5-flash-lite",
+
+  "provider": {
+    "nvidia": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NVIDIA NIM",
+      "options": {
+        "baseURL": "https://integrate.api.nvidia.com/v1",
+        "apiKey": "{env:NVIDIA_API_KEY}",
+        "timeout": 600000,
+        "chunkTimeout": 60000
+      },
+      "models": {
+        "stepfun-ai/step-3.5-flash": {
+          "name": "Step 3.5 Flash NVIDIA NIM",
+          "limit": {
+            "context": 98304,
+            "output": 6144
+          }
+        },
+        "deepseek-ai/deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro NVIDIA NIM",
+          "limit": {
+            "context": 98304,
+            "output": 6144
+          }
+        }
+      }
+    },
+
+    "gemini": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Google Gemini",
+      "options": {
+        "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "apiKey": "{env:GEMINI_API_KEY}",
+        "timeout": 600000,
+        "chunkTimeout": 60000
+      },
+      "models": {
+        "gemini-2.5-flash": {
+          "name": "Gemini 2.5 Flash",
+          "limit": {
+            "context": 262144,
+            "output": 8192
+          }
+        },
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite",
+          "limit": {
+            "context": 131072,
+            "output": 4096
+          }
+        }
+      }
+    }
+  },
+
+  "agent": {
+    "build": {
+      "model": "nvidia/stepfun-ai/step-3.5-flash"
+    },
+
+    "plan": {
+      "model": "gemini/gemini-2.5-flash"
+    },
+
+    "heavy": {
+      "model": "nvidia/deepseek-ai/deepseek-v4-pro"
+    }
+  }
+}
