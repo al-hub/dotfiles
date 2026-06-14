@@ -18,6 +18,21 @@ INPUT_FD=0
 log() { printf '[dotfiles] %s\n' "$*"; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+opencode_cli_exists()
+{
+    command_exists opencode && return 0
+
+    for candidate in \
+        "$HOME/.opencode/bin/opencode" \
+        "$HOME/.local/bin/opencode" \
+        "$HOME/bin/opencode"
+    do
+        [ -x "$candidate" ] && return 0
+    done
+
+    return 1
+}
+
 setup_input()
 {
     input_file="${DOTFILES_INPUT:-/dev/tty}"
@@ -348,7 +363,7 @@ after_install_item()
 
     case "$name" in
         opencode)
-            if command_exists opencode; then
+            if opencode_cli_exists; then
                 log "OpenCode CLI already installed; updating config only."
             else
                 install_opencode_cli
@@ -545,11 +560,11 @@ handle_selection()
     selection="$1"
 
     case "$selection" in
-        ""|all|All|ALL)
-            install_enabled
-            ;;
-        q|Q|quit|QUIT|exit|EXIT|$'\033')
+        ""|q|Q|quit|QUIT|exit|EXIT|$'\033')
             exit 0
+            ;;
+        all|All|ALL)
+            install_enabled
             ;;
         init|INIT)
             init_from_manifest
@@ -572,7 +587,7 @@ main()
 
     while true; do
         show_items
-        printf '\nEnter=install enabled, numbers=install selected, init=reset installed files, q=quit\n'
+        printf '\nEnter=quit, all=install enabled, numbers=install selected, init=reset installed files, q=quit\n'
         read -r -u "$INPUT_FD" -p "Select: " selection || exit 0
         handle_selection "$selection"
     done

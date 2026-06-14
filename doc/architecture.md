@@ -30,7 +30,7 @@
 
 - visible top-level module
 - personal config file을 설치한다.
-- CLI가 없으면 공식 installer를 실행한다.
+- CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없으면 공식 installer를 실행한다.
 - 나중에 work profile, allowlist, commands/instructions로 확장할 수 있다.
 
 ## Extension Rules

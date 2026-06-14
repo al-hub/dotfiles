@@ -9,7 +9,7 @@
 - 이 파일은 personal seed configuration으로 본다.
 - 업무용 profile이나 실행 래퍼는 아직 만들지 않는다.
 - CLI는 공식 설치 스크립트 `curl -fsSL https://opencode.ai/install | bash`로 설치한다.
-- 설치 항목을 한 번 선택하면 config를 갱신하고, CLI가 없을 때만 자동 설치한다.
+- 설치 항목을 한 번 선택하면 config를 갱신하고, CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없을 때만 자동 설치한다.
 
 ## 설계 방향
 

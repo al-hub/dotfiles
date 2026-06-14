@@ -59,10 +59,10 @@ work profile, 실행 래퍼, allowlist 확장 방향은 [doc/opencode.md](doc/op
 
 `install.sh`는 특정 dotfile 전용 스크립트가 아니라 공통 설치 엔진입니다.
 
-- `Enter` 또는 `all`: enabled 항목만 설치
+- `Enter`, `q`, `quit`, `exit`: 종료
+- `all`: enabled 항목만 설치
 - `번호`: 선택한 번호만 설치, 예: `1` 또는 `1,3`
 - `init`: manifest에 기록된 설치 파일을 복원하거나 제거
-- `q`, `quit`, `exit`: 종료
 
 기존 대상 파일이 있고 manifest에 기록된 managed 항목이면 자동으로 백업 후 갱신합니다. 비관리 파일은 덮어쓰기 전에 확인합니다. 백업은 아래 위치에 저장됩니다.
 
@@ -93,7 +93,7 @@ depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xre
 description = "tmux configuration"
 ```
 
-현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고 CLI가 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 새 모듈을 넣을 때는 `file / dependency / post-install / external CLI` 중 어느 형태인지 먼저 분류합니다.
 

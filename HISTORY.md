@@ -27,6 +27,24 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-14 - opencode 재설치 판정과 installer Enter 동작 수정
+
+요약:
+- `opencode` CLI가 `~/.opencode/bin/opencode` 같은 기본 설치 경로에 이미 있어도 재설치로 들어가던 판정을 완화했습니다.
+- installer 첫 화면에서 Enter는 종료로 바꾸고, enabled 전체 설치는 `all` 명령으로만 수행하도록 정리했습니다.
+
+변경 파일:
+- `install.sh`: `opencode` CLI 존재 확인 보강, Enter 기본 동작을 종료로 변경
+- `README.md`: installer 입력 안내와 `opencode` 설치 판정 설명 갱신
+- `doc/opencode.md`: CLI 자동 설치 조건 설명 갱신
+- `doc/architecture.md`: opencode 모듈 판정 규칙을 실제 동작과 맞춤
+
+검증:
+- 아직 실행 전
+
+후속 주의:
+- `opencode`를 PATH 밖 경로에 설치한 환경에서도 재설치가 반복되지 않는지 확인해야 합니다.
+
 ## 2026-06-14 - 설치 구조 문서 보강
 
 요약:
