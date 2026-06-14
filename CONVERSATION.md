@@ -27,6 +27,132 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-14 - 설치 구조 문서 보강
+
+사용자 요청:
+- md 파일을 보강하자고 했습니다.
+
+해석/결정:
+- 단순한 설명 추가보다, tmux/opencode를 일반화할 수 있는 구조 문서를 별도로 두는 것이 더 낫다고 판단했습니다.
+- README는 진입점, `doc/architecture.md`는 설치 모델, `doc/opencode.md`는 opencode 세부 문서로 역할을 나누기로 했습니다.
+
+작업 결과:
+- `doc/architecture.md`를 추가해 설치 구조와 모듈 확장 원칙을 정리했습니다.
+- README와 opencode 문서에서 그 문서를 참조하도록 연결했습니다.
+
+남은 질문:
+- 앞으로 새 모듈이 생길 때 각 모듈별 전용 md를 둘지, architecture 문서에 계속 합칠지 결정할 수 있습니다.
+
+## 2026-06-14 - 설치 체인 중복과 순환 의존성 방지
+
+사용자 요청:
+- 앞으로 다른 모듈도 추가 확장해야 하므로 tmux, opencode 설치의 구조적인 부분을 보강하자고 했습니다.
+
+해석/결정:
+- 가장 먼저 설치 체인 자체의 안전성을 높이는 것이 우선이라고 판단했습니다.
+- 같은 실행 안에서 같은 항목이 반복 설치되는 것을 막고, dependency 순환은 즉시 감지하도록 정리했습니다.
+
+작업 결과:
+- `install.sh`에 install stack / done tracking을 추가했습니다.
+- `install_dependencies()` 경로에서 순환 dependency를 더 안전하게 다룰 수 있게 했습니다.
+
+남은 질문:
+- 다음으로는 module type 분리나 post-install hook 분리를 할지 결정할 수 있습니다.
+
+## 2026-06-14 - opencode 단일 선택 자동 설치로 단순화
+
+사용자 요청:
+- `opencode` 선택 후, 한 번 선택하면 알아서 되게 하자는 방향으로 가자고 했습니다.
+
+해석/결정:
+- 설치기를 단순하게 유지하기 위해 추가 모드 선택을 제거하고, config 갱신 + CLI 없을 때만 자동 설치로 정리했습니다.
+
+작업 결과:
+- `install.sh`에서 OpenCode 설치 모드를 없앴습니다.
+- `opencode`는 이제 선택만 하면 config를 갱신하고, CLI가 없을 때만 공식 설치 스크립트가 실행됩니다.
+
+남은 질문:
+- 나중에 CLI를 강제로 재설치하는 옵션이 필요한지 검토할 수 있습니다.
+
+## 2026-06-14 - opencode 기본 설치 모드 config only로 조정
+
+사용자 요청:
+- `opencode` 설치 시 기본값을 config only로 바꾸자고 했습니다.
+
+해석/결정:
+- CLI 설치는 네트워크를 쓰고, 실제로는 옵션성이 강하므로 기본값은 설정 파일만 설치하는 쪽이 더 안전하다고 판단했습니다.
+
+작업 결과:
+- `install.sh`의 OpenCode 설치 모드 기본값을 config only로 바꿨습니다.
+- README와 문서도 같은 기준으로 맞췄습니다.
+
+남은 질문:
+- CLI를 자주 쓸 환경이라면 나중에 기본값을 다시 both로 바꿀지 검토할 수 있습니다.
+
+## 2026-06-14 - opencode CLI 공식 설치 스크립트 연동
+
+사용자 요청:
+- opencode CLI는 `curl -fsSL https://opencode.ai/install | bash`로 설치하자고 했습니다.
+
+해석/결정:
+- 공식 문서가 안내하는 설치 방법을 우선하기로 했습니다.
+- 설치 시 config only / cli only / both를 선택할 수 있게 하면 개인용 seed config와 CLI 설치를 동시에 유연하게 관리할 수 있다고 판단했습니다.
+
+작업 결과:
+- `install.sh`에 OpenCode 설치 모드를 추가했습니다.
+- CLI는 공식 설치 스크립트를 실행해 설치합니다.
+
+남은 질문:
+- CLI 설치 기본값을 충분히 보수적으로 둘지, 아니면 `both`를 기본값으로 둘지 추가 조정할 수 있습니다.
+
+## 2026-06-14 - opencode personal 설치 항목 추가
+
+사용자 요청:
+- opencode 작업을 계속 진행하자고 했고, 결정해야 할 사항이 있으면 물어보면서 진행하길 원했습니다.
+
+해석/결정:
+- 현재는 personal-only seed config를 설치 항목으로 먼저 연결하는 것이 가장 단순하다고 판단했습니다.
+- CLI binary 설치는 범위를 넓히므로 이번 단계에서는 제외했습니다.
+
+작업 결과:
+- `install.toml`에 `opencode` visible 항목을 추가했습니다.
+- `README.md`와 `doc/opencode.md`를 설치 상태에 맞게 갱신했습니다.
+
+남은 질문:
+- 추후 `opencode` 실행 래퍼나 work profile이 필요해지면, 어떤 형태로 분리할지 결정해야 합니다.
+
+## 2026-06-14 - opencode seed config 주석 정리
+
+사용자 요청:
+- opencode 관련 작업을 진행하자고 했습니다.
+
+해석/결정:
+- 현재는 personal-only seed config를 더 명확하게 만드는 것이 우선이라고 판단했습니다.
+- 설정값은 그대로 두고, 개인용 시작점과 향후 work profile 확장 지점을 주석으로 드러내기로 했습니다.
+
+작업 결과:
+- `dotfiles/opencode.jsonc`의 주석을 정리했습니다.
+- 개인용 기본 모델, 제외 provider, future extension points를 구분해 읽기 쉽게 만들었습니다.
+
+남은 질문:
+- 다음 단계에서 `install.toml`에 연결할지, 아니면 문서 상태를 더 유지할지 결정해야 합니다.
+
+## 2026-06-14 - opencode 문서 분리
+
+사용자 요청:
+- opencode 설정을 README 본문에 직접 쓰지 말고, 별도 md를 만들어 현재 상태를 정리한 뒤 README와 연결하자고 제안했습니다.
+
+해석/결정:
+- tmux와 같은 설정 스택은 README가 길어지기 쉬우므로, opencode는 별도 문서로 분리하는 편이 유지보수에 낫다고 판단했습니다.
+- 지금은 개인용 중심으로만 두고, 나중에 업무용 profile이나 실행 래퍼를 붙일 수 있도록 문서에 확장 지점을 남기기로 했습니다.
+
+작업 결과:
+- `doc/opencode.md`를 추가해 현재 상태와 확장 방향을 정리했습니다.
+- `README.md`에서 opencode 문서를 링크하도록 연결했습니다.
+
+남은 질문:
+- 실제 `install.toml` 연결은 다음 단계에서 opencode 설치 여부와 CLI 배포 방식을 정한 뒤 진행해야 합니다.
+
 ## 2026-05-20 - URxvt Ctrl+wheel 미동작 보강
 
 사용자 요청:

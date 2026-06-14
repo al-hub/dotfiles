@@ -274,6 +274,55 @@ ensure_executable()
     chmod +x "$target_path"
 }
 
+INSTALL_STACK="|"
+INSTALL_DONE="|"
+
+stack_contains()
+{
+    case "$1" in
+        *"|$2|"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+stack_push()
+{
+    INSTALL_STACK="${INSTALL_STACK}${1}|"
+}
+
+stack_pop()
+{
+    INSTALL_STACK="${INSTALL_STACK%$1|}"
+    [ -n "$INSTALL_STACK" ] || INSTALL_STACK="|"
+}
+
+mark_done()
+{
+    if ! stack_contains "$INSTALL_DONE" "$1"; then
+        INSTALL_DONE="${INSTALL_DONE}${1}|"
+    fi
+}
+
+is_done()
+{
+    stack_contains "$INSTALL_DONE" "$1"
+}
+
+install_opencode_cli()
+{
+    log "Installing OpenCode CLI using the official installer"
+    if command_exists curl; then
+        curl -fsSL https://opencode.ai/install | bash
+    elif command_exists wget; then
+        wget -qO- https://opencode.ai/install | bash
+    else
+        log "curl or wget is required to install the OpenCode CLI."
+        return 1
+    fi
+
+    log "OpenCode CLI installed"
+}
+
 load_xresources()
 {
     target="$1"
@@ -298,6 +347,13 @@ after_install_item()
     target="$2"
 
     case "$name" in
+        opencode)
+            if command_exists opencode; then
+                log "OpenCode CLI already installed; updating config only."
+            else
+                install_opencode_cli
+            fi
+            ;;
         tmux) cleanup_tmux_runtime ;;
         tmux-session-launcher) ensure_executable "$target" ;;
         urxvt-resize-font) ensure_executable "$target" ;;
@@ -329,9 +385,24 @@ install_item()
     source_url="$(source_url "$source")"
     tmp_file="$(mktemp)"
 
+    if is_done "$name"; then
+        log "Skipping already processed item in this run: $name"
+        rm -f "$tmp_file"
+        return 0
+    fi
+
+    if stack_contains "$INSTALL_STACK" "$name"; then
+        log "Circular dependency detected: $name"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
+    stack_push "$name"
+
     if ! ensure_commands "$commands" "$packages"; then
         log "Skipped $name because required commands are unavailable."
         rm -f "$tmp_file"
+        stack_pop "$name"
         return
     fi
 
@@ -342,6 +413,8 @@ install_item()
         log "$name is already installed: $target_path"
         rm -f "$tmp_file"
         after_install_item "$name" "$target"
+        mark_done "$name"
+        stack_pop "$name"
         install_dependencies "$depends"
         return
     fi
@@ -355,6 +428,7 @@ install_item()
             if ! confirm "Force install $name and backup existing file? [y/N]" "n"; then
                 log "Skipped $name."
                 rm -f "$tmp_file"
+                stack_pop "$name"
                 return
             fi
         fi
@@ -370,6 +444,8 @@ install_item()
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log "Installed $name to $target_path"
     after_install_item "$name" "$target"
+    mark_done "$name"
+    stack_pop "$name"
     install_dependencies "$depends"
 }
 

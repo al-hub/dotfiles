@@ -1,23 +1,32 @@
 {
   "$schema": "https://opencode.ai/config.json",
 
-  // MK final practical config
-  // ~/.config/opencode/opencode.jsonc
-  // 역할:
+  // Personal seed config for this dotfiles repo.
+  // Current target:
+  // - ~/.config/opencode/opencode.jsonc
+  //
+  // Workflow roles:
   // - build: 평소 구현/수정/문서 작업
   // - plan: 수정 전 설계/범위 판단
   // - heavy: 어려운 버그/복잡한 구조 분석
   //
-  // 제외:
+  // Future extension points:
+  // - work profile: 별도 config dir 또는 파일 분리
+  // - provider allowlist: 업무용 제한 강화
+  // - command/instructions: handoff나 workflow 규칙 추가
+  //
+  // Excluded for now:
   // - Groq: 무료 TPM 한도 때문에 small_model/quick에 부적합
   // - OpenRouter: 백업용으로만 보유, 기본 흐름 제외
   // - Cerebras: 실험용, 기본 흐름 제외
   // - Copilot: /connect로 별도 연결 가능하지만 기본 흐름 제외
 
+  // Default model pair for personal use.
   "model": "nvidia/stepfun-ai/step-3.5-flash",
   "small_model": "gemini/gemini-2.5-flash-lite",
 
   "provider": {
+    // NVIDIA NIM: main model provider.
     "nvidia": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "NVIDIA NIM",
@@ -45,6 +54,7 @@
       }
     },
 
+    // Gemini: small model and planning-friendly fallback.
     "gemini": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Google Gemini",
@@ -73,6 +83,7 @@
     }
   },
 
+  // Keep agent selection simple, but leave a clear place for future tuning.
   "agent": {
     "build": {
       "model": "nvidia/stepfun-ai/step-3.5-flash"

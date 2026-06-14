@@ -1,4 +1,15 @@
 [[dotfiles]]
+name = "opencode"
+enabled = true
+hidden = false
+source = "dotfiles/opencode.jsonc"
+target = "~/.config/opencode/opencode.jsonc"
+commands = []
+packages = []
+depends = []
+description = "personal opencode configuration"
+
+[[dotfiles]]
 name = "tmux"
 enabled = true
 hidden = false

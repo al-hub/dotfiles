@@ -27,6 +27,145 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-14 - 설치 구조 문서 보강
+
+요약:
+- tmux와 opencode의 설치 원칙을 `doc/architecture.md`로 분리해 모듈 추가 기준을 한곳에 정리했습니다.
+- README와 opencode 문서에서 구조/확장 원칙을 서로 연결해 문서 간 역할을 분리했습니다.
+
+변경 파일:
+- `doc/architecture.md`: 설치 모델, 모듈 형태, 확장 규칙 정리
+- `README.md`: 구조 문서 링크 추가 및 모듈 추가 원칙 보강
+- `doc/opencode.md`: architecture 문서 참조 및 CLI lifecycle 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- 문서 변경만 적용
+
+후속 주의:
+- 새 모듈 추가 시 먼저 architecture 문서 기준으로 file / dependency / hook / external CLI를 분류하면 된다.
+
+## 2026-06-14 - 설치 체인 중복과 순환 의존성 방지
+
+요약:
+- `install.sh`에 현재 설치 체인 추적을 넣어 같은 항목이 같은 실행 안에서 반복 설치되지 않도록 했습니다.
+- dependency 순환이 생기면 탐지하고 중단하도록 보강했습니다.
+
+변경 파일:
+- `install.sh`: install stack / done tracking 추가, 중복 설치와 순환 의존성 방지
+- `HISTORY.md`, `CONVERSATION.md`: 구조 보강 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `git diff --check`: 통과
+
+후속 주의:
+- 앞으로 새 모듈이 dependency를 추가할 때, 순환 경로를 더 쉽게 막을 수 있습니다.
+
+## 2026-06-14 - opencode 단일 선택 자동 설치로 단순화
+
+요약:
+- `opencode`를 한 번 선택하면 config를 갱신하고 CLI가 없을 때만 자동 설치하도록 단순화했습니다.
+- 사용자가 모드를 따로 고르지 않아도 되도록 `config / cli / both` 분기를 제거했습니다.
+
+변경 파일:
+- `install.sh`: opencode 전용 선택 모드 제거, CLI 자동 설치 조건 추가
+- `README.md`, `doc/opencode.md`: 단일 선택 자동 동작 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `git diff --check`: 통과
+
+후속 주의:
+- CLI가 이미 설치되어 있으면 config만 갱신합니다.
+
+## 2026-06-14 - opencode 기본 설치 모드 config only로 조정
+
+요약:
+- `opencode` 설치 시 기본 선택을 `config only`로 바꿨습니다.
+- CLI 설치는 여전히 선택 가능하지만, 엔터 기본값은 설정 파일만 설치하는 쪽이 안전하다고 판단했습니다.
+
+변경 파일:
+- `install.sh`: opencode 설치 모드 기본값을 config only로 변경
+- `README.md`, `doc/opencode.md`: 기본 설치 모드 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `git diff --check`: 통과
+
+후속 주의:
+- CLI를 함께 설치하려면 설치 과정에서 명시적으로 `both`를 선택해야 합니다.
+
+## 2026-06-14 - opencode CLI 공식 설치 스크립트 연동
+
+요약:
+- opencode CLI를 공식 설치 스크립트 `curl -fsSL https://opencode.ai/install | bash`로 설치하도록 방향을 확정했습니다.
+- `install.sh`에서 `opencode` 항목을 선택하면 config only / cli only / both 중 하나를 고를 수 있게 했습니다.
+
+변경 파일:
+- `install.sh`: opencode 전용 설치 모드 프롬프트와 CLI 설치 함수 추가
+- `README.md`, `doc/opencode.md`: 선택형 설치와 공식 CLI 설치 경로 반영
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- 문서/설치 스크립트 변경만 적용
+
+후속 주의:
+- CLI 설치는 네트워크를 사용하므로 오프라인 환경에서는 실패할 수 있습니다.
+
+## 2026-06-14 - opencode personal 설치 항목 추가
+
+요약:
+- opencode personal seed config를 설치 가능한 항목으로 `install.toml`에 연결했습니다.
+- 현재는 `~/.config/opencode/opencode.jsonc`에만 설치하며, work profile과 실행 래퍼는 아직 추가하지 않았습니다.
+
+변경 파일:
+- `install.toml`: `opencode` visible 설치 항목 추가
+- `README.md`: opencode가 설치 목록에 포함된다는 점과 대상 경로 반영
+- `doc/opencode.md`: 현재 상태 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- 문서/매니페스트 변경만 적용
+
+후속 주의:
+- opencode CLI binary 설치는 아직 이 저장소가 책임지지 않습니다.
+
+## 2026-06-14 - opencode seed config 주석 정리
+
+요약:
+- opencode personal seed config의 주석을 정리해 현재 상태와 향후 확장 지점을 더 분명하게 만들었습니다.
+- 기능은 바꾸지 않고, personal-only 시작과 work profile 확장 가능성을 강조했습니다.
+
+변경 파일:
+- `dotfiles/opencode.jsonc`: personal seed config 주석 정리, 확장 지점 명시
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- 문서/주석 정리만 적용
+
+후속 주의:
+- install.toml 연동이나 실행 래퍼는 아직 추가하지 않았습니다.
+
+## 2026-06-14 - opencode 문서 분리
+
+요약:
+- opencode 관련 내용을 README 본문에서 분리하고 별도 문서로 정리하는 방향을 반영했습니다.
+- 현재 상태는 personal-only seed config 중심이며, 향후 work profile과 실행 래퍼를 붙일 수 있도록 구조만 남겼습니다.
+
+변경 파일:
+- `doc/opencode.md`: opencode 현재 상태, 설계 방향, 확장 지점 정리
+- `README.md`: opencode 문서 링크 추가, 현재 구조에 파일 반영
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- 문서 변경만 적용
+
+후속 주의:
+- 실제 설치기 연결은 아직 하지 않았으므로, opencode의 실행/설치 동작은 다음 작업에서 결정해야 합니다.
+
 ## 2026-05-20 - URxvt Ctrl+wheel event mask 추가
 
 요약:

@@ -6,6 +6,7 @@
 다음 에이전트가 작업 맥락을 이어받기 위한 문서는 [AGENTS.md](AGENTS.md)에 정리합니다.
 주요 작업 이력은 [HISTORY.md](HISTORY.md)에 누적합니다.
 주제별 대화 맥락은 [CONVERSATION.md](CONVERSATION.md)에 요약합니다.
+설치 구조와 모듈 추가 원칙은 [doc/architecture.md](doc/architecture.md)에 정리합니다.
 
 ## 빠른 설치
 
@@ -24,6 +25,7 @@ dotfiles/
 ├── install.sh
 ├── install.toml
 ├── dotfiles/
+│   ├── opencode.jsonc
 │   ├── tmux.conf
 │   ├── tmux.zshrc
 │   ├── vimrc
@@ -38,10 +40,20 @@ dotfiles/
 ├── install_dotfiles.sh
 ├── shortcut.md
 └── doc/
+    ├── architecture.md
+    ├── opencode.md
     └── vim.md
 ```
 
 `dotfiles/` 디렉터리에는 실제 배포할 설정 파일을 둡니다. `install.toml`은 어떤 파일을 설치할지, 어디에 설치할지, 필요한 실행파일과 패키지가 무엇인지 정의합니다.
+모듈이 늘어날수록 설치 구조는 [doc/architecture.md](doc/architecture.md)에서 유지합니다.
+
+## opencode
+
+opencode 설정은 [doc/opencode.md](doc/opencode.md)에 별도로 정리합니다.
+현재는 personal-only seed config를 기준으로 두고, `install.toml`에 있는 `opencode` 항목으로 `~/.config/opencode/opencode.jsonc`를 설치합니다.
+설치 후 CLI가 없으면 공식 설치 스크립트로 자동 설치합니다.
+work profile, 실행 래퍼, allowlist 확장 방향은 [doc/opencode.md](doc/opencode.md)와 [doc/architecture.md](doc/architecture.md)에 남겨둡니다.
 
 ## 설치 방식
 
@@ -81,8 +93,9 @@ depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xre
 description = "tmux configuration"
 ```
 
-현재 사용자에게 보이는 enabled 항목은 tmux입니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고 CLI가 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
+새 모듈을 넣을 때는 `file / dependency / post-install / external CLI` 중 어느 형태인지 먼저 분류합니다.
 
 tmux는 `ZDOTDIR="$HOME/.cache/dotfiles"`로 zsh를 실행합니다. 이 전용 `.zshrc`는 짧은 `$ ` 프롬프트를 유지하면서 `compinit`을 로드해 git 자동완성을 사용할 수 있게 합니다.
 
