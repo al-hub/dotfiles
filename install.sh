@@ -195,7 +195,7 @@ record_manifest()
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$name" "$target" "$backup" "$source" >> "$MANIFEST_FILE"
 }
 
-init_from_manifest()
+restore_from_manifest()
 {
     if [ ! -f "$MANIFEST_FILE" ]; then
         log "No manifest found."
@@ -217,7 +217,22 @@ init_from_manifest()
     done
 
     rm -f "$MANIFEST_FILE"
-    log "Install state initialized."
+    log "Install state restored."
+}
+
+clear_install_state()
+{
+    if [ ! -f "$MANIFEST_FILE" ]; then
+        log "No install state found."
+        return
+    fi
+
+    if ! confirm "Forget installed-file tracking without changing files? [y/N]" "n"; then
+        return
+    fi
+
+    rm -f "$MANIFEST_FILE"
+    log "Install state cleared."
 }
 
 # -----------------------------------------------------------------------------
@@ -551,7 +566,7 @@ show_items()
     done < "$ITEMS_FILE"
 
     if [ -f "$MANIFEST_FILE" ]; then
-        printf '\nType init to restore files recorded in %s.\n' "$MANIFEST_FILE"
+        printf '\nType undo to restore files recorded in %s, or clear-state to forget installer state.\n' "$MANIFEST_FILE"
     fi
 }
 
@@ -566,8 +581,11 @@ handle_selection()
         all|All|ALL)
             install_enabled
             ;;
-        init|INIT)
-            init_from_manifest
+        undo|UNDO|rollback|ROLLBACK|init|INIT)
+            restore_from_manifest
+            ;;
+        clear-state|CLEAR-STATE|clear|CLEAR|forget|FORGET)
+            clear_install_state
             ;;
         *)
             normalized="$(printf '%s\n' "$selection" | tr ',' ' ')"
@@ -587,7 +605,7 @@ main()
 
     while true; do
         show_items
-        printf '\nEnter=quit, all=install enabled, numbers=install selected, init=reset installed files, q=quit\n'
+        printf '\nEnter=quit, all=install enabled, numbers=install selected, undo=restore files, clear-state=forget state, q=quit\n'
         read -r -u "$INPUT_FD" -p "Select: " selection || exit 0
         handle_selection "$selection"
     done

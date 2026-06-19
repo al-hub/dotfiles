@@ -27,6 +27,25 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-14 - init 명령을 undo/clear-state로 분리
+
+요약:
+- `init`이라는 넓은 이름 대신, 실제 동작에 맞는 `undo`와 `clear-state`로 설치 초기화 의미를 분리했습니다.
+- `undo`는 manifest 기준으로 파일을 복원/삭제하고 상태를 정리하며, `clear-state`는 파일은 건드리지 않고 manifest 설치 추적 기록만 삭제합니다.
+
+변경 파일:
+- `install.sh`: `init` 처리 분리를 `undo` / `clear-state`로 재정의
+- `README.md`: 사용자용 설치 방식 설명 갱신
+
+검증:
+- `bash -n install.sh`: 통과
+- `git diff --check`: 통과
+- 임시 `HOME`, 기존 manifest 구성, 입력 `clear-state` + `y`: manifest 삭제 및 cached install list 유지 확인
+- 임시 `HOME`, 기존 manifest/backup 구성, 입력 `undo` + `y`: 백업 복원 및 manifest 삭제 확인
+
+후속 주의:
+- 기존 `init`은 호환용 별칭으로 유지했기 때문에, 다음 단계에서 완전히 제거할지 결정할 수 있습니다.
+
 ## 2026-06-14 - opencode 재설치 판정과 installer Enter 동작 수정
 
 요약:

@@ -62,7 +62,8 @@ work profile, 실행 래퍼, allowlist 확장 방향은 [doc/opencode.md](doc/op
 - `Enter`, `q`, `quit`, `exit`: 종료
 - `all`: enabled 항목만 설치
 - `번호`: 선택한 번호만 설치, 예: `1` 또는 `1,3`
-- `init`: manifest에 기록된 설치 파일을 복원하거나 제거
+- `undo`: manifest에 기록된 설치 파일을 복원하고 설치 상태를 정리
+- `clear-state`: 설치 파일은 건드리지 않고 manifest 설치 추적 기록만 삭제
 
 기존 대상 파일이 있고 manifest에 기록된 managed 항목이면 자동으로 백업 후 갱신합니다. 비관리 파일은 덮어쓰기 전에 확인합니다. 백업은 아래 위치에 저장됩니다.
 
