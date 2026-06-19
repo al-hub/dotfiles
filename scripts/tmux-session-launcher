@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SIDEBAR_TITLE="dotfiles-session-sidebar"
+SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
+SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
+BUSY_START_PREFIX="@dotfiles-session-busy-start-"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
 current_session="$(tmux display-message -p '#S')"
 current_path="$(tmux display-message -p '#{pane_current_path}')"
 selected_session="$current_session"
@@ -23,11 +28,156 @@ session_exists()
     tmux has-session -t "=$1" >/dev/null 2>&1
 }
 
+find_sidebar_pane()
+{
+    target="${1:-}"
+
+    if [ -n "$target" ]; then
+        tmux list-panes -t "$target" -F '#{pane_id}	#{pane_title}' 2>/dev/null
+    else
+        tmux list-panes -F '#{pane_id}	#{pane_title}'
+    fi |
+        awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
+}
+
+mark_sidebar_pane()
+{
+    tmux select-pane -T "$SIDEBAR_TITLE" 2>/dev/null || true
+}
+
+current_sidebar_width()
+{
+    sidebar_pane="$(find_sidebar_pane)"
+
+    if [ -n "$sidebar_pane" ]; then
+        tmux display-message -p -t "$sidebar_pane" '#{pane_width}'
+    else
+        tmux show-option -gqv '@dotfiles-session-sidebar-width'
+    fi
+}
+
+sidebar_width()
+{
+    width="$(current_sidebar_width)"
+
+    case "$width" in
+        ''|*[!0-9]*) printf '%s\n' "$SIDEBAR_WIDTH" ;;
+        *) printf '%s\n' "$width" ;;
+    esac
+}
+
+remember_sidebar_width()
+{
+    width="$(current_sidebar_width)"
+
+    case "$width" in
+        ''|*[!0-9]*) return 0 ;;
+        *) tmux set-option -gq '@dotfiles-session-sidebar-width' "$width" ;;
+    esac
+}
+
+open_sidebar()
+{
+    target="${1:-}"
+    refresh="${2:-false}"
+    width="${3:-$(sidebar_width)}"
+    existing_pane="$(find_sidebar_pane "$target")"
+
+    if [ -n "$existing_pane" ]; then
+        tmux resize-pane -t "$existing_pane" -x "$width" 2>/dev/null || true
+        if [ "$refresh" = "true" ]; then
+            tmux respawn-pane -k -t "$existing_pane" "$SCRIPT_PATH --sidebar"
+            tmux select-pane -t "$existing_pane" -T "$SIDEBAR_TITLE"
+        fi
+        tmux select-pane -t "$existing_pane"
+        return 0
+    fi
+
+    if [ -n "$target" ]; then
+        pane_id="$(
+            tmux split-window -t "$target" -h -f -b -l "$width" \
+                -c "$current_path" -P -F '#{pane_id}' "$SCRIPT_PATH --sidebar"
+        )"
+    else
+        pane_id="$(
+            tmux split-window -h -f -b -l "$width" \
+                -c "#{pane_current_path}" -P -F '#{pane_id}' "$SCRIPT_PATH --sidebar"
+        )"
+    fi
+
+    tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
+    tmux select-pane -t "$pane_id"
+}
+
+ensure_session_sidebar()
+{
+    session_name="$1"
+    refresh="${2:-false}"
+    width="${3:-$(sidebar_width)}"
+    open_sidebar "=$session_name:" "$refresh" "$width"
+}
+
+toggle_current_sidebar()
+{
+    existing_pane="$(find_sidebar_pane)"
+
+    if [ -n "$existing_pane" ]; then
+        remember_sidebar_width
+        tmux kill-pane -t "$existing_pane"
+        return 0
+    fi
+
+    open_sidebar
+}
+
+current_pane_is_sidebar()
+{
+    [ "$(tmux display-message -p '#{pane_title}')" = "$SIDEBAR_TITLE" ]
+}
+
+select_work_pane_from_sidebar()
+{
+    current_pane="$(tmux display-message -p '#{pane_id}')"
+
+    tmux select-pane -R 2>/dev/null || true
+    if [ "$(tmux display-message -p '#{pane_id}')" = "$current_pane" ]; then
+        work_pane="$(
+            tmux list-panes -F '#{pane_id}	#{pane_title}' |
+                awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }'
+        )"
+        [ -n "$work_pane" ] && tmux select-pane -t "$work_pane"
+    fi
+}
+
+split_work_pane()
+{
+    direction="$1"
+
+    if current_pane_is_sidebar; then
+        select_work_pane_from_sidebar
+        if current_pane_is_sidebar; then
+            tmux display-message 'No work pane found for split.'
+            return 0
+        fi
+    fi
+
+    case "$direction" in
+        horizontal) tmux split-window -h -c "#{pane_current_path}" ;;
+        vertical) tmux split-window -v -c "#{pane_current_path}" ;;
+    esac
+}
+
 switch_session()
 {
     session_name="$1"
     [ -n "$session_name" ] || return 0
+    remember_sidebar_width
+    width="$(sidebar_width)"
+    ensure_session_sidebar "$session_name" "true" "$width"
     tmux switch-client -t "=$session_name"
+    ensure_session_sidebar "$session_name" "false" "$width"
+    current_session="$session_name"
+    selected_session="$session_name"
 }
 
 prompt_continue()
@@ -49,6 +199,7 @@ new_session()
     fi
 
     tmux new-session -d -s "$session_name" -c "$current_path"
+    ensure_session_sidebar "$session_name"
     selected_session="$session_name"
 }
 
@@ -104,14 +255,114 @@ rename_session()
     fi
 }
 
+is_shell_command()
+{
+    case "$1" in
+        sh|bash|dash|zsh|fish|ksh|mksh|tmux-session-launcher) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+session_is_busy()
+{
+    session_name="$1"
+    now="$(date +%s)"
+    activity="$(tmux display-message -p -t "=$session_name:" '#{session_activity}' 2>/dev/null || printf '0')"
+
+    case "$activity" in
+        ''|*[!0-9]*) activity=0 ;;
+    esac
+
+    if [ $((now - activity)) -gt "$SIDEBAR_BUSY_SECONDS" ]; then
+        return 1
+    fi
+
+    while IFS="$(printf '\t')" read -r pane_session pane_title command_name; do
+        [ "$pane_session" = "$session_name" ] || continue
+        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        if ! is_shell_command "$command_name"; then
+            return 0
+        fi
+    done <<EOF
+$(tmux list-panes -a -F '#{session_name}	#{pane_title}	#{pane_current_command}' 2>/dev/null)
+EOF
+
+    return 1
+}
+
+session_option_key()
+{
+    printf '%s%s\n' "$BUSY_START_PREFIX" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_')"
+}
+
+format_duration()
+{
+    elapsed="$1"
+    days=$((elapsed / 86400))
+    remain=$((elapsed % 86400))
+    hours=$((remain / 3600))
+    remain=$((remain % 3600))
+    minutes=$((remain / 60))
+    seconds=$((remain % 60))
+
+    printf '%d:%02d:%02d:%02d\n' "$days" "$hours" "$minutes" "$seconds"
+}
+
+session_elapsed()
+{
+    session_name="$1"
+    option_key="$(session_option_key "$session_name")"
+
+    if session_is_busy "$session_name"; then
+        now="$(date +%s)"
+        started_at="$(tmux show-option -gqv "$option_key" 2>/dev/null || true)"
+
+        case "$started_at" in
+            ''|*[!0-9]*)
+                started_at="$now"
+                tmux set-option -gq "$option_key" "$started_at"
+                ;;
+        esac
+
+        format_duration "$((now - started_at))"
+    else
+        tmux set-option -gu "$option_key" >/dev/null 2>&1 || true
+        printf '%s\n' ''
+    fi
+}
+
+format_session_name()
+{
+    session_name="$1"
+    display_name="$(printf '%-18.18s' "$session_name")"
+
+    if session_is_busy "$session_name"; then
+        printf '\033[31m%s\033[0m\n' "$display_name"
+    else
+        printf '%s\n' "$display_name"
+    fi
+}
+
 list_sessions()
 {
-    tmux list-sessions -F '#{session_name}	#{session_windows}	#{?session_attached,attached,detached}	#{t:session_created}' |
+    tmux list-sessions -F '#{session_name}' |
         awk -F '\t' -v current="$current_session" '
             {
                 marker = ($1 == current) ? "*" : " "
-                printf "%s\t%s\t%s windows\t%s\t%s\n", $1, marker, $2, $3, $4
+                print $1 "\t" marker
             }
+        ' |
+        while IFS="$(printf '\t')" read -r session_name marker; do
+            printf '%s\t%s %s %s\n' "$session_name" "$marker" "$(format_session_name "$session_name")" "$(session_elapsed "$session_name")"
+        done
+}
+
+selected_position()
+{
+    tmux list-sessions -F '#{session_name}' |
+        awk -v selected="$selected_session" '
+            $0 == selected { print NR; found = 1; exit }
+            END { if (!found) print 1 }
         '
 }
 
@@ -119,6 +370,7 @@ select_session()
 {
     expect_keys="tab,enter"
     header='Enter: switch | Tab: toggle prompt | Esc(exit): close'
+    position="$(selected_position)"
 
     if [ "$prompt_mode" = "Commands" ]; then
         expect_keys="tab,c,d,r,enter"
@@ -127,12 +379,15 @@ select_session()
 
     list_sessions |
         fzf \
+            --ansi \
             --delimiter='\t' \
-            --with-nth=2,1,3,4,5 \
+            --with-nth=2 \
             --prompt="$prompt_mode> " \
             --header="$header" \
             --expect="$expect_keys" \
             --print-query \
+            --sync \
+            --bind="load:pos($position)" \
             --no-clear
 }
 
@@ -228,7 +483,6 @@ run_launcher()
                 fi
             fi
             switch_session "$selected_session"
-            exit 0
             ;;
     esac
 }
@@ -236,7 +490,37 @@ run_launcher()
 main()
 {
     require_command tmux
+
+    case "${1:-}" in
+        --open-sidebar)
+            toggle_current_sidebar
+            return 0
+            ;;
+        --ensure-current-sidebar)
+            open_sidebar
+            return 0
+            ;;
+        --list-sessions)
+            list_sessions
+            return 0
+            ;;
+        --split-horizontal)
+            split_work_pane horizontal
+            return 0
+            ;;
+        --split-vertical)
+            split_work_pane vertical
+            return 0
+            ;;
+        --sidebar|"")
+            ;;
+        *)
+            die "unknown option: $1"
+            ;;
+    esac
+
     require_command fzf
+    mark_sidebar_pane
 
     while true; do
         run_launcher

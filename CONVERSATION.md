@@ -27,6 +27,24 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-20 - v0.2 sidebar follow-up
+
+사용자 요청:
+- 최신 원격 기준으로 리베이스한 뒤 현재 변경을 `v0.2`로 올리되, `v0.2` tag는 아직 만들지 말자고 했습니다.
+- 충돌을 제거하고, sidebar TUI 분리는 다음 버전 refactoring 항목으로 명시해두길 원했습니다.
+
+해석/결정:
+- `origin/master`의 `v0.1` 버전 설치 지원 커밋 위로 현재 sidebar 변경을 얹는 방식으로 정리했습니다.
+- 현재 작업은 `v0.2`로 기록하되, git tag는 생성하지 않고 다음 버전 태스크로 남기기로 했습니다.
+- sidebar TUI 분리는 현재 구현 범위에서 제외하고, 다음 버전 refactoring 메모로 남깁니다.
+
+작업 결과:
+- `git rebase --autostash origin/master`를 적용했고, autostash 충돌을 수동으로 정리하고 있습니다.
+- `CONVERSATION.md`, `HISTORY.md`의 충돌 구간을 정리해 v0.2 작업 노트와 기존 sidebar 기록을 함께 유지합니다.
+
+남은 질문:
+- `v0.2` tag는 다음 릴리스 시점에 만들면 됩니다.
+
 ## 2026-06-19 - 버전 관리 시작
 
 사용자 요청:
@@ -43,6 +61,102 @@
 
 남은 질문:
 - 실제 배포 단계에서 `v0.1` git tag를 생성하고 원격에 push해야 합니다.
+## 2026-06-20 - tmux sidebar blank 회귀
+
+사용자 요청:
+- sidebar가 생성만 되고 내용이 아무것도 표시되지 않는 심각한 버그를 보고했습니다.
+
+해석/결정:
+- 직전 변경 중 fzf `--listen=0`과 background `curl reload(...)` 기반 live reload가 설치/실행 환경에서 list를 비우거나 fzf 표시를 깨뜨릴 가능성이 가장 높다고 판단했습니다.
+- 안정성 우선으로 live reload를 제거하고, sidebar 목록 표시 복구를 우선했습니다.
+
+작업 결과:
+- fzf `--listen`, `--track`, background reload binding을 제거했습니다.
+- 테스트 tmux 서버에서 local launcher를 sidebar pane으로 실행하고 `capture-pane`으로 `* source`, header, prompt가 표시되는 것을 확인했습니다.
+
+남은 질문:
+- 1초 단위 live update를 계속 원하면 fzf reload보다 전용 sidebar TUI로 다시 설계하는 편이 안전합니다.
+
+## 2026-06-20 - tmux sidebar elapsed/live update 방향
+
+사용자 요청:
+- mouse double-click session 선택은 tmux 기본 기능과 꼬일 수 있어 지금은 제거하길 원했습니다.
+- sidebar red 표시 기능을 고도화해 sidebar 정보만으로 session 현황을 파악하고 싶다고 했습니다.
+- sidebar 전체 refresh가 낮은 완성도로 보이므로 필요한 부분만 update되길 원했습니다.
+- column을 하나 더 늘려 running elapsed time을 `DAY:HH:MM:SS` 형식으로 1초마다 갱신하길 원했습니다.
+
+해석/결정:
+- fzf의 row 단위 partial update는 직접 지원되지 않으므로 `--listen`과 `reload(...)`를 사용해 1초마다 list를 갱신하고 `--track`으로 선택 위치를 유지하기로 했습니다.
+- double-click binding은 제거했습니다.
+- busy 상태가 시작되면 tmux global option에 start timestamp를 저장하고, busy가 해제되면 지워 elapsed count를 관리하기로 했습니다.
+
+작업 결과:
+- fzf `double-click:accept` binding을 제거했습니다.
+- session list에 elapsed column과 1초 reload를 추가했습니다.
+- busy start option prefix `@dotfiles-session-busy-start-*`를 추가했습니다.
+
+남은 질문:
+- fzf reload 방식이 여전히 시각적으로 거칠면, 다음 단계는 fzf를 버리고 전용 shell TUI로 바꾸는 방향입니다.
+
+## 2026-06-20 - tmux sidebar 폭/표시 보강
+
+사용자 요청:
+- sidebar 폭을 이동했으면 session을 바꿔도 이동된 창 크기를 유지하길 원했습니다.
+- sidebar 컬럼은 선택 표시와 session name만 있으면 된다고 했습니다.
+- sidebar에서 mouse double-click으로 session 선택/이동이 되길 원했습니다.
+- 어떤 session에서 작은 작업이나 AI CLI 작업이 실행 중이면 session name을 red로 표시하고, 완료되거나 입력 대기처럼 running 상태가 아니면 원래 색으로 돌아오길 원했습니다.
+
+해석/결정:
+- sidebar width는 현재 sidebar pane width를 읽어 tmux global option에 저장하고, target sidebar 생성/재사용 시 적용하기로 했습니다.
+- tmux는 임의 프로그램의 "실행 중"과 "입력 대기"를 정확히 구분하지 못하므로, `session_activity`가 최근이고 `pane_current_command`가 shell이 아닌 경우 red로 표시하는 heuristic을 사용했습니다.
+
+작업 결과:
+- sidebar 폭 기억/복원, compact 2-column 표시, ANSI red session name을 추가했습니다.
+
+남은 질문:
+- red 표시 기준의 seconds threshold는 `TMUX_SESSION_SIDEBAR_BUSY_SECONDS`로 조정할 수 있습니다.
+
+## 2026-06-20 - tmux sidebar 사용성 보강
+
+사용자 요청:
+- 의도한 sidebar 배치는 동작하지만, tmux 시작 시 sidebar는 나오지 않아야 한다고 했습니다.
+- `Ctrl+a s`는 on/off toggle처럼 동작해야 한다고 했습니다.
+- session 선택 후 active window는 바뀌지만 sidebar의 선택 위치가 아래로 내려가며, 선택한 위치가 유지되길 원했습니다.
+- attached/detached 상태가 즉각 업데이트되어야 하고, 컬럼 간격이 너무 넓어 좁히길 원했습니다.
+
+해석/결정:
+- 자동 sidebar 보장 hook은 tmux 시작/외부 session 전환 시 sidebar를 띄울 수 있으므로 제거하기로 했습니다.
+- `Ctrl+a s`는 현재 window에 sidebar가 있으면 닫고, 없으면 여는 toggle로 정했습니다.
+- session 전환 직전 target sidebar pane을 respawn해 list를 새로 읽고, fzf 시작 위치는 마지막 선택 session row로 복원하기로 했습니다.
+
+작업 결과:
+- `client-session-changed` hook을 제거했습니다.
+- launcher에 toggle, compact session list, fzf `load:pos(...)`, session 전환 후 `current_session` 갱신을 추가했습니다.
+- target session에 이미 sidebar가 있으면 session 이동 전에 respawn해 attached/detached 표시를 새로 읽게 했습니다.
+
+남은 질문:
+- 실제 tmux 안에서 선택 row 복원과 attached/detached 갱신 체감을 확인할 수 있습니다.
+
+## 2026-06-19 - tmux session launcher 고정 sidebar 전환
+
+사용자 요청:
+- `Ctrl+a s`는 유지하되, session launcher를 popup이 아니라 tmux 창 왼쪽에 새 창처럼 배치하고 싶다고 했습니다.
+- 전체 tmux window 구조를 유지하고, 탐색기 왼쪽 창 같은 형태를 원했습니다.
+- 상하/좌우 split 상태에서도 sidebar가 제일 왼쪽에 하나만 고정되어야 하며, sidebar focus 상태의 split은 오른쪽 작업 영역만 나누길 원했습니다.
+- 다른 session으로 이동해도 왼쪽 sidebar가 유지되어야 한다고 했습니다.
+
+해석/결정:
+- tmux의 "새 창"은 새 window가 아니라 현재 window 안의 왼쪽 pane으로 해석했습니다.
+- 단순 `split-window -b`가 아니라 `split-window -h -f -b`를 써서 전체 window 높이를 차지하는 왼쪽 sidebar로 만들기로 했습니다.
+- tmux pane은 session/window에 속하므로 전역 단일 물리 pane은 불가능하고, target session/window마다 sidebar를 자동 보장하는 방식으로 결정했습니다.
+
+작업 결과:
+- `Ctrl+a s`는 launcher의 `--open-sidebar` wrapper를 호출하고, 중복 생성 없이 기존 sidebar를 선택하도록 변경했습니다.
+- `Ctrl+a |`, `Ctrl+a _`는 sidebar focus 상태에서 오른쪽 작업 영역만 split하도록 wrapper를 거치게 했습니다.
+- session 이동/생성 시 target session active window에 sidebar를 보장하도록 변경했습니다.
+
+남은 질문:
+- 왼쪽 pane 폭 35 columns가 실제 사용감에 맞는지 확인할 수 있습니다.
 
 ## 2026-06-14 - init 명령 재정의
 

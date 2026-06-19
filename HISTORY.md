@@ -27,6 +27,23 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-20 - v0.2 sidebar follow-up
+
+요약:
+- origin/master의 v0.1 버전 설치 지원 커밋 위로 현재 sidebar 변경을 다시 얹었습니다.
+- 현재 작업은 v0.2로 기록하되, v0.2 git tag는 아직 만들지 않습니다.
+- sidebar TUI 분리는 다음 버전 refactoring 항목으로 남깁니다.
+
+변경 파일:
+- `CONVERSATION.md`, `HISTORY.md`: v0.2 작업 노트와 기존 sidebar 기록 병합
+
+검증:
+- `git rebase --autostash origin/master`: 완료, autostash 충돌만 남김
+
+후속 주의:
+- v0.2 tag는 다음 릴리스에서 생성한다.
+- sidebar TUI split은 이번 릴리스 범위 밖으로 둔다.
+
 ## 2026-06-19 - v0.1 버전 설치 준비
 
 요약:
@@ -37,14 +54,9 @@
 - `install.sh`: 기본 master 설치, `--v`/`--version` 인자 파싱, tag/branch raw URL 계산, 설치 버전 기록 추가
 - `README.md`: 버전 설치 사용법과 배포 시 tag 생성 원칙 추가
 - `doc/architecture.md`: version model 추가
-- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
 
 검증:
 - `bash -n install.sh`: 통과
-- `bash -n scripts/tmux-session-launcher`: 통과
-- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
-- `sh -n get_dotfiles.sh`: 통과
-- `sh -n install_dotfiles.sh`: 통과
 - `bash install.sh --help`: 통과
 - `printf '\n' | STATE_DIR=/tmp/dotfiles-version-default REPO_RAW_URL=file:///home/al-hub/workspace/dotfiles-tmp bash install.sh`: 통과, version `master` 확인
 - `printf '\n' | STATE_DIR=/tmp/dotfiles-version-v01 REPO_RAW_URL=file:///home/al-hub/workspace/dotfiles-tmp bash install.sh --v v0.1`: 통과, version `v0.1` 확인
@@ -53,7 +65,141 @@
 - `tmux -L codex-dotfiles-test kill-server`: 통과
 
 후속 주의:
-- 실제 `v0.1` 배포를 완료하려면 이 변경이 포함된 커밋에 `v0.1` git tag를 만들어 push해야 합니다.
+- `v0.1`는 기준 태그로 유지하고, 이후 릴리스 버전은 별도 항목으로 관리합니다.
+
+## 2026-06-20 - tmux sidebar blank 회귀 수정
+
+요약:
+- sidebar pane은 생성되지만 내용이 표시되지 않는 회귀를 수정했습니다.
+- 원인은 fzf `--listen` + background `curl reload(...)` 기반 1초 갱신 경로로 판단해 해당 live reload binding을 제거했습니다.
+- double-click binding 제거는 유지하고, session 목록 자체는 다시 안정적으로 표시되도록 복구했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: fzf `--listen`, `--track`, background reload binding 제거
+- `README.md`: elapsed time의 1초 자동 갱신 표현 제거
+- `HISTORY.md`, `CONVERSATION.md`: blank 회귀와 복구 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- 테스트 tmux 서버에서 local launcher를 sidebar pane으로 실행 후 `capture-pane`: `* source`, header, `Commands>` prompt 표시 확인
+
+후속 주의:
+- fzf 기반으로 row-level partial update는 어렵습니다. 1초 단위 live update가 꼭 필요하면 fzf reload 방식 재시도보다 전용 sidebar TUI로 분리하는 편이 안전합니다.
+
+## 2026-06-20 - tmux sidebar elapsed 표시와 live reload 추가
+
+요약:
+- mouse double-click session 선택 바인딩을 제거했습니다.
+- sidebar 목록에 running elapsed column을 추가하고 `DAY:HH:MM:SS` 형식으로 표시합니다.
+- fzf listen/reload를 사용해 sidebar 목록을 1초마다 갱신하려 했으나, 이후 blank 회귀 때문에 제거했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: fzf double-click binding 제거, elapsed time tracking, 1초 reload, busy start option 추가
+- `README.md`: double-click 설명 제거, elapsed/live update 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `printf 'a\nb\n' | fzf --ansi --sync --track --listen=0 --bind='load:pos(2)' ... --filter=''`: fzf listen/reload option 수용 확인
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d -s source`: 통과
+- 테스트 서버에서 `tmux run-shell '... --list-sessions > /tmp/...'`: 선택 표시, session name, elapsed column 출력 확인
+- 테스트 서버에서 `busy` session에 `yes >/dev/null` 실행 후 `--list-sessions`: session name ANSI red, elapsed `0:00:00:00` 출력 확인
+
+후속 주의:
+- fzf는 row 단위 partial update API를 제공하지 않으므로 내부적으로는 `reload(...)`로 list를 갱신합니다. `--track`으로 선택 위치를 유지해 전체 재시작보다 덜 거칠게 보이도록 했습니다.
+- red/elapsed 표시는 `session_activity`와 `pane_current_command` 기반 heuristic입니다.
+
+## 2026-06-20 - tmux sidebar 폭 유지와 session activity 표시
+
+요약:
+- 사용자가 조정한 sidebar 폭을 저장해 session 이동 후 target sidebar에도 같은 폭을 적용합니다.
+- sidebar 목록을 선택 표시와 session name 두 컬럼으로 줄였습니다.
+- 최근 activity가 있고 foreground command가 shell이 아닌 session은 red로 표시하도록 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: sidebar width 기억/복원, compact list, ANSI red busy 표시 추가
+- `README.md`: sidebar 폭 유지, red activity 표시 설명 추가
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `printf 'a\nb\n' | fzf --ansi --sync --bind='load:pos(2)' --filter=''`: fzf option 수용 확인
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d -s source`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: `--open-sidebar` 바인딩 확인
+- 테스트 서버에서 local launcher `--open-sidebar`: width 35 sidebar 생성 확인
+- 테스트 서버에서 sidebar를 42 columns로 resize 후 toggle close: `@dotfiles-session-sidebar-width=42` 저장 확인
+- 테스트 서버에서 다시 `--open-sidebar`: width 42 sidebar 재생성 확인
+
+후속 주의:
+- red 표시는 tmux가 제공하는 `session_activity`와 `pane_current_command` 기반 heuristic입니다. 프로그램이 조용히 오래 실행되거나 입력 대기 중인 상태를 완벽하게 구분하지는 않습니다.
+
+## 2026-06-20 - tmux sidebar toggle과 list 갱신 보강
+
+요약:
+- tmux 시작 시 sidebar가 자동으로 열리지 않도록 session-changed hook을 제거했습니다.
+- `Ctrl+a s`를 sidebar on/off toggle로 바꾸고, session 전환 시 선택 row와 attached/detached 표시가 새로 반영되도록 보강했습니다.
+- sidebar session list의 컬럼 표시를 좁게 줄였습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `client-session-changed` hook 제거, `Ctrl+a s`는 toggle wrapper 유지
+- `scripts/tmux-session-launcher`: sidebar toggle, target sidebar respawn refresh, current session 상태 갱신, fzf 시작 위치 복원, compact list 출력 추가
+- `README.md`: sidebar toggle과 시작 시 비표시 동작 설명 추가
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- 시작 직후 `tmux -L codex-dotfiles-test list-panes`: sidebar 없이 기본 pane 1개 확인
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: `--open-sidebar` 바인딩 확인
+- `tmux -L codex-dotfiles-test show-hooks -g client-session-changed`: hook 제거 확인
+- local launcher `--open-sidebar` 1회 실행: 왼쪽 sidebar 생성 확인
+- local launcher `--open-sidebar` 2회 실행: sidebar 제거 확인
+- `printf 'a\nb\n' | fzf --sync --bind='load:pos(2)' --filter=''`: fzf `load:pos(...)` 구문 수용 확인
+
+후속 주의:
+- 실제 interactive fzf에서 선택 row 복원과 attached/detached 즉시 갱신 체감은 사용자가 tmux 안에서 확인해야 합니다.
+
+## 2026-06-19 - tmux session launcher를 고정 sidebar로 변경
+
+요약:
+- `Ctrl+a s` session launcher를 tmux popup 대신 현재 window의 제일 왼쪽 고정 sidebar pane으로 열도록 변경했습니다.
+- 상하/좌우 split 상태에서도 sidebar는 전체 높이를 차지하는 왼쪽 pane 하나로 유지하고, 중복 생성을 막습니다.
+- sidebar에 포커스가 있을 때 split 키를 누르면 sidebar가 아니라 오른쪽 작업 영역을 나누도록 했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `Ctrl+a s`, `Ctrl+a |`, `Ctrl+a _`, session changed hook을 launcher wrapper로 연결
+- `scripts/tmux-session-launcher`: sidebar 탐지/생성, 중복 방지, target session sidebar 보장, 작업 영역 split wrapper 추가
+- `README.md`: session launcher 설명을 popup에서 고정 sidebar 동작으로 갱신
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test list-keys -T prefix s`: `--open-sidebar` 바인딩 확인
+- `tmux -L codex-dotfiles-test list-keys -T prefix \|`: `--split-horizontal` 바인딩 확인
+- `tmux -L codex-dotfiles-test list-keys -T prefix _`: `--split-vertical` 바인딩 확인
+- `tmux -L codex-dotfiles-test show-hooks -g client-session-changed`: sidebar 보장 hook 확인
+- 테스트 서버에서 local launcher `--open-sidebar` 2회 실행: sidebar 1개만 유지 확인
+- 테스트 서버에서 sidebar focus 후 `--split-horizontal`, `--split-vertical`: 오른쪽 작업 영역만 split되는 layout 확인
+- `tmux split-window -t =codex-target-test: -h -f -b -l 35 ...`: target session sidebar 생성에 쓰는 target 형식 확인
+
+후속 주의:
+- tmux pane은 session/window에 속하므로 서버 전체의 단일 물리 pane은 불가능합니다. 대신 이동한 target session/window마다 sidebar를 자동 보장합니다.
+- 실제 tmux에서 왼쪽 pane 폭 35 columns가 충분한지 확인하고 조정할 수 있습니다.
 
 ## 2026-06-14 - init 명령을 undo/clear-state로 분리
 

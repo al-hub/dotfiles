@@ -142,7 +142,9 @@ xrdb -merge ~/.Xresources
 
 ## tmux session launcher
 
-tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립니다.
+tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session launcher sidebar가 열립니다.
+`Ctrl+a s`는 toggle로 동작하므로, sidebar가 이미 열려 있으면 닫고 없으면 엽니다. tmux 시작 시 sidebar는 자동으로 열리지 않습니다.
+상하/좌우로 나뉜 window에서도 sidebar는 전체 높이를 차지하는 왼쪽 pane 하나로 유지됩니다.
 
 - `Enter`: 선택한 session으로 이동
 - `Tab`: `Commands>` / `Sessions>` prompt 전환
@@ -154,6 +156,9 @@ tmux 안에서 `Ctrl+a s`를 누르면 popup 기반 session launcher가 열립�
 `c`, `d`, `r`은 `Commands>` prompt에서만 명령으로 동작합니다. `Sessions>` prompt에서는 session 검색 입력으로 처리됩니다.
 `Commands>`에서 `create`/`new`, `delete`/`remove`, `rename`, `q`/`quit`/`exit`를 입력하고 `Enter`로 실행할 수도 있습니다. `Commands>`에서 query를 입력한 뒤 `Enter`를 누르면 session row가 보여도 command로만 해석되며, 알 수 없는 명령은 launcher를 닫지 않고 오류만 보여준 뒤 prompt로 돌아갑니다. session 검색 후 이동은 `Sessions>` prompt를 사용해야 합니다.
 내부적으로는 `fzf --print-query --expect` 출력의 첫 줄을 query, 둘째 줄을 pressed key로 해석합니다. 이 순서가 바뀌면 `Commands>`의 단축키 입력이 session 이름으로 잘못 해석되어 launcher가 종료될 수 있습니다.
+sidebar에 포커스가 있을 때 `Ctrl+a |` 또는 `Ctrl+a _`로 pane을 나누면 sidebar가 아니라 오른쪽 작업 영역이 나뉩니다. sidebar에서 다른 session으로 이동하면 target session의 active window에 sidebar를 보장합니다.
+sidebar 폭을 직접 조정한 뒤 session을 이동하면, target session의 sidebar도 같은 폭으로 맞춥니다.
+session 목록은 선택 표시, session 이름, running elapsed time을 보여줍니다. 최근 activity가 있고 foreground command가 shell이 아닌 session은 이름을 red로 표시하고, elapsed time은 `DAY:HH:MM:SS` 형식으로 표시합니다.
 
 이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.
 
