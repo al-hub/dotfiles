@@ -27,6 +27,34 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-19 - v0.1 버전 설치 준비
+
+요약:
+- dotfiles 설치 흐름을 `v0.1`부터 tag 기반 버전으로 관리할 수 있게 했습니다.
+- 인자 없는 기본 설치는 master 최신 기준으로 두고, `install.sh --v v0.1`, `install.sh --version v0.1`, 또는 `DOTFILES_VERSION=v0.1`로 특정 버전을 설치할 수 있게 했습니다.
+
+변경 파일:
+- `install.sh`: 기본 master 설치, `--v`/`--version` 인자 파싱, tag/branch raw URL 계산, 설치 버전 기록 추가
+- `README.md`: 버전 설치 사용법과 배포 시 tag 생성 원칙 추가
+- `doc/architecture.md`: version model 추가
+- `HISTORY.md`, `CONVERSATION.md`: 작업 맥락 기록
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `bash install.sh --help`: 통과
+- `printf '\n' | STATE_DIR=/tmp/dotfiles-version-default REPO_RAW_URL=file:///home/al-hub/workspace/dotfiles-tmp bash install.sh`: 통과, version `master` 확인
+- `printf '\n' | STATE_DIR=/tmp/dotfiles-version-v01 REPO_RAW_URL=file:///home/al-hub/workspace/dotfiles-tmp bash install.sh --v v0.1`: 통과, version `v0.1` 확인
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- 실제 `v0.1` 배포를 완료하려면 이 변경이 포함된 커밋에 `v0.1` git tag를 만들어 push해야 합니다.
+
 ## 2026-06-14 - init 명령을 undo/clear-state로 분리
 
 요약:

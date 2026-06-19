@@ -9,6 +9,15 @@
 - hidden 항목은 목록에서 숨기지만 dependency로는 설치될 수 있다.
 - managed 항목은 재설치 시 기존 파일을 백업하고 갱신한다.
 
+## Version Model
+
+- 현재 안정 설치 버전은 `v0.1`이다.
+- 인자를 주지 않은 `install.sh`는 GitHub raw URL을 `refs/heads/master` 기준으로 계산한다.
+- `install.sh --v v0.1` 또는 `install.sh --version v0.1`은 GitHub raw URL을 `refs/tags/v0.1` 기준으로 계산한다.
+- `install.sh --latest`는 명시적으로 `master` branch 기준으로 설치한다.
+- `REPO_RAW_URL`이나 `INSTALL_TOML_URL`을 직접 지정하면 테스트용 raw URL을 강제로 사용할 수 있다.
+- 새 버전을 배포할 때는 버전 문자열만 바꾸는 것으로 끝내지 말고, 해당 커밋에 같은 이름의 git tag를 만들어야 한다.
+
 ## Module Shapes
 
 - file module

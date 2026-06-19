@@ -16,7 +16,29 @@ Debian 또는 Ubuntu 계열 PC에서 아래 명령으로 실행합니다.
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash
 ```
 
-`install.sh`는 `install.toml`을 내려받아 설치 가능한 전체 항목을 보여주고, 사용자가 선택한 항목만 설치합니다.
+`install.sh`는 기본적으로 master branch의 최신 `install.toml`을 내려받아 설치 가능한 전체 항목을 보여주고, 사용자가 선택한 항목만 설치합니다.
+
+## 버전 설치
+
+이 저장소는 `v0.1`부터 tag 기반 버전 설치를 지원합니다. 특정 버전을 명시하려면 아래처럼 실행합니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --v v0.1
+```
+
+환경변수로도 버전을 지정할 수 있습니다.
+
+```sh
+DOTFILES_VERSION=v0.1 bash install.sh
+```
+
+명시적으로 최신 master 기준 설치를 요청하려면 아래 옵션을 사용할 수 있습니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
+```
+
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 새 버전을 배포할 때는 해당 커밋에 `v0.2` 같은 git tag를 만들고, 사용자가 `--v v0.2`로 설치할 수 있게 합니다.
 
 ## 현재 구조
 

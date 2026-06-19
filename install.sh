@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_RAW_URL="${REPO_RAW_URL:-https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master}"
-INSTALL_TOML_URL="${INSTALL_TOML_URL:-$REPO_RAW_URL/install.toml}"
+DOTFILES_STABLE_VERSION="v0.1"
+DOTFILES_VERSION="${DOTFILES_VERSION:-master}"
+REPO_RAW_BASE_URL="${REPO_RAW_BASE_URL:-https://raw.githubusercontent.com/al-hub/dotfiles}"
+REPO_RAW_URL="${REPO_RAW_URL:-}"
+INSTALL_TOML_URL="${INSTALL_TOML_URL:-}"
 STATE_DIR="${STATE_DIR:-$HOME/.dotfiles-install}"
 BACKUP_DIR="$STATE_DIR/backups"
 MANIFEST_FILE="$STATE_DIR/manifest.tsv"
@@ -17,6 +20,83 @@ INPUT_FD=0
 
 log() { printf '[dotfiles] %s\n' "$*"; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+usage()
+{
+    cat <<EOF
+Usage: install.sh [--v VERSION] [--latest]
+
+Options:
+      --v VERSION        Install a tagged version, for example $DOTFILES_STABLE_VERSION.
+  -v, --version VERSION  Alias for --v.
+      --latest           Install from the master branch. This is the default.
+  -h, --help             Show this help.
+
+Environment:
+  DOTFILES_VERSION       Version or branch to install when --v is not provided.
+  REPO_RAW_URL           Override the raw file base URL.
+  INSTALL_TOML_URL       Override the install.toml URL.
+EOF
+}
+
+repo_raw_url_for_version()
+{
+    case "$1" in
+        latest|master)
+            printf '%s/refs/heads/master\n' "$REPO_RAW_BASE_URL"
+            ;;
+        main)
+            printf '%s/refs/heads/main\n' "$REPO_RAW_BASE_URL"
+            ;;
+        *)
+            printf '%s/refs/tags/%s\n' "$REPO_RAW_BASE_URL" "$1"
+            ;;
+    esac
+}
+
+parse_args()
+{
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --v|-v|--version)
+                if [ "$#" -lt 2 ]; then
+                    log "$1 requires a version argument."
+                    exit 1
+                fi
+                DOTFILES_VERSION="$2"
+                shift 2
+                ;;
+            --version=*)
+                DOTFILES_VERSION="${1#*=}"
+                shift
+                ;;
+            --latest)
+                DOTFILES_VERSION="master"
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                log "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+}
+
+setup_urls()
+{
+    if [ -z "$REPO_RAW_URL" ]; then
+        REPO_RAW_URL="$(repo_raw_url_for_version "$DOTFILES_VERSION")"
+    fi
+
+    if [ -z "$INSTALL_TOML_URL" ]; then
+        INSTALL_TOML_URL="$REPO_RAW_URL/install.toml"
+    fi
+}
 
 opencode_cli_exists()
 {
@@ -37,8 +117,8 @@ setup_input()
 {
     input_file="${DOTFILES_INPUT:-/dev/tty}"
 
-    if [ -r "$input_file" ]; then
-        exec 3< "$input_file"
+    if [ -r "$input_file" ] && { exec 3< "$input_file"; } 2>/dev/null; then
+        :
     else
         exec 3<&0
     fi
@@ -168,9 +248,11 @@ load_config()
     ITEMS_FILE="$(mktemp)"
     trap 'rm -f "$CONFIG_FILE" "$ITEMS_FILE"' EXIT
 
+    log "Using dotfiles version: $DOTFILES_VERSION"
     log "Loading install list from $INSTALL_TOML_URL"
     download_file "$INSTALL_TOML_URL" "$CONFIG_FILE"
     cp "$CONFIG_FILE" "$STATE_DIR/install.toml"
+    printf '%s\n' "$DOTFILES_VERSION" > "$STATE_DIR/version"
     parse_install_toml
 }
 
@@ -601,6 +683,9 @@ handle_selection()
 
 main()
 {
+    parse_args "$@"
+    setup_input
+    setup_urls
     load_config
 
     while true; do
@@ -611,5 +696,4 @@ main()
     done
 }
 
-setup_input
 main "$@"
