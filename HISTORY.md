@@ -27,6 +27,23 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - current session delete archive 중 sidebar만 닫히는 버그 수정
+
+요약:
+- sidebar가 열린 current session에서 split 후 `d` -> `y` 삭제 시, archive 과정에서 sidebar pane이 먼저 닫혀 session kill까지 진행되지 않던 문제를 수정했습니다.
+- current session을 history 저장하며 삭제할 때는 tmux `run-shell -b` 독립 프로세스가 archive와 session/server kill을 이어서 처리하게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: current session archive-delete를 background command로 분리
+- `HISTORY.md`, `CONVERSATION.md`: bugfix 기록
+
+검증:
+- isolated tmux 서버에서 sidebar + split work pane 상태의 current session을 archive-delete 후 fallback session만 남는 것 확인
+- isolated tmux 서버에서 마지막 session을 archive-delete 후 tmux server가 종료되는 것 확인
+
+후속 주의:
+- current session 삭제의 `Enter` no-history 경로는 기존 직접 kill 흐름을 유지합니다.
+
 ## 2026-06-20 - sidebar history restore layout 복원 수정
 
 요약:

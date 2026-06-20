@@ -1034,6 +1034,42 @@ fallback_session()
         awk -v deleting="$deleting" '$0 != deleting { print; exit }'
 }
 
+shell_quote()
+{
+    printf '%q' "$1"
+}
+
+delete_session_after_archive()
+{
+    session_name="$1"
+    should_archive="${2:-false}"
+
+    session_exists "$session_name" || return 0
+
+    if [ "$should_archive" = "true" ]; then
+        archive_session "$session_name" >/dev/null || true
+    fi
+
+    next_session="$(fallback_session "$session_name")"
+    if [ -n "$next_session" ]; then
+        tmux switch-client -t "=$next_session" 2>/dev/null || true
+        tmux kill-session -t "=$session_name" 2>/dev/null || true
+    else
+        tmux kill-server
+    fi
+}
+
+run_current_session_delete()
+{
+    session_name="$1"
+    should_archive="$2"
+    quoted_script="$(shell_quote "$SCRIPT_PATH")"
+    quoted_session="$(shell_quote "$session_name")"
+    quoted_archive="$(shell_quote "$should_archive")"
+
+    tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive"
+}
+
 archive_selected_indices()
 {
     selected_any=false
@@ -1223,17 +1259,11 @@ tui_delete_session()
 
     case "$answer" in
         [Yy]|[Yy][Ee][Ss])
-            archive_session "$selected_session" >/dev/null || true
             if [ "$selected_session" = "$current_session" ]; then
-                next_session="$(fallback_session "$selected_session")"
-                if [ -n "$next_session" ]; then
-                    tmux switch-client -t "=$next_session" 2>/dev/null || true
-                    tmux kill-session -t "=$selected_session"
-                    exit 0
-                fi
-                tmux kill-server
+                run_current_session_delete "$selected_session" true
                 exit 0
             else
+                archive_session "$selected_session" >/dev/null || true
                 tmux kill-session -t "=$selected_session"
                 selected_session="$current_session"
             fi
@@ -1545,6 +1575,10 @@ main()
             ;;
         --mouse-select)
             handle_mouse_select "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+            return 0
+            ;;
+        --delete-session-after-archive)
+            delete_session_after_archive "${2:-}" "${3:-false}"
             return 0
             ;;
         --sidebar|"")

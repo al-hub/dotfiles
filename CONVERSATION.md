@@ -27,6 +27,22 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - current session delete archive 중 sidebar만 닫힘
+
+사용자 요청:
+- sidebar를 열고 split으로 pane이 생성된 뒤 `delete -> y`를 누르면 session 전체가 닫히지 않고 sidebar만 닫히는 경우가 있다고 보고했습니다.
+
+해석/결정:
+- `d` -> `y` 경로는 session kill 전에 `archive_session`을 먼저 실행합니다. archive가 sidebar-free layout을 얻으려고 sidebar pane을 kill할 수 있고, 그 pane이 현재 TUI 자신이면 스크립트가 종료되어 후속 `kill-session`까지 가지 못한다고 판단했습니다.
+- current session을 history 저장하며 삭제하는 경우에는 tmux `run-shell -b`로 archive와 kill을 독립 프로세스에 맡기도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `--delete-session-after-archive` 내부 명령과 current session delete enqueue 경로를 추가했습니다.
+- fallback session이 있는 경우 target session만 삭제되고, 마지막 session인 경우 archive 후 server 종료되는 것을 확인했습니다.
+
+남은 질문:
+- no-history 삭제 경로는 archive가 없으므로 기존 직접 kill 흐름을 유지합니다.
+
 ## 2026-06-20 - sidebar history restore layout 복원
 
 사용자 요청:
