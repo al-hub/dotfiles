@@ -849,6 +849,20 @@ append_archive_history()
     awk -F '\t' '$1 == "history" { sub(/^[^\t]*\t/, ""); print }' "$archive_path" >> "$history_file"
 }
 
+clear_restored_work_panes()
+{
+    session_name="$1"
+
+    while IFS="$(printf '\t')" read -r pane_session pane_id pane_title; do
+        [ "$pane_session" = "$session_name" ] || continue
+        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        tmux send-keys -t "$pane_id" C-l 2>/dev/null || true
+        tmux clear-history -t "$pane_id" 2>/dev/null || true
+    done <<EOF
+$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}' 2>/dev/null)
+EOF
+}
+
 archive_session()
 {
     session_name="$1"
@@ -996,6 +1010,8 @@ restore_archive()
     [ -n "$active_window" ] && tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1 || true
     selected_session="$restore_name"
     switch_session "$restore_name"
+    sleep 0.1
+    clear_restored_work_panes "$restore_name"
 }
 
 restore_selected_archives()

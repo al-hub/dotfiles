@@ -27,6 +27,21 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-20 - sidebar history restore prompt 잔상
+
+사용자 요청:
+- 수동 split의 `%` 문제는 해결됐지만, sidebar에서 session history를 복원하면 각 pane 상단에 `%`와 줄바꿈된 `$` prompt가 보인다고 보고했습니다.
+
+해석/결정:
+- split 자체가 아니라 history restore가 여러 새 shell pane을 만든 뒤 layout/sidebar를 붙이는 과정에서 초기 zsh prompt 잔상이 남는 화면 artifact로 판단했습니다.
+- 복원된 session의 sidebar가 아닌 work pane에만 restore 직후 `C-l`과 `clear-history`를 적용해 화면과 scrollback 잔상을 정리하도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 restored work pane clear helper를 추가했습니다.
+
+남은 질문:
+- 실제 사용자 환경에서 오래 걸리는 shell init이 있으면 clear 지연 시간을 조정할 수 있습니다.
+
 ## 2026-06-20 - sidebar split 경로 회귀 수정
 
 사용자 요청:

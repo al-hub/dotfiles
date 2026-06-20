@@ -27,6 +27,25 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-20 - sidebar history restore prompt 잔상 수정
+
+요약:
+- sidebar history에서 session을 복원할 때 새 work pane 상단에 zsh 기본 `%` prompt가 남는 화면 잔상을 제거했습니다.
+- 복원 완료 후 sidebar pane은 제외하고 restored session의 work pane들에만 `C-l`과 `clear-history`를 적용해 초기 prompt artifact를 지우도록 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: restored work pane clear helper 추가 및 restore 완료 후 호출
+- `HISTORY.md`, `CONVERSATION.md`: bugfix 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- isolated tmux 서버에서 3-pane session archive/restore 후 각 restored pane의 visible capture가 `%` 없이 `$`만 표시됨을 확인
+- restored pane scrollback 근처 capture에서도 `%` 잔상이 제거됨을 확인
+
+후속 주의:
+- 복원은 여전히 실행 중이던 process 자체를 되살리지 않고, 새 shell pane과 cwd/layout/history metadata를 재생성합니다.
+
 ## 2026-06-20 - sidebar split 경로 표시 회귀 수정
 
 요약:
