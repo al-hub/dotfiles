@@ -4,12 +4,33 @@ set -euo pipefail
 SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
-BUSY_START_PREFIX="@dotfiles-session-busy-start-"
+HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
+WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
+WORK_PANE_COMMAND="${TMUX_SESSION_WORK_PANE_COMMAND:-exec env ZDOTDIR=\"$HOME/.cache/dotfiles\" DOTFILES_TMUX_CLEAR_ON_START=1 PROMPT=\"\$ \" PS1=\"\$ \" /bin/zsh}"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
+SELF_PANE="${TMUX_PANE:-}"
 current_session="$(tmux display-message -p '#S')"
 current_path="$(tmux display-message -p '#{pane_current_path}')"
 selected_session="$current_session"
-prompt_mode="Commands"
+
+declare -a session_names=()
+declare -a session_created=()
+declare -a session_status=()
+declare -a history_files=()
+declare -a history_titles=()
+declare -a history_checked=()
+snapshot_signature=""
+history_signature=""
+selected_index=0
+history_index=0
+scroll_offset=0
+history_scroll_offset=0
+last_width=0
+last_height=0
+stty_state=""
+prompt_result=""
+prompt_cancelled=false
+view_mode="sessions"
 
 die()
 {
@@ -38,6 +59,87 @@ find_sidebar_pane()
         tmux list-panes -F '#{pane_id}	#{pane_title}'
     fi |
         awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
+}
+
+window_target()
+{
+    target="${1:-}"
+
+    if [ -n "$target" ]; then
+        tmux display-message -p -t "$target" '#{window_id}' 2>/dev/null || true
+    else
+        tmux display-message -p '#{window_id}' 2>/dev/null || true
+    fi
+}
+
+save_work_layout()
+{
+    target="${1:-}"
+    window_id="$(window_target "$target")"
+    [ -n "$window_id" ] || return 0
+
+    layout="$(tmux display-message -p -t "$window_id" '#{window_layout}' 2>/dev/null || true)"
+    [ -n "$layout" ] || return 0
+
+    tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_OPTION" "$layout" 2>/dev/null || true
+}
+
+restore_work_layout()
+{
+    target="${1:-}"
+    window_id="$(window_target "$target")"
+    [ -n "$window_id" ] || return 0
+
+    layout="$(tmux show-option -wqv -t "$window_id" "$WORK_LAYOUT_OPTION" 2>/dev/null || true)"
+    [ -n "$layout" ] || return 0
+
+    tmux select-layout -t "$window_id" "$layout" >/dev/null 2>&1 || true
+}
+
+current_work_layout()
+{
+    target="$1"
+    layout="$(tmux show-option -wqv -t "$target" "$WORK_LAYOUT_OPTION" 2>/dev/null || true)"
+
+    if [ -n "$layout" ]; then
+        printf '%s\n' "$layout"
+    else
+        tmux display-message -p -t "$target" '#{window_layout}' 2>/dev/null || true
+    fi
+}
+
+list_window_panes()
+{
+    target="$1"
+    tmux list-panes -t "$target" -F '#{pane_id}' 2>/dev/null || true
+}
+
+new_pane_from_snapshot()
+{
+    before="$1"
+    target="$2"
+
+    list_window_panes "$target" |
+        awk -v before="$before" '
+            BEGIN {
+                split(before, panes, "\n")
+                for (i in panes) {
+                    if (panes[i] != "") seen[panes[i]] = 1
+                }
+            }
+            !($0 in seen) { print; exit }
+        '
+}
+
+target_pane_path()
+{
+    target="${1:-}"
+
+    if [ -n "$target" ]; then
+        tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null || printf '%s\n' "$current_path"
+    else
+        tmux display-message -p '#{pane_current_path}' 2>/dev/null || printf '%s\n' "$current_path"
+    fi
 }
 
 mark_sidebar_pane()
@@ -81,6 +183,7 @@ open_sidebar()
     target="${1:-}"
     refresh="${2:-false}"
     width="${3:-$(sidebar_width)}"
+    pane_path="${4:-}"
     existing_pane="$(find_sidebar_pane "$target")"
 
     if [ -n "$existing_pane" ]; then
@@ -93,20 +196,26 @@ open_sidebar()
         return 0
     fi
 
+    save_work_layout "$target"
+
+    target_window="$(window_target "$target")"
+    before_panes="$(list_window_panes "$target_window")"
+
     if [ -n "$target" ]; then
-        pane_id="$(
-            tmux split-window -t "$target" -h -f -b -l "$width" \
-                -c "$current_path" -P -F '#{pane_id}' "$SCRIPT_PATH --sidebar"
-        )"
+        [ -n "$pane_path" ] || pane_path="$(target_pane_path "$target")"
+        tmux split-window -t "$target" -h -f -b -l "$width" \
+            -c "$pane_path" "$SCRIPT_PATH --sidebar"
     else
-        pane_id="$(
-            tmux split-window -h -f -b -l "$width" \
-                -c "#{pane_current_path}" -P -F '#{pane_id}' "$SCRIPT_PATH --sidebar"
-        )"
+        [ -n "$pane_path" ] || pane_path="$current_path"
+        tmux split-window -h -f -b -l "$width" \
+            -c "$pane_path" "$SCRIPT_PATH --sidebar"
     fi
 
-    tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
-    tmux select-pane -t "$pane_id"
+    pane_id="$(new_pane_from_snapshot "$before_panes" "$target_window")"
+    if [ -n "$pane_id" ]; then
+        tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
+        tmux select-pane -t "$pane_id"
+    fi
 }
 
 ensure_session_sidebar()
@@ -123,7 +232,9 @@ toggle_current_sidebar()
 
     if [ -n "$existing_pane" ]; then
         remember_sidebar_width
+        target_window="$(window_target "$existing_pane")"
         tmux kill-pane -t "$existing_pane"
+        restore_work_layout "$target_window"
         return 0
     fi
 
@@ -152,6 +263,12 @@ select_work_pane_from_sidebar()
 split_work_pane()
 {
     direction="$1"
+    sidebar_pane="$(find_sidebar_pane)"
+    target_window=""
+    width=""
+    work_path=""
+    current_pane_id="$(tmux display-message -p '#{pane_id}')"
+    sidebar_is_current=false
 
     if current_pane_is_sidebar; then
         select_work_pane_from_sidebar
@@ -159,12 +276,31 @@ split_work_pane()
             tmux display-message 'No work pane found for split.'
             return 0
         fi
+        sidebar_is_current=true
+    fi
+
+    work_path="$(target_pane_path)"
+
+    if [ -n "$sidebar_pane" ] && [ "$sidebar_is_current" = "false" ] && [ "$current_pane_id" != "$sidebar_pane" ]; then
+        target_window="$(window_target "$sidebar_pane")"
+        remember_sidebar_width
+        width="$(sidebar_width)"
+        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
+        restore_work_layout "$target_window"
     fi
 
     case "$direction" in
-        horizontal) tmux split-window -h -c "#{pane_current_path}" ;;
-        vertical) tmux split-window -v -c "#{pane_current_path}" ;;
+        horizontal) tmux split-window -h -c "$work_path" "$WORK_PANE_COMMAND" ;;
+        vertical) tmux split-window -v -c "$work_path" "$WORK_PANE_COMMAND" ;;
     esac
+    if [ -n "$sidebar_pane" ] && [ "$sidebar_is_current" = "false" ] && [ "$current_pane_id" != "$sidebar_pane" ]; then
+        save_work_layout "$target_window"
+        open_sidebar "$target_window" "true" "$width" "$work_path"
+    else
+        if [ "$sidebar_is_current" = "false" ]; then
+            save_work_layout
+        fi
+    fi
 }
 
 switch_session()
@@ -174,85 +310,10 @@ switch_session()
     remember_sidebar_width
     width="$(sidebar_width)"
     ensure_session_sidebar "$session_name" "true" "$width"
-    tmux switch-client -t "=$session_name"
+    tmux switch-client -t "=$session_name" 2>/dev/null || true
     ensure_session_sidebar "$session_name" "false" "$width"
     current_session="$session_name"
     selected_session="$session_name"
-}
-
-prompt_continue()
-{
-    printf '\nPress Enter to return to launcher...'
-    IFS= read -r _ || true
-}
-
-new_session()
-{
-    printf '\n'
-    printf 'New session name: '
-    IFS= read -r session_name || return 0
-    [ -n "$session_name" ] || return 0
-
-    if session_exists "$session_name"; then
-        selected_session="$session_name"
-        return 0
-    fi
-
-    tmux new-session -d -s "$session_name" -c "$current_path"
-    ensure_session_sidebar "$session_name"
-    selected_session="$session_name"
-}
-
-delete_session()
-{
-    if ! session_exists "$selected_session"; then
-        printf '\nSession not found: %s\n' "$selected_session"
-        prompt_continue
-        return 0
-    fi
-
-    if [ "$selected_session" = "$current_session" ]; then
-        printf '\nCannot delete the current session from the launcher: %s\n' "$selected_session"
-        prompt_continue
-        return 0
-    fi
-
-    printf '\nDelete session "%s"? [y/N]: ' "$selected_session"
-    IFS= read -r answer || return 0
-
-    case "$answer" in
-        [Yy]|[Yy][Ee][Ss])
-            tmux kill-session -t "=$selected_session"
-            selected_session="$current_session"
-            ;;
-    esac
-}
-
-rename_session()
-{
-    old_name="$selected_session"
-
-    if ! session_exists "$old_name"; then
-        printf '\nSession not found: %s\n' "$old_name"
-        prompt_continue
-        return 0
-    fi
-
-    printf '\nRename session "%s" to: ' "$old_name"
-    IFS= read -r new_name || return 0
-    [ -n "$new_name" ] || return 0
-
-    if session_exists "$new_name"; then
-        printf '\nSession already exists: %s\n' "$new_name"
-        prompt_continue
-        return 0
-    fi
-
-    tmux rename-session -t "=$old_name" "$new_name"
-    selected_session="$new_name"
-    if [ "$current_session" = "$old_name" ]; then
-        current_session="$new_name"
-    fi
 }
 
 is_shell_command()
@@ -290,9 +351,13 @@ EOF
     return 1
 }
 
-session_option_key()
+session_status()
 {
-    printf '%s%s\n' "$BUSY_START_PREFIX" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_')"
+    if session_is_busy "$1"; then
+        printf '%s\n' busy
+    else
+        printf '%s\n' idle
+    fi
 }
 
 format_duration()
@@ -308,183 +373,1018 @@ format_duration()
     printf '%d:%02d:%02d:%02d\n' "$days" "$hours" "$minutes" "$seconds"
 }
 
-session_elapsed()
+session_age()
 {
-    session_name="$1"
-    option_key="$(session_option_key "$session_name")"
+    created="$1"
+    now="$(date +%s)"
 
-    if session_is_busy "$session_name"; then
-        now="$(date +%s)"
-        started_at="$(tmux show-option -gqv "$option_key" 2>/dev/null || true)"
+    case "$created" in
+        ''|*[!0-9]*) created="$now" ;;
+    esac
 
-        case "$started_at" in
-            ''|*[!0-9]*)
-                started_at="$now"
-                tmux set-option -gq "$option_key" "$started_at"
+    format_duration "$((now - created))"
+}
+
+pane_width()
+{
+    if [ -n "$SELF_PANE" ]; then
+        tmux display-message -p -t "$SELF_PANE" '#{pane_width}' 2>/dev/null || printf '35\n'
+    else
+        tmux display-message -p '#{pane_width}' 2>/dev/null || printf '35\n'
+    fi
+}
+
+pane_height()
+{
+    if [ -n "$SELF_PANE" ]; then
+        tmux display-message -p -t "$SELF_PANE" '#{pane_height}' 2>/dev/null || printf '20\n'
+    else
+        tmux display-message -p '#{pane_height}' 2>/dev/null || printf '20\n'
+    fi
+}
+
+truncate_text()
+{
+    text="$1"
+    max_width="$2"
+
+    if [ "$max_width" -le 0 ]; then
+        printf '%s\n' ''
+    else
+        printf '%.*s\n' "$max_width" "$text"
+    fi
+}
+
+move_cursor()
+{
+    printf '\033[%s;%sH' "$1" "$2"
+}
+
+clear_line()
+{
+    printf '\033[2K'
+}
+
+hide_cursor()
+{
+    printf '\033[?25l'
+}
+
+show_cursor()
+{
+    printf '\033[?25h'
+}
+
+collect_sessions()
+{
+    current_session="$(tmux display-message -p '#S')"
+    old_selected="$selected_session"
+    session_names=()
+    session_created=()
+    session_status=()
+    snapshot_signature=""
+    found_selected=false
+    index=0
+
+    while IFS="$(printf '\t')" read -r name created; do
+        [ -n "$name" ] || continue
+        session_names+=("$name")
+        session_created+=("$created")
+        session_status+=("$(session_status "$name")")
+        snapshot_signature="${snapshot_signature}${name}:${created}|"
+
+        if [ "$name" = "$old_selected" ]; then
+            selected_index="$index"
+            found_selected=true
+        fi
+        index=$((index + 1))
+    done <<EOF
+$(tmux list-sessions -F '#{session_name}	#{session_created}' 2>/dev/null)
+EOF
+
+    if [ "${#session_names[@]}" -eq 0 ]; then
+        selected_session=""
+        selected_index=0
+        return 0
+    fi
+
+    if [ "$found_selected" != true ]; then
+        selected_index=0
+        for index in "${!session_names[@]}"; do
+            if [ "${session_names[$index]}" = "$current_session" ]; then
+                selected_index="$index"
+                break
+            fi
+        done
+    fi
+
+    selected_session="${session_names[$selected_index]}"
+    ensure_selection_visible
+}
+
+ensure_selection_visible()
+{
+    visible_rows="$(session_visible_rows)"
+    [ "$visible_rows" -lt 1 ] && visible_rows=1
+
+    if [ "$selected_index" -lt "$scroll_offset" ]; then
+        scroll_offset="$selected_index"
+    elif [ "$selected_index" -ge $((scroll_offset + visible_rows)) ]; then
+        scroll_offset=$((selected_index - visible_rows + 1))
+    fi
+
+    [ "$scroll_offset" -lt 0 ] && scroll_offset=0
+    return 0
+}
+
+row_screen_line()
+{
+    printf '%s\n' "$((2 + $1 - scroll_offset))"
+}
+
+row_is_visible()
+{
+    index="$1"
+    visible_rows="$(session_visible_rows)"
+    [ "$visible_rows" -lt 1 ] && visible_rows=1
+
+    [ "$index" -ge "$scroll_offset" ] && [ "$index" -lt $((scroll_offset + visible_rows)) ]
+}
+
+session_visible_rows()
+{
+    height="$(pane_height)"
+    if [ "$view_mode" = "history" ]; then
+        rows=$(((height - 4) / 2))
+    else
+        rows=$((height - 3))
+    fi
+
+    [ "$rows" -lt 1 ] && rows=1
+    printf '%s\n' "$rows"
+}
+
+history_start_line()
+{
+    if [ "$view_mode" = "history" ]; then
+        printf '%s\n' "$((2 + $(session_visible_rows) + 1))"
+    else
+        printf '%s\n' 0
+    fi
+}
+
+history_visible_rows()
+{
+    height="$(pane_height)"
+    start="$(history_start_line)"
+    rows=$((height - start))
+
+    [ "$rows" -lt 1 ] && rows=1
+    printf '%s\n' "$rows"
+}
+
+row_mark()
+{
+    index="$1"
+    name="${session_names[$index]}"
+
+    if [ "$index" -eq "$selected_index" ] && [ "$name" = "$current_session" ]; then
+        printf '%s\n' '>*'
+    elif [ "$index" -eq "$selected_index" ]; then
+        printf '%s\n' '> '
+    elif [ "$name" = "$current_session" ]; then
+        printf '%s\n' ' *'
+    else
+        printf '%s\n' '  '
+    fi
+}
+
+render_header()
+{
+    width="$(pane_width)"
+    move_cursor 1 1
+    clear_line
+    printf '%s' "$(truncate_text 'sessions' "$width")"
+}
+
+render_footer()
+{
+    width="$(pane_width)"
+    height="$(pane_height)"
+    help='j/k Enter c/r/d h q'
+
+    if [ "$width" -ge 30 ]; then
+        help='j/k | Enter | c/r/d | h | q'
+    fi
+
+    move_cursor "$height" 1
+    clear_line
+    printf '%s' "$(truncate_text "$help" "$width")"
+}
+
+history_title_from_file()
+{
+    basename "$1" | sed 's/\.tsv$//'
+}
+
+collect_history()
+{
+    history_files=()
+    history_titles=()
+    history_checked=()
+    history_signature=""
+    mkdir -p "$HISTORY_DIR"
+
+    while IFS= read -r file_path; do
+        [ -n "$file_path" ] || continue
+        history_files+=("$file_path")
+        history_titles+=("$(history_title_from_file "$file_path")")
+        history_checked+=("false")
+        history_signature="${history_signature}${file_path}|"
+    done <<EOF
+$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*.tsv' 2>/dev/null | sort -r)
+EOF
+
+    if [ "${#history_files[@]}" -eq 0 ]; then
+        history_index=0
+    elif [ "$history_index" -ge "${#history_files[@]}" ]; then
+        history_index=$((${#history_files[@]} - 1))
+    fi
+}
+
+ensure_history_visible()
+{
+    visible_rows="$(history_visible_rows)"
+    [ "$visible_rows" -lt 1 ] && visible_rows=1
+
+    if [ "$history_index" -lt "$history_scroll_offset" ]; then
+        history_scroll_offset="$history_index"
+    elif [ "$history_index" -ge $((history_scroll_offset + visible_rows)) ]; then
+        history_scroll_offset=$((history_index - visible_rows + 1))
+    fi
+
+    [ "$history_scroll_offset" -lt 0 ] && history_scroll_offset=0
+    return 0
+}
+
+history_row_mark()
+{
+    index="$1"
+    checked=' '
+
+    if [ "${history_checked[$index]}" = "true" ]; then
+        checked='x'
+    fi
+
+    if [ "$index" -eq "$history_index" ]; then
+        printf '>%s\n' "$checked"
+    else
+        printf ' %s\n' "$checked"
+    fi
+}
+
+render_history()
+{
+    width="$(pane_width)"
+    start="$(history_start_line)"
+    visible_rows="$(history_visible_rows)"
+    index="$history_scroll_offset"
+    end=$((history_scroll_offset + visible_rows))
+    line="$((start - 1))"
+
+    move_cursor "$line" 1
+    clear_line
+    printf '%s' "$(truncate_text 'history: Space mark, Enter restore, d delete' "$width")"
+
+    line="$start"
+    while [ "$line" -lt "$(pane_height)" ]; do
+        move_cursor "$line" 1
+        clear_line
+        line=$((line + 1))
+    done
+
+    line="$start"
+    while [ "$index" -lt "$end" ] && [ "$index" -lt "${#history_files[@]}" ]; do
+        mark="$(history_row_mark "$index")"
+        title="$(truncate_text "${history_titles[$index]}" "$((width - 4))")"
+        move_cursor "$line" 1
+        clear_line
+        printf '%s %s' "$mark" "$title"
+        index=$((index + 1))
+        line=$((line + 1))
+    done
+}
+
+render_row()
+{
+    index="$1"
+    line="$(row_screen_line "$index")"
+    width="$(pane_width)"
+    mark="$(row_mark "$index")"
+    age="$(session_age "${session_created[$index]}")"
+    age_width=10
+    name_width=$((width - 2 - 1 - age_width - 2))
+
+    [ "$name_width" -lt 1 ] && name_width=1
+    name="$(truncate_text "${session_names[$index]}" "$name_width")"
+
+    move_cursor "$line" 1
+    clear_line
+    if [ "$width" -lt 16 ]; then
+        printf '%s %s' "$mark" "$(truncate_text "${session_names[$index]}" "$((width - 3))")"
+    else
+        printf '%s %-*s %s ' "$mark" "$name_width" "$name" "$age"
+    fi
+}
+
+render_visible_rows()
+{
+    height="$(pane_height)"
+    visible_rows="$(session_visible_rows)"
+    [ "$visible_rows" -lt 1 ] && visible_rows=1
+    end=$((scroll_offset + visible_rows))
+    index="$scroll_offset"
+    line=2
+
+    while [ "$line" -lt "$height" ]; do
+        move_cursor "$line" 1
+        clear_line
+        line=$((line + 1))
+    done
+
+    while [ "$index" -lt "$end" ] && [ "$index" -lt "${#session_names[@]}" ]; do
+        render_row "$index"
+        index=$((index + 1))
+    done
+}
+
+render_full()
+{
+    last_width="$(pane_width)"
+    last_height="$(pane_height)"
+    printf '\033[H\033[2J'
+    hide_cursor
+    render_header
+    render_visible_rows
+    if [ "$view_mode" = "history" ]; then
+        render_history
+    fi
+    render_footer
+}
+
+render_age_cells()
+{
+    index="$scroll_offset"
+    visible_rows="$(session_visible_rows)"
+    [ "$visible_rows" -lt 1 ] && visible_rows=1
+    end=$((scroll_offset + visible_rows))
+    width="$(pane_width)"
+    [ "$width" -lt 16 ] && return 0
+
+    while [ "$index" -lt "$end" ] && [ "$index" -lt "${#session_names[@]}" ]; do
+        line="$(row_screen_line "$index")"
+        age="$(session_age "${session_created[$index]}")"
+        move_cursor "$line" "$((width - 10))"
+        printf '%s' "$age"
+        index=$((index + 1))
+    done
+}
+
+refresh_if_needed()
+{
+    old_signature="$snapshot_signature"
+    old_width="$last_width"
+    old_height="$last_height"
+
+    collect_sessions
+    if [ "$old_signature" != "$snapshot_signature" ] ||
+        [ "$old_width" != "$(pane_width)" ] ||
+        [ "$old_height" != "$(pane_height)" ]; then
+        render_full
+    fi
+}
+
+restore_terminal()
+{
+    show_cursor
+    [ -n "$stty_state" ] && stty "$stty_state" 2>/dev/null || true
+}
+
+setup_terminal()
+{
+    stty_state="$(stty -g 2>/dev/null || true)"
+    stty -echo -icanon time 0 min 0 2>/dev/null || true
+    trap restore_terminal EXIT INT TERM
+}
+
+prompt_line()
+{
+    prompt="$1"
+    prompt_result=""
+    prompt_cancelled=false
+    height="$(pane_height)"
+    key=""
+
+    move_cursor "$height" 1
+    clear_line
+    printf '%s' "$prompt"
+
+    while true; do
+        IFS= read -rsn1 key || key=""
+        case "$key" in
+            $'\033')
+                prompt_cancelled=true
+                break
+                ;;
+            ''|$'\n'|$'\r')
+                break
+                ;;
+            $'\177'|$'\b')
+                if [ -n "$prompt_result" ]; then
+                    prompt_result="${prompt_result%?}"
+                    printf '\b \b'
+                fi
+                ;;
+            *)
+                prompt_result="${prompt_result}${key}"
+                printf '%s' "$key"
                 ;;
         esac
-
-        format_duration "$((now - started_at))"
-    else
-        tmux set-option -gu "$option_key" >/dev/null 2>&1 || true
-        printf '%s\n' ''
-    fi
+    done
 }
 
-format_session_name()
+message_line()
+{
+    message="$1"
+    height="$(pane_height)"
+
+    move_cursor "$height" 1
+    clear_line
+    printf '%s' "$(truncate_text "$message" "$(pane_width)")"
+    sleep 1
+}
+
+safe_file_part()
+{
+    printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+tmux_history_file()
+{
+    printf '%s\n' "${HISTFILE:-$HOME/.cache/dotfiles/tmux.zsh_history}"
+}
+
+archivable_window_count()
 {
     session_name="$1"
-    display_name="$(printf '%-18.18s' "$session_name")"
+    count=0
 
-    if session_is_busy "$session_name"; then
-        printf '\033[31m%s\033[0m\n' "$display_name"
-    else
-        printf '%s\n' "$display_name"
-    fi
+    while IFS= read -r window_index; do
+        if tmux list-panes -t "=$session_name:$window_index" -F '#{pane_title}' 2>/dev/null |
+            awk -v title="$SIDEBAR_TITLE" '$0 != title { found = 1 } END { exit found ? 0 : 1 }'; then
+            count=$((count + 1))
+        fi
+    done <<EOF
+$(tmux list-windows -t "=$session_name:" -F '#{window_index}' 2>/dev/null)
+EOF
+
+    printf '%s\n' "$count"
 }
 
-list_sessions()
+archive_shell_history()
 {
-    tmux list-sessions -F '#{session_name}' |
-        awk -F '\t' -v current="$current_session" '
-            {
-                marker = ($1 == current) ? "*" : " "
-                print $1 "\t" marker
-            }
-        ' |
-        while IFS="$(printf '\t')" read -r session_name marker; do
-            printf '%s\t%s %s %s\n' "$session_name" "$marker" "$(format_session_name "$session_name")" "$(session_elapsed "$session_name")"
+    history_file="$(tmux_history_file)"
+    [ -f "$history_file" ] || return 0
+
+    tail -n 200 "$history_file" 2>/dev/null |
+        while IFS= read -r history_line; do
+            printf 'history\t%s\n' "$history_line"
         done
 }
 
-selected_position()
+append_archive_history()
 {
-    tmux list-sessions -F '#{session_name}' |
-        awk -v selected="$selected_session" '
-            $0 == selected { print NR; found = 1; exit }
-            END { if (!found) print 1 }
-        '
+    archive_path="$1"
+    history_file="$(tmux_history_file)"
+    history_dir="$(dirname "$history_file")"
+
+    mkdir -p "$history_dir"
+    awk -F '\t' '$1 == "history" { sub(/^[^\t]*\t/, ""); print }' "$archive_path" >> "$history_file"
 }
 
-select_session()
+archive_session()
 {
-    expect_keys="tab,enter"
-    header='Enter: switch | Tab: toggle prompt | Esc(exit): close'
-    position="$(selected_position)"
+    session_name="$1"
+    [ -n "$session_name" ] || return 1
+    session_exists "$session_name" || return 1
 
-    if [ "$prompt_mode" = "Commands" ]; then
-        expect_keys="tab,c,d,r,enter"
-        header='Enter: switch | Tab: toggle prompt | c: new | d: delete | r: rename | Esc(exit): close'
+    mkdir -p "$HISTORY_DIR"
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    window_count="$(archivable_window_count "$session_name")"
+    file_name="${stamp}-$(safe_file_part "$session_name")-${window_count}w.tsv"
+    archive_path="$HISTORY_DIR/$file_name"
+
+    {
+        printf 'version\t1\n'
+        printf 'session\t%s\n' "$session_name"
+        printf 'archived_at\t%s\n' "$(date +%s)"
+        printf 'created\t%s\n' "$(tmux display-message -p -t "=$session_name:" '#{session_created}' 2>/dev/null || printf '')"
+        while IFS="$(printf '\t')" read -r window_index window_name window_active window_layout; do
+            if ! tmux list-panes -t "=$session_name:$window_index" -F '#{pane_title}' 2>/dev/null |
+                awk -v title="$SIDEBAR_TITLE" '$0 != title { found = 1 } END { exit found ? 0 : 1 }'; then
+                continue
+            fi
+            window_layout="$(current_work_layout "=$session_name:$window_index")"
+            printf 'window\t%s\t%s\t%s\t%s\n' "$window_index" "$window_name" "$window_active" "$window_layout"
+            while IFS="$(printf '\t')" read -r pane_index pane_path pane_command pane_title; do
+                [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+                printf 'pane\t%s\t%s\t%s\n' "$pane_index" "$pane_path" "$pane_command"
+            done <<EOF
+$(tmux list-panes -t "=$session_name:$window_index" -F '#{pane_index}	#{pane_current_path}	#{pane_current_command}	#{pane_title}' 2>/dev/null)
+EOF
+            printf 'endwindow\n'
+        done <<EOF
+$(tmux list-windows -t "=$session_name:" -F '#{window_index}	#{window_name}	#{window_active}	#{window_layout}' 2>/dev/null)
+EOF
+        archive_shell_history
+    } > "$archive_path"
+
+    printf '%s\n' "$archive_path"
+}
+
+archive_all_sessions()
+{
+    should_archive="$1"
+
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        if [ "$should_archive" = "true" ]; then
+            archive_session "$session_name" >/dev/null || true
+        fi
+    done <<EOF
+$(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+EOF
+}
+
+fallback_session()
+{
+    deleting="$1"
+
+    tmux list-sessions -F '#{session_name}' 2>/dev/null |
+        awk -v deleting="$deleting" '$0 != deleting { print; exit }'
+}
+
+archive_selected_indices()
+{
+    selected_any=false
+    for index in "${!history_files[@]}"; do
+        if [ "${history_checked[$index]}" = "true" ]; then
+            printf '%s\n' "$index"
+            selected_any=true
+        fi
+    done
+
+    if [ "$selected_any" = "false" ] && [ "${#history_files[@]}" -gt 0 ]; then
+        printf '%s\n' "$history_index"
+    fi
+}
+
+restore_archive()
+{
+    archive_path="$1"
+    [ -f "$archive_path" ] || return 1
+
+    original_name="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path")"
+    [ -n "$original_name" ] || original_name="restored"
+
+    restore_name="$original_name"
+    if session_exists "$restore_name"; then
+        message_line "Exists: $restore_name"
+        return 1
     fi
 
-    list_sessions |
-        fzf \
-            --ansi \
-            --delimiter='\t' \
-            --with-nth=2 \
-            --prompt="$prompt_mode> " \
-            --header="$header" \
-            --expect="$expect_keys" \
-            --print-query \
-            --sync \
-            --bind="load:pos($position)" \
-            --no-clear
+    append_archive_history "$archive_path"
+
+    created=false
+    current_window=""
+    first_window=true
+    first_pane_in_window=true
+    active_window=""
+    window_layout=""
+
+    while IFS="$(printf '\t')" read -r record a b c d; do
+        case "$record" in
+            window)
+                if [ "$first_window" = "false" ] && [ -n "$current_window" ]; then
+                    tmux select-layout -t "=$restore_name:$current_window" "$window_layout" >/dev/null 2>&1 || true
+                fi
+                window_index="$a"
+                window_name="$b"
+                window_active="$c"
+                window_layout="$d"
+                current_window="$window_name"
+                first_pane_in_window=true
+                if [ "$window_active" = "1" ]; then
+                    active_window="$window_name"
+                fi
+                ;;
+            pane)
+                pane_path="$b"
+                [ -d "$pane_path" ] || pane_path="$HOME"
+                if [ "$created" = "false" ]; then
+                    tmux new-session -d -s "$restore_name" -n "$current_window" -c "$pane_path"
+                    created=true
+                    first_window=false
+                    first_pane_in_window=false
+                elif [ "$first_pane_in_window" = "true" ]; then
+                    tmux new-window -t "=$restore_name:" -n "$current_window" -c "$pane_path"
+                    first_pane_in_window=false
+                else
+                    tmux split-window -t "=$restore_name:$current_window" -c "$pane_path"
+                fi
+                ;;
+            endwindow)
+                if [ -n "$current_window" ]; then
+                    tmux select-layout -t "=$restore_name:$current_window" "$window_layout" >/dev/null 2>&1 || true
+                fi
+                current_window=""
+                ;;
+        esac
+    done < "$archive_path"
+
+    if [ "$created" = "false" ]; then
+        tmux new-session -d -s "$restore_name" -c "$HOME"
+    fi
+
+    [ -n "$active_window" ] && tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1 || true
+    selected_session="$restore_name"
+    switch_session "$restore_name"
 }
 
-parse_selection()
+restore_selected_archives()
 {
-    first_line="$(printf '%s\n' "$1" | sed -n '1p')"
-    second_line="$(printf '%s\n' "$1" | sed -n '2p')"
-    third_line="$(printf '%s\n' "$1" | sed -n '3p')"
+    while IFS= read -r index; do
+        restore_archive "${history_files[$index]}" || message_line "Restore failed"
+    done <<EOF
+$(archive_selected_indices)
+EOF
+}
 
-    case "$second_line" in
-        tab|c|d|r|enter)
-            selection_key="$second_line"
-            selection_query="$first_line"
-            selection_row="$third_line"
-            ;;
-        *)
-            selection_key="enter"
-            selection_query="$first_line"
-            selection_row="$second_line"
+delete_selected_archives()
+{
+    prompt_line 'Delete history? y/N '
+    if [ "$prompt_cancelled" = "true" ]; then
+        return 0
+    fi
+    answer="$prompt_result"
+    case "$answer" in
+        [Yy]|[Yy][Ee][Ss])
+            while IFS= read -r index; do
+                rm -f "${history_files[$index]}"
+            done <<EOF
+$(archive_selected_indices)
+EOF
             ;;
     esac
 }
 
-run_query_command()
+tui_new_session()
 {
-    case "$1" in
-        c|create|new)
-            new_session
-            return 0
-            ;;
-        d|delete|remove)
-            delete_session
-            return 0
-            ;;
-        r|rename)
-            rename_session
-            return 0
-            ;;
-        q|quit|exit)
-            exit 0
-            ;;
-    esac
+    prompt_line 'New: '
+    if [ "$prompt_cancelled" = "true" ]; then
+        return 0
+    fi
+    session_name="$prompt_result"
+    [ -n "$session_name" ] || return 0
 
-    return 1
+    if session_exists "$session_name"; then
+        selected_session="$session_name"
+        return 0
+    fi
+
+    tmux new-session -d -s "$session_name" -c "$current_path"
+    selected_session="$session_name"
 }
 
-run_launcher()
+tui_delete_session()
 {
-    selection="$(select_session || true)"
-    [ -n "$selection" ] || exit 0
+    [ -n "$selected_session" ] || return 0
 
-    parse_selection "$selection"
-    session_name="$(printf '%s\n' "$selection_row" | cut -f 1)"
-
-    if [ "$prompt_mode" = "Commands" ] && [ "$selection_key" = "enter" ]; then
-        if [ -n "$selection_query" ]; then
-            if run_query_command "$selection_query"; then
-                return 0
-            fi
-
-            printf '\nUnknown command: %s\n' "$selection_query"
-            prompt_continue
+    prompt_line "Delete $selected_session? y/Enter/All "
+    if [ "$prompt_cancelled" = "true" ]; then
+        return 0
+    fi
+    answer="$prompt_result"
+    if [ "$answer" = "All" ]; then
+        prompt_line "Save history? y/N "
+        if [ "$prompt_cancelled" = "true" ]; then
             return 0
         fi
+        case "$prompt_result" in
+            [Yy]|[Yy][Ee][Ss]) archive_all_sessions true ;;
+            *) archive_all_sessions false ;;
+        esac
+        tmux kill-server
+        exit 0
     fi
 
-    if [ -n "$session_name" ]; then
-        selected_session="$session_name"
+    if ! session_exists "$selected_session"; then
+        message_line "Missing: $selected_session"
+        return 0
     fi
 
-    case "$selection_key" in
-        tab)
-            case "$prompt_mode" in
-                Commands) prompt_mode="Sessions" ;;
-                *) prompt_mode="Commands" ;;
-            esac
-            ;;
-        c)
-            new_session
-            ;;
-        d)
-            delete_session
-            ;;
-        r)
-            rename_session
-            ;;
-        enter)
-            if [ -z "$session_name" ] && [ -n "$selection_query" ]; then
-                if [ "$prompt_mode" != "Commands" ]; then
-                    printf '\nNo matching session: %s\n' "$selection_query"
-                    prompt_continue
-                    return 0
+    case "$answer" in
+        [Yy]|[Yy][Ee][Ss])
+            archive_session "$selected_session" >/dev/null || true
+            if [ "$selected_session" = "$current_session" ]; then
+                next_session="$(fallback_session "$selected_session")"
+                if [ -n "$next_session" ]; then
+                    tmux switch-client -t "=$next_session" 2>/dev/null || true
+                    tmux kill-session -t "=$selected_session"
+                    exit 0
                 fi
+                tmux kill-server
+                exit 0
+            else
+                tmux kill-session -t "=$selected_session"
+                selected_session="$current_session"
             fi
-            switch_session "$selected_session"
+            ;;
+        '')
+            if [ "$selected_session" = "$current_session" ]; then
+                next_session="$(fallback_session "$selected_session")"
+                if [ -n "$next_session" ]; then
+                    tmux switch-client -t "=$next_session" 2>/dev/null || true
+                    tmux kill-session -t "=$selected_session"
+                    exit 0
+                fi
+                tmux kill-server
+                exit 0
+            else
+                tmux kill-session -t "=$selected_session"
+                selected_session="$current_session"
+            fi
             ;;
     esac
+}
+
+tui_rename_session()
+{
+    old_name="$selected_session"
+    [ -n "$old_name" ] || return 0
+
+    if ! session_exists "$old_name"; then
+        message_line "Missing: $old_name"
+        return 0
+    fi
+
+    prompt_line "Rename: "
+    if [ "$prompt_cancelled" = "true" ]; then
+        return 0
+    fi
+    new_name="$prompt_result"
+    [ -n "$new_name" ] || return 0
+
+    if session_exists "$new_name"; then
+        message_line "Exists: $new_name"
+        return 0
+    fi
+
+    tmux rename-session -t "=$old_name" "$new_name"
+    selected_session="$new_name"
+    if [ "$current_session" = "$old_name" ]; then
+        current_session="$new_name"
+    fi
+}
+
+move_selection()
+{
+    direction="$1"
+    old_index="$selected_index"
+    count="${#session_names[@]}"
+
+    [ "$count" -eq 0 ] && return 0
+
+    case "$direction" in
+        next) selected_index=$(((selected_index + 1) % count)) ;;
+        prev) selected_index=$(((selected_index + count - 1) % count)) ;;
+    esac
+
+    selected_session="${session_names[$selected_index]}"
+    ensure_selection_visible
+
+    if row_is_visible "$old_index" && row_is_visible "$selected_index"; then
+        render_row "$old_index"
+        render_row "$selected_index"
+    else
+        render_visible_rows
+    fi
+}
+
+read_key()
+{
+    key=""
+    rest=""
+
+    if ! IFS= read -rsn1 -t 0.2 key; then
+        return 1
+    fi
+
+    if [ "$key" = $'\033' ]; then
+        IFS= read -rsn2 -t 0.01 rest || true
+        case "$rest" in
+            '[A') printf '%s\n' up ;;
+            '[B') printf '%s\n' down ;;
+            '') printf '%s\n' esc ;;
+            *) printf '%s\n' other ;;
+        esac
+        return 0
+    fi
+
+    case "$key" in
+        j) printf '%s\n' down ;;
+        k) printf '%s\n' up ;;
+        c) printf '%s\n' create ;;
+        r) printf '%s\n' rename ;;
+        d) printf '%s\n' delete ;;
+        h) printf '%s\n' history ;;
+        ' ') printf '%s\n' mark ;;
+        q) printf '%s\n' quit ;;
+        ''|$'\n'|$'\r') printf '%s\n' enter ;;
+        *) printf '%s\n' other ;;
+    esac
+}
+
+toggle_history_mode()
+{
+    if [ "$view_mode" = "history" ]; then
+        view_mode="sessions"
+    else
+        view_mode="history"
+        collect_history
+        ensure_history_visible
+    fi
+    render_full
+}
+
+move_history_selection()
+{
+    direction="$1"
+    count="${#history_files[@]}"
+    [ "$count" -eq 0 ] && return 0
+
+    case "$direction" in
+        next) history_index=$(((history_index + 1) % count)) ;;
+        prev) history_index=$(((history_index + count - 1) % count)) ;;
+    esac
+
+    ensure_history_visible
+    render_history
+}
+
+toggle_history_mark()
+{
+    [ "${#history_files[@]}" -eq 0 ] && return 0
+    if [ "${history_checked[$history_index]}" = "true" ]; then
+        history_checked[$history_index]="false"
+    else
+        history_checked[$history_index]="true"
+    fi
+    render_history
+}
+
+handle_mouse_select()
+{
+    pane_id="$1"
+    mouse_line="$2"
+    mouse_x="$3"
+    mouse_word="${4:-}"
+
+    [ -n "$pane_id" ] || return 0
+    [ -n "$mouse_line" ] || return 0
+    [ -n "$mouse_x" ] || return 0
+    [ "$(tmux display-message -p -t "$pane_id" '#{pane_title}' 2>/dev/null || true)" = "$SIDEBAR_TITLE" ] || return 0
+
+    SELF_PANE="$pane_id"
+    collect_sessions
+    width="$(pane_width)"
+    name_start=4
+    name_end=$((width - 12))
+
+    case "$mouse_x" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    case "$mouse_line" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+
+    [ "$mouse_x" -ge "$name_start" ] || return 0
+    [ "$mouse_x" -le "$name_end" ] || return 0
+
+    row_index=$((mouse_line - 2 + scroll_offset))
+    if [ "$row_index" -lt 0 ] ||
+        [ "$row_index" -ge "${#session_names[@]}" ] ||
+        { [ -n "$mouse_word" ] && [ "$mouse_word" != "${session_names[$row_index]}" ]; }; then
+        alt_index=$((mouse_line - 1 + scroll_offset))
+        if [ -z "$mouse_word" ] ||
+            [ "$alt_index" -lt 0 ] ||
+            [ "$alt_index" -ge "${#session_names[@]}" ] ||
+            [ "$mouse_word" != "${session_names[$alt_index]}" ]; then
+            return 0
+        fi
+        row_index="$alt_index"
+    fi
+
+    session_name="${session_names[$row_index]}"
+    if [ -n "$mouse_word" ] && [ "$mouse_word" != "$session_name" ]; then
+        return 0
+    fi
+
+    switch_session "$session_name"
+}
+
+run_tui()
+{
+    setup_terminal
+    mark_sidebar_pane
+    collect_sessions
+    render_full
+    last_tick="$(date +%s)"
+
+    while true; do
+        key="$(read_key || true)"
+
+        case "$key" in
+            up)
+                if [ "$view_mode" = "history" ]; then
+                    move_history_selection prev
+                else
+                    move_selection prev
+                fi
+                ;;
+            down)
+                if [ "$view_mode" = "history" ]; then
+                    move_history_selection next
+                else
+                    move_selection next
+                fi
+                ;;
+            enter)
+                if [ "$view_mode" = "history" ]; then
+                    restore_selected_archives
+                    collect_history
+                else
+                    switch_session "$selected_session"
+                fi
+                collect_sessions
+                render_full
+                ;;
+            create)
+                tui_new_session
+                collect_sessions
+                render_full
+                ;;
+            rename)
+                tui_rename_session
+                collect_sessions
+                render_full
+                ;;
+            delete)
+                if [ "$view_mode" = "history" ]; then
+                    delete_selected_archives
+                    collect_history
+                else
+                    tui_delete_session
+                fi
+                collect_sessions
+                render_full
+                ;;
+            history)
+                toggle_history_mode
+                ;;
+            mark)
+                if [ "$view_mode" = "history" ]; then
+                    toggle_history_mark
+                fi
+                ;;
+            esc)
+                if [ "$view_mode" = "history" ]; then
+                    view_mode="sessions"
+                    render_full
+                fi
+                ;;
+            quit)
+                exit 0
+                ;;
+        esac
+
+        now="$(date +%s)"
+        if [ "$now" != "$last_tick" ]; then
+            refresh_if_needed
+            render_age_cells
+            last_tick="$now"
+        fi
+    done
 }
 
 main()
@@ -501,7 +1401,10 @@ main()
             return 0
             ;;
         --list-sessions)
-            list_sessions
+            collect_sessions
+            for index in "${!session_names[@]}"; do
+                printf '%s\t%s\t%s\n' "${session_names[$index]}" "${session_created[$index]}" "${session_status[$index]}"
+            done
             return 0
             ;;
         --split-horizontal)
@@ -512,6 +1415,10 @@ main()
             split_work_pane vertical
             return 0
             ;;
+        --mouse-select)
+            handle_mouse_select "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+            return 0
+            ;;
         --sidebar|"")
             ;;
         *)
@@ -519,12 +1426,7 @@ main()
             ;;
     esac
 
-    require_command fzf
-    mark_sidebar_pane
-
-    while true; do
-        run_launcher
-    done
+    run_tui
 }
 
 main "$@"

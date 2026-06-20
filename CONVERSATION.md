@@ -27,6 +27,153 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-20 - sidebar split 경로 회귀 수정
+
+사용자 요청:
+- sidebar가 있는 상태에서 split해서 새 pane을 만들면 `%` 표시가 상단에 생기는 버그를 보고했습니다.
+
+해석/결정:
+- split 경로에서 전역 `current_path`를 쓰지 않고, 실제 target pane/window의 현재 경로를 tmux에서 다시 읽어 사용하도록 바꿨습니다.
+- split 후 sidebar를 다시 열 때도 같은 target path를 넘겨 pane 생성 컨텍스트를 흔들지 않게 했습니다.
+- 이미지 확인 후 `%`가 pane border가 아니라 새 pane 안의 zsh 기본 prompt로 보였습니다. tmux 기본 `%`/`"` split key가 sidebar pane을 직접 split하는 경로를 우회하도록 wrapper binding으로 바꿨습니다.
+- 추가 재현 결과, active pane focus에서 sidebar가 있는 상태로 split하면 새 work pane의 첫 zsh prompt `%`가 잔상으로 남았습니다. split wrapper가 만든 pane에 `DOTFILES_TMUX_CLEAR_ON_START=1`을 넘기고 tmux 전용 zshrc가 첫 로딩 때 화면을 정리하도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 sidebar open/split 경로 처리를 target pane 기준으로 정리했습니다.
+- `dotfiles/tmux.conf`에서 `%`/`"`도 `|`/`_`와 동일하게 sidebar-aware split wrapper를 타도록 변경했습니다.
+- `dotfiles/tmux.zshrc`에 split 직후 초기 화면 정리 플래그 처리를 추가했습니다.
+- history 문서에 bugfix와 남은 제한을 기록했습니다.
+
+남은 질문:
+- 실제 설치 환경에서는 `tmux-session-launcher`와 `tmux-zshrc` hidden dependency가 함께 갱신되어야 합니다.
+
+## 2026-06-20 - tmux sidebar layout/delete refactor 진행
+
+사용자 요청:
+- 앞서 기록해 둔 sidebar refactoring을 진행하길 원했습니다.
+
+해석/결정:
+- 우선순위가 높은 반복 toggle layout 변형, restore/archive에 sidebar split이 섞이는 문제, current session delete 제한을 먼저 구현 대상으로 잡았습니다.
+- sidebar는 실제 tmux pane으로 유지하되, 열기 전 work layout을 window-local option에 저장하고 닫을 때 복구합니다.
+- sidebar가 열린 상태에서 split wrapper를 쓰면 sidebar를 제거/복구한 뒤 split하고 새 work layout을 저장하도록 했습니다.
+- pane/window별 shell history 분리는 앞으로 저장될 history 설계는 가능하지만, 이미 공용 history에 섞인 과거 기록을 정확히 재분리하기 어렵기 때문에 이번 구현 범위에서 제외했습니다.
+
+작업 결과:
+- 반복 open/close 후 기존 pane 비율이 돌아오도록 layout 저장/복구를 구현했습니다.
+- archive에는 sidebar가 포함된 현재 `window_layout` 대신 저장된 sidebar-free work layout을 기록하도록 바꿨습니다.
+- current session도 delete 가능하게 하고, 다른 session이 있으면 전환 후 삭제, 없으면 tmux server 종료로 처리했습니다.
+
+남은 질문:
+- sidebar가 열린 상태에서 tmux 기본 split/resize를 직접 실행한 변경까지 추적하려면 추가 hook 또는 더 큰 구조 변경이 필요합니다.
+- per-pane/per-window shell history는 새 zsh history file 주입 정책을 따로 설계해야 합니다.
+
+## 2026-06-20 - tmux sidebar 다음 refactor 대상 기록
+
+사용자 요청:
+- sidebar를 반복해서 열고 닫을 때 active 영역 pane 폭이 누적해서 변형되는 버그를 다음 refactoring 때 수정하자고 했습니다.
+- history restore 시 active 영역의 pane 크기/배치가 원래와 다르고, sidebar 모양 split 또는 sidebar 옆 vertical split이 끼는 문제를 기록하길 원했습니다.
+- delete archive 저장 시 sidebar 정보가 완전히 제외되는지 점검해야 한다고 했습니다.
+- window별 작업 history가 복원 후 통합되어 나오는 문제를 쉽게 개선할 수 있는지 판단하길 원했습니다.
+- active/current session도 delete 가능하게 하고, 삭제 시 다른 inactive session으로 전환하거나 남은 session이 없으면 종료하도록 바꾸길 원했습니다.
+
+해석/결정:
+- 이번 요청은 즉시 구현이 아니라 다음 refactoring을 위한 known issue 기록으로 처리합니다.
+- layout 관련 문제는 sidebar pane을 임시로 붙였다 떼는 방식과 tmux layout 재적용 방식이 active 영역의 상대 크기를 보존하지 못하는 쪽에서 원인을 추적해야 합니다.
+- history 통합 문제는 현재 tmux 전용 zsh가 공용 `HISTFILE`을 쓰는 구조라 발생할 수 있습니다. 앞으로 저장되는 history를 pane/window별로 분리하는 것은 설계상 가능하지만, 이미 공용 파일에 섞인 과거 history를 정확히 pane별로 재분리하는 것은 쉽지 않습니다.
+
+작업 결과:
+- `HISTORY.md`와 `CONVERSATION.md`에 다음 refactor 이슈와 판단을 기록했습니다.
+- 현재 sidebar 실행 코드는 변경하지 않았습니다.
+
+남은 질문:
+- 다음 refactor에서는 먼저 active 영역 layout snapshot/restore 단위를 `session 전체`가 아니라 `sidebar 제외 working layout`으로 정의해야 합니다.
+- history는 per-pane `HISTFILE`을 주입할지, per-window history만 지원할지 결정해야 합니다.
+
+## 2026-06-20 - tmux sidebar delete/history semantics 보강
+
+사용자 요청:
+- sidebar에서 `Esc`를 눌렀을 때 sidebar가 닫히지 않아야 한다고 했습니다.
+- delete에서 `y`는 history 저장 후 삭제, `Enter`는 history 없이 삭제, `Esc`는 delete 취소로 정리하길 원했습니다.
+- `All`은 전체 삭제 전 history 저장 여부를 별도로 물어보고, `Esc`면 취소하길 원했습니다.
+- history archive에는 sidebar pane을 제외하고 active 영역만 저장하길 원했습니다.
+- 복원 시 동일 이름 session이 이미 있으면 다른 이름으로 만들지 말고 복원하지 않길 원했습니다.
+- history 창에서 `Esc`는 history 창만 닫고 sidebar로 돌아가길 원했습니다.
+
+해석/결정:
+- `q`만 sidebar 종료로 유지하고, `Esc`는 mode/prompt cancel 역할로 제한합니다.
+- archive는 sidebar pane을 제외한 pane current path/layout과 가능한 shell history를 저장합니다.
+- shell history는 tmux 전용 zsh history file을 설정하고 archive/restore 시 해당 파일을 append하는 방식으로 보강합니다.
+
+작업 결과:
+- `Esc` sidebar 유지, delete prompt 분기, sidebar pane 제외 archive, 동일 이름 restore skip, history view `Esc` close를 구현했습니다.
+- tmux 전용 zsh history file 설정을 추가했고, archive/restore 시 shell history를 함께 이어붙이도록 했습니다.
+
+남은 질문:
+- process 자체 복원은 현재 범위 밖입니다. 필요하면 command 재실행 정책을 별도로 설계해야 합니다.
+
+## 2026-06-20 - tmux sidebar TUI 안정화와 history restore
+
+사용자 요청:
+- sidebar에서 active window로 focus가 넘어가도 column UI가 유지되길 원했습니다.
+- age column은 오른쪽 정렬을 유지하되 경계와 붙지 않게 한 칸 띄우길 원했습니다.
+- 하단 help line은 항상 sidebar 가장 아래에 있어야 한다고 했습니다.
+- mouse 기본 기능은 유지하되, sidebar session name을 정확히 클릭했을 때만 session 선택/이동되길 원했습니다.
+- delete prompt에서 `All`을 입력하면 전체 session 삭제 및 종료하길 원했습니다.
+- 삭제한 session은 복원 가능한 history 파일로 저장하고, `h`에서 목록/복원/영구삭제를 처리하길 원했습니다.
+
+해석/결정:
+- sidebar TUI가 active pane이 아니라 자기 pane(`TMUX_PANE`) 크기를 기준으로 렌더링하도록 고정했습니다.
+- mouse binding은 기본 `select-pane`/`send-keys -M` 동작을 유지하면서 launcher의 `--mouse-select`를 추가 호출합니다.
+- history 파일은 `~/.cache/dotfiles/tmux-session-history`에 TSV metadata로 저장합니다.
+- 복원은 process 재개가 아니라 session/window/pane cwd/layout 기반 새 session 생성으로 정의했습니다.
+
+작업 결과:
+- focus 이동 후 sidebar UI가 active pane 크기에 따라 바뀌는 문제를 수정했습니다.
+- age column 오른쪽 여백, footer 하단 고정, mouse name-click session 이동, `All` delete, history archive/restore/delete를 구현했습니다.
+
+남은 질문:
+- 추후 실행 process까지 복원하려면 command 재실행 정책과 보안/부작용 규칙을 별도로 정해야 합니다.
+
+## 2026-06-20 - tmux sidebar TUI refactor
+
+사용자 요청:
+- `fzf` 의존도를 배제하고, 추후 다시 붙일 수 있는 구조만 고려한 자체 TUI refactor를 원했습니다.
+- sidebar 목적은 session 생성/rename/삭제와 현재 session 현황 확인이라고 정리했습니다.
+- UI는 필요한 부분만 update하고, 특정 경우만 full refresh 하길 원했습니다.
+- 컬럼은 선택 session 표시, name, 생성시간 count `D:HH:MM:SS`로 정했습니다.
+- 색상 표시는 우선하지 않고, busy 같은 session 상태는 실시간 update 가능한 구조만 잡아두길 원했습니다.
+- 좁은 sidebar 폭 때문에 하단 설명은 최대한 줄이길 원했습니다.
+
+해석/결정:
+- `fzf`는 현재 구현에서 완전히 제거하고, bash/tmux 기반 TUI loop를 구현합니다.
+- v1 UI는 mark/name/age만 표시하고, status는 snapshot 구조에만 포함합니다.
+- 평상시 1초 tick은 age cell만 갱신하고, session 목록 변경/action/resize 때만 full redraw합니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`를 TUI backend 중심으로 전환했습니다.
+- `install.toml`에서 `fzf` dependency를 제거했습니다.
+- README는 fzf 설명을 제거하고 TUI 키/표시 설명으로 바꿨습니다.
+
+남은 질문:
+- 추후 status 표시를 UI에 올릴 때 column 추가 또는 name decoration 중 하나를 선택해야 합니다.
+
+## 2026-06-20 - 새 PC tmux sidebar 즉시 종료
+
+사용자 요청:
+- 새 PC에서 `curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash`로 설치한 뒤 sidebar가 생성되자마자 사라지는 심각한 버그를 보고했습니다.
+- 원래 개발 PC에서는 정상이라고 했습니다.
+
+해석/결정:
+- 로컬 재현 결과 `fzf 0.29`가 `--bind='load:pos(1)'`를 `unsupported key: load`로 거부했고, launcher가 이를 빈 선택으로 처리해 종료하는 것이 원인으로 확인됐습니다.
+- 최신 `fzf` 강제 대신 구버전 호환 처리를 선택했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`가 비필수 `fzf` 옵션 지원 여부를 먼저 검사하고, 미지원 시 해당 옵션 없이 실행하도록 수정했습니다.
+- `fzf` startup error가 발생하면 pane에서 status를 확인할 수 있게 했습니다.
+
+남은 질문:
+- 구버전 `fzf`에서는 선택 위치 복원 같은 UI 보조 기능이 비활성화될 수 있습니다. sidebar TUI 분리는 여전히 다음 버전 refactoring 항목입니다.
+
 ## 2026-06-20 - v0.2 sidebar follow-up
 
 사용자 요청:

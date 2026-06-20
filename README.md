@@ -110,8 +110,8 @@ name = "tmux"
 enabled = true
 source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
-packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
+commands = ["tmux", "zsh", "bc", "xclip"]
+packages = ["tmux", "zsh", "bc", "xclip"]
 depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
 description = "tmux configuration"
 ```
@@ -147,25 +147,23 @@ tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session
 상하/좌우로 나뉜 window에서도 sidebar는 전체 높이를 차지하는 왼쪽 pane 하나로 유지됩니다.
 
 - `Enter`: 선택한 session으로 이동
-- `Tab`: `Commands>` / `Sessions>` prompt 전환
+- `j`/`k`, `Up`/`Down`: session 선택 이동
 - `c`: 새 session 생성
 - `d`: 선택한 session 삭제
 - `r`: 선택한 session 이름 변경
-- `Esc`, `Commands> exit`: 닫기
+- `h`: 삭제한 session history 표시/숨김
+- `q`: 닫기
+- `Esc`: prompt 취소, history 창 닫기
 
-`c`, `d`, `r`은 `Commands>` prompt에서만 명령으로 동작합니다. `Sessions>` prompt에서는 session 검색 입력으로 처리됩니다.
-`Commands>`에서 `create`/`new`, `delete`/`remove`, `rename`, `q`/`quit`/`exit`를 입력하고 `Enter`로 실행할 수도 있습니다. `Commands>`에서 query를 입력한 뒤 `Enter`를 누르면 session row가 보여도 command로만 해석되며, 알 수 없는 명령은 launcher를 닫지 않고 오류만 보여준 뒤 prompt로 돌아갑니다. session 검색 후 이동은 `Sessions>` prompt를 사용해야 합니다.
-내부적으로는 `fzf --print-query --expect` 출력의 첫 줄을 query, 둘째 줄을 pressed key로 해석합니다. 이 순서가 바뀌면 `Commands>`의 단축키 입력이 session 이름으로 잘못 해석되어 launcher가 종료될 수 있습니다.
-sidebar에 포커스가 있을 때 `Ctrl+a |` 또는 `Ctrl+a _`로 pane을 나누면 sidebar가 아니라 오른쪽 작업 영역이 나뉩니다. sidebar에서 다른 session으로 이동하면 target session의 active window에 sidebar를 보장합니다.
-sidebar 폭을 직접 조정한 뒤 session을 이동하면, target session의 sidebar도 같은 폭으로 맞춥니다.
-session 목록은 선택 표시, session 이름, running elapsed time을 보여줍니다. 최근 activity가 있고 foreground command가 shell이 아닌 session은 이름을 red로 표시하고, elapsed time은 `DAY:HH:MM:SS` 형식으로 표시합니다.
+sidebar에 포커스가 있을 때 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`로 pane을 나누면 sidebar가 아니라 오른쪽 작업 영역이 나뉩니다. sidebar에서 다른 session으로 이동하면 target session의 active window에 sidebar를 보장합니다.
+sidebar 폭을 직접 조정한 뒤 session을 이동하면, target session의 sidebar도 같은 폭으로 맞춥니다. sidebar를 열고 닫을 때는 sidebar를 제외한 work layout을 저장/복구해 반복 toggle 후에도 기존 pane 비율을 유지합니다.
+session 목록은 선택 표시, session 이름, session 생성 후 경과 시간을 `DAY:HH:MM:SS` 형식으로 보여줍니다. 경과 시간은 1초마다 해당 컬럼만 갱신합니다.
+mouse 기본 동작은 유지하며, sidebar의 session name 위치를 클릭한 경우에만 해당 session으로 이동합니다.
 
-이 기능은 `fzf`가 필요합니다. `install.sh`로 enabled 항목을 설치하면 Debian/Ubuntu 계열에서는 `fzf` 패키지도 함께 설치할 수 있습니다. 직접 설치하려면 아래 명령을 사용합니다.
-
-```sh
-sudo apt-get update
-sudo apt-get install -y fzf
-```
+`d`로 session을 삭제할 때 `y`를 입력하면 `~/.cache/dotfiles/tmux-session-history` 아래에 복원용 metadata를 남기고 삭제합니다. 그냥 `Enter`를 누르면 history 없이 삭제하고, `Esc`는 삭제 prompt만 취소합니다. 현재 session도 삭제할 수 있으며, 다른 session이 남아 있으면 그쪽으로 이동한 뒤 삭제하고 남은 session이 없으면 tmux server를 종료합니다. 삭제 확인 prompt에서 `All`을 입력하면 모든 session 삭제를 진행하며, 이어서 history 저장 여부를 한 번 더 묻습니다.
+`h`를 누르면 sidebar 하단 절반에 history 목록이 열립니다. history 목록에서는 `Space`로 여러 항목을 표시하고, `Enter`로 복원하며, `d` 후 `y`로 history 파일을 완전히 삭제합니다. history 창에서 `Esc`를 누르면 history 창만 닫고 기존 sidebar로 돌아갑니다.
+복원은 session/window 이름, sidebar를 제외한 pane current path, sidebar-free window layout metadata, 저장된 shell history를 사용해 원래 session 이름으로 새 session을 만듭니다. 같은 이름의 session이 이미 있으면 복원하지 않습니다. 실행 중이던 process 자체를 되살리지는 않습니다.
+이 sidebar는 별도 selector 의존성 없이 tmux와 bash만으로 동작합니다. 각 session의 busy/idle 상태는 내부 snapshot 구조에 포함하지만, 현재 UI에는 표시하지 않습니다.
 
 ## 로컬 검증
 

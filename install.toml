@@ -15,8 +15,8 @@ enabled = true
 hidden = false
 source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip", "fzf"]
-packages = ["tmux", "zsh", "bc", "xclip", "fzf"]
+commands = ["tmux", "zsh", "bc", "xclip"]
+packages = ["tmux", "zsh", "bc", "xclip"]
 depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
 description = "tmux configuration"
 
@@ -26,8 +26,8 @@ enabled = false
 hidden = true
 source = "scripts/tmux-session-launcher"
 target = "~/.local/bin/tmux-session-launcher"
-commands = ["bash", "tmux", "fzf"]
-packages = ["bash", "tmux", "fzf"]
+commands = ["bash", "tmux"]
+packages = ["bash", "tmux"]
 depends = []
 description = "tmux popup session launcher"
 
