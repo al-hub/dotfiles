@@ -27,6 +27,23 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - sidebar open 표시와 delete 문구 변경
+
+사용자 요청:
+- sidebar에서 history 단축키 `h`를 `o`로 바꾸고, 표시도 `history:` 대신 `open:`으로 바꾸길 요청했습니다.
+- `delete -> All` 확인 문구도 `Save history?` 대신 `Save Session?`으로 바꾸길 요청했습니다.
+
+해석/결정:
+- 내부 상태 이름은 그대로 두고, 사용자에게 보이는 키맵과 라벨만 `open`으로 바꾸기로 했습니다.
+- All delete 확인 문구는 세션 삭제 의미가 더 직접 드러나도록 `Save Session?`으로 변경했습니다.
+
+작업 결과:
+- sidebar footer help와 history view label, 입력 키 `h`를 `o`로 변경했습니다.
+- All delete 확인 프롬프트를 `Save Session?`으로 바꿨습니다.
+
+남은 질문:
+- 없습니다.
+
 ## 2026-06-21 - sidebar archive/delete 구조 개선
 
 사용자 요청:

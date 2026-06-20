@@ -665,10 +665,10 @@ render_footer()
 {
     width="$(pane_width)"
     height="$(pane_height)"
-    help='j/k Enter c/r/d h q'
+    help='j/k Enter c/r/d o q'
 
     if [ "$width" -ge 30 ]; then
-        help='j/k | Enter | c/r/d | h | q'
+        help='j/k | Enter | c/r/d | o | q'
     fi
 
     move_cursor "$height" 1
@@ -748,7 +748,7 @@ render_history()
 
     move_cursor "$line" 1
     clear_line
-    printf '%s' "$(truncate_text 'history: Space mark, Enter restore, d delete' "$width")"
+    printf '%s' "$(truncate_text 'open: Space mark, Enter restore, d delete' "$width")"
 
     line="$start"
     while [ "$line" -lt "$(pane_height)" ]; do
@@ -1280,7 +1280,7 @@ tui_delete_session()
     fi
     answer="$prompt_result"
     if [ "$answer" = "All" ]; then
-        prompt_line "Save history? y/N "
+        prompt_line "Save Session? y/N "
         if [ "$prompt_cancelled" = "true" ]; then
             return 0
         fi
@@ -1393,7 +1393,7 @@ read_key()
         c) printf '%s\n' create ;;
         r) printf '%s\n' rename ;;
         d) printf '%s\n' delete ;;
-        h) printf '%s\n' history ;;
+        o) printf '%s\n' history ;;
         ' ') printf '%s\n' mark ;;
         q) printf '%s\n' quit ;;
         ''|$'\n'|$'\r') printf '%s\n' enter ;;

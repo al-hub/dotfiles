@@ -27,6 +27,22 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - sidebar open 단축키와 delete 문구 조정
+
+요약:
+- sidebar의 history 모드를 `o` 단축키로 열도록 바꾸고, 표시 문자열도 `open:`으로 맞췄습니다.
+- `delete -> All` 경로의 확인 문구를 `Save Session?`으로 변경했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: sidebar 단축키와 history/open 표시 문자열, All delete 확인 문구 변경
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+
+후속 주의:
+- 내부 모드 이름은 그대로 `history`를 유지하므로, 외부 표시와 입력만 `open`으로 바뀝니다.
+
 ## 2026-06-21 - tmux sidebar archive/delete 구조 리팩토링
 
 요약:
