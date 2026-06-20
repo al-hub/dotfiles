@@ -95,16 +95,106 @@ restore_work_layout()
     tmux select-layout -t "$window_id" "$layout" >/dev/null 2>&1 || true
 }
 
-current_work_layout()
+prepare_window_for_archive()
 {
     target="$1"
-    layout="$(tmux show-option -wqv -t "$target" "$WORK_LAYOUT_OPTION" 2>/dev/null || true)"
+    sidebar_pane="$(find_sidebar_pane "$target")"
+    work_layout=""
+    work_pane_count=""
+    layout_pane_count=""
 
-    if [ -n "$layout" ]; then
-        printf '%s\n' "$layout"
-    else
-        tmux display-message -p -t "$target" '#{window_layout}' 2>/dev/null || true
+    work_layout="$(tmux show-option -wqv -t "$target" "$WORK_LAYOUT_OPTION" 2>/dev/null || true)"
+
+    if [ -n "$sidebar_pane" ] && [ -n "$work_layout" ]; then
+        work_pane_count="$(
+            tmux list-panes -t "$target" -F '#{pane_title}' 2>/dev/null |
+                awk -v title="$SIDEBAR_TITLE" '$0 != title { count++ } END { print count + 0 }'
+        )"
+        layout_pane_count="$(layout_pane_count "$work_layout")"
+        if [ "$work_pane_count" = "$layout_pane_count" ]; then
+            printf '%s\n' "$work_layout"
+            return 0
+        fi
     fi
+
+    if [ -n "$sidebar_pane" ]; then
+        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
+    fi
+
+    tmux display-message -p -t "$target" '#{window_layout}' 2>/dev/null || true
+}
+
+layout_pane_count()
+{
+    layout="$1"
+
+    printf '%s\n' "$layout" |
+        awk '{
+            count = 0
+            while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                count++
+                $0 = substr($0, RSTART + RLENGTH)
+            }
+            print count
+        }'
+}
+
+layout_body()
+{
+    layout="$1"
+
+    case "$layout" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
+        *) printf '%s\n' "$layout" ;;
+    esac
+}
+
+layout_with_checksum()
+{
+    body="$1"
+    checksum=0
+    bytes="$(printf '%s' "$body" | od -An -tu1 -v)"
+
+    for byte in $bytes; do
+        checksum=$((((checksum >> 1) | ((checksum & 1) << 15))))
+        checksum=$(((checksum + byte) & 65535))
+    done
+
+    printf '%04x,%s\n' "$checksum" "$body"
+}
+
+layout_with_pane_ids()
+{
+    layout="$1"
+    pane_ids="$2"
+    body="$(layout_body "$layout")"
+    replaced=""
+
+    replaced="$(
+        printf '%s\n' "$body" |
+        awk -v pane_ids="$pane_ids" '
+            BEGIN {
+                split(pane_ids, ids, " ")
+                pane_index = 1
+            }
+            {
+                output = ""
+                rest = $0
+                while (match(rest, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                    token = substr(rest, RSTART, RLENGTH)
+                    replacement = token
+                    if (ids[pane_index] != "") {
+                        sub(/,[0-9]+$/, "," ids[pane_index], replacement)
+                    }
+                    output = output substr(rest, 1, RSTART - 1) replacement
+                    rest = substr(rest, RSTART + RLENGTH)
+                    pane_index++
+                }
+                print output rest
+            }'
+    )"
+
+    layout_with_checksum "$replaced"
 }
 
 list_window_panes()
@@ -183,6 +273,7 @@ open_sidebar()
     refresh="${2:-false}"
     width="${3:-$(sidebar_width)}"
     pane_path="${4:-}"
+    preserve_layout="${5:-false}"
     existing_pane="$(find_sidebar_pane "$target")"
 
     if [ -n "$existing_pane" ]; then
@@ -195,7 +286,9 @@ open_sidebar()
         return 0
     fi
 
-    save_work_layout "$target"
+    if [ "$preserve_layout" != "true" ]; then
+        save_work_layout "$target"
+    fi
 
     target_window="$(window_target "$target")"
     before_panes="$(list_window_panes "$target_window")"
@@ -222,7 +315,8 @@ ensure_session_sidebar()
     session_name="$1"
     refresh="${2:-false}"
     width="${3:-$(sidebar_width)}"
-    open_sidebar "=$session_name:" "$refresh" "$width"
+    preserve_layout="${4:-false}"
+    open_sidebar "=$session_name:" "$refresh" "$width" "" "$preserve_layout"
 }
 
 toggle_current_sidebar()
@@ -863,6 +957,21 @@ $(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}' 2>/dev/null)
 EOF
 }
 
+apply_restored_window_layout()
+{
+    target="$1"
+    layout="$2"
+    pane_ids="$3"
+    restored_layout=""
+
+    [ -n "$target" ] || return 0
+    [ -n "$layout" ] || return 0
+
+    restored_layout="$(layout_with_pane_ids "$layout" "$pane_ids")"
+    tmux select-layout -t "$target" "$restored_layout" >/dev/null 2>&1 || true
+    tmux set-option -wq -t "$target" "$WORK_LAYOUT_OPTION" "$restored_layout" 2>/dev/null || true
+}
+
 archive_session()
 {
     session_name="$1"
@@ -885,7 +994,7 @@ archive_session()
                 awk -v title="$SIDEBAR_TITLE" '$0 != title { found = 1 } END { exit found ? 0 : 1 }'; then
                 continue
             fi
-            window_layout="$(current_work_layout "=$session_name:$window_index")"
+            window_layout="$(prepare_window_for_archive "=$session_name:$window_index")"
             printf 'window\t%s\t%s\t%s\t%s\n' "$window_index" "$window_name" "$window_active" "$window_layout"
             while IFS="$(printf '\t')" read -r pane_index pane_path pane_command pane_title; do
                 [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
@@ -958,22 +1067,28 @@ restore_archive()
 
     created=false
     current_window=""
+    current_window_target=""
+    current_window_pane_ids=""
     first_window=true
     first_pane_in_window=true
     active_window=""
     window_layout=""
+    created_target=""
+    pane_id=""
 
     while IFS="$(printf '\t')" read -r record a b c d; do
         case "$record" in
             window)
-                if [ "$first_window" = "false" ] && [ -n "$current_window" ]; then
-                    tmux select-layout -t "=$restore_name:$current_window" "$window_layout" >/dev/null 2>&1 || true
+                if [ "$first_window" = "false" ] && [ -n "$current_window_target" ]; then
+                    apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"
                 fi
                 window_index="$a"
                 window_name="$b"
                 window_active="$c"
                 window_layout="$d"
                 current_window="$window_name"
+                current_window_target=""
+                current_window_pane_ids=""
                 first_pane_in_window=true
                 if [ "$window_active" = "1" ]; then
                     active_window="$window_name"
@@ -983,22 +1098,37 @@ restore_archive()
                 pane_path="$b"
                 [ -d "$pane_path" ] || pane_path="$HOME"
                 if [ "$created" = "false" ]; then
-                    tmux new-session -d -s "$restore_name" -n "$current_window" -c "$pane_path"
+                    created_target="$(
+                        tmux new-session -d -P -F '#{window_id}' \
+                            -s "$restore_name" -n "$current_window" -c "$pane_path"
+                    )"
+                    current_window_target="$created_target"
+                    pane_id="$(tmux list-panes -t "$current_window_target" -F '#{pane_id}' 2>/dev/null | head -n 1)"
+                    current_window_pane_ids="${pane_id#%}"
                     created=true
                     first_window=false
                     first_pane_in_window=false
                 elif [ "$first_pane_in_window" = "true" ]; then
-                    tmux new-window -t "=$restore_name:" -n "$current_window" -c "$pane_path"
+                    created_target="$(
+                        tmux new-window -P -F '#{window_id}' \
+                            -t "=$restore_name:" -n "$current_window" -c "$pane_path"
+                    )"
+                    current_window_target="$created_target"
+                    pane_id="$(tmux list-panes -t "$current_window_target" -F '#{pane_id}' 2>/dev/null | head -n 1)"
+                    current_window_pane_ids="${pane_id#%}"
                     first_pane_in_window=false
                 else
-                    tmux split-window -t "=$restore_name:$current_window" -c "$pane_path"
+                    pane_id="$(tmux split-window -P -F '#{pane_id}' -t "$current_window_target" -c "$pane_path")"
+                    current_window_pane_ids="${current_window_pane_ids}${current_window_pane_ids:+ }${pane_id#%}"
                 fi
                 ;;
             endwindow)
-                if [ -n "$current_window" ]; then
-                    tmux select-layout -t "=$restore_name:$current_window" "$window_layout" >/dev/null 2>&1 || true
+                if [ -n "$current_window_target" ]; then
+                    apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"
                 fi
                 current_window=""
+                current_window_target=""
+                current_window_pane_ids=""
                 ;;
         esac
     done < "$archive_path"
@@ -1009,7 +1139,12 @@ restore_archive()
 
     [ -n "$active_window" ] && tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1 || true
     selected_session="$restore_name"
-    switch_session "$restore_name"
+    remember_sidebar_width
+    width="$(sidebar_width)"
+    ensure_session_sidebar "$restore_name" "true" "$width" "true"
+    tmux switch-client -t "=$restore_name" 2>/dev/null || true
+    ensure_session_sidebar "$restore_name" "false" "$width" "true"
+    current_session="$restore_name"
     sleep 0.1
     clear_restored_work_panes "$restore_name"
 }

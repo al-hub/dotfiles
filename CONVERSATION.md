@@ -27,6 +27,23 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-20 - sidebar history restore layout 복원
+
+사용자 요청:
+- history restore 시 active window의 pane 배치가 제대로 복원되지 않고, vertical-only window가 horizontal 형태로 복원되거나 horizontal-only window의 세로 간격이 바뀐다고 보고했습니다.
+
+해석/결정:
+- 저장된 tmux `window_layout` 문자열에는 예전 pane id와 checksum이 포함되어 있어, 새 pane을 만든 뒤 그대로 `select-layout`하면 tmux가 layout을 거부하거나 기본 split layout이 남을 수 있다고 판단했습니다.
+- restore 시 새 pane id 순서로 layout leaf id를 바꾸고 checksum을 다시 계산하도록 했습니다.
+- restore 후 sidebar를 열 때 이미 확정한 restored work layout option을 덮어쓰지 않도록 preserve 경로를 추가했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 archive/restore layout 경로를 수정했습니다.
+- vertical-only, horizontal-only, mixed 3-pane 재현에서 복원된 방향과 크기 구조가 원본과 일치하는 것을 확인했습니다.
+
+남은 질문:
+- 오래된 archive도 같은 layout 재작성 경로를 타므로 별도 마이그레이션은 필요하지 않습니다.
+
 ## 2026-06-20 - sidebar history restore prompt 잔상
 
 사용자 요청:

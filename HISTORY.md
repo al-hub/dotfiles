@@ -27,6 +27,26 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-20 - sidebar history restore layout 복원 수정
+
+요약:
+- history restore가 저장된 tmux layout의 예전 pane id/checksum을 그대로 재사용해 vertical-only 또는 mixed layout이 잘못 복원되던 문제를 수정했습니다.
+- restore 시 새로 생성된 pane id로 layout leaf id를 치환하고 checksum을 다시 계산해 `select-layout`가 실제 저장 배치를 적용하게 했습니다.
+- restore 후 sidebar를 열 때 확정된 work layout option을 덮어쓰지 않도록 restore 전용 preserve 경로를 추가했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: archive layout 선택, restored layout id/checksum 재작성, restore 전용 sidebar preserve 처리
+- `README.md`: history restore layout 설명 갱신
+- `HISTORY.md`, `CONVERSATION.md`: bugfix 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- isolated tmux 서버에서 vertical-only, horizontal-only, mixed 3-pane session을 sidebar 포함 archive/restore 후 방향과 크기 구조가 원본과 일치함을 확인
+
+후속 주의:
+- layout 복원은 tmux `window_layout` 기반이므로 실행 중이던 process 자체는 여전히 복원하지 않습니다.
+
 ## 2026-06-20 - sidebar history restore prompt 잔상 수정
 
 요약:
