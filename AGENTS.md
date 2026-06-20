@@ -10,7 +10,7 @@
 - 기본 enabled 설치 항목은 사용자에게 `tmux`만 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`는 hidden dependency로 함께 설치됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
-- sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. 직접 tmux 기본 split/resize로 sidebar가 열린 상태의 work 영역을 바꾼 경우까지 완전 추적하지는 못하므로, sidebar에서 split할 때는 `Ctrl+a |`/`Ctrl+a _` wrapper를 사용하세요.
+- sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. 직접 tmux 기본 split/resize로 sidebar가 열린 상태의 work 영역을 바꾼 경우까지 완전 추적하지는 못하므로, sidebar와 함께 split할 때는 wrapper에 묶인 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`를 사용하세요.
 
 ## 문서 역할
 

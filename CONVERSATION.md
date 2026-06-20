@@ -34,18 +34,17 @@
 
 해석/결정:
 - split 경로에서 전역 `current_path`를 쓰지 않고, 실제 target pane/window의 현재 경로를 tmux에서 다시 읽어 사용하도록 바꿨습니다.
-- split 후 sidebar를 다시 열 때도 같은 target path를 넘겨 pane 생성 컨텍스트를 흔들지 않게 했습니다.
 - 이미지 확인 후 `%`가 pane border가 아니라 새 pane 안의 zsh 기본 prompt로 보였습니다. tmux 기본 `%`/`"` split key가 sidebar pane을 직접 split하는 경로를 우회하도록 wrapper binding으로 바꿨습니다.
-- 추가 재현 결과, active pane focus에서 sidebar가 있는 상태로 split하면 새 work pane의 첫 zsh prompt `%`가 잔상으로 남았습니다. split wrapper가 만든 pane에 `DOTFILES_TMUX_CLEAR_ON_START=1`을 넘기고 tmux 전용 zshrc가 첫 로딩 때 화면을 정리하도록 했습니다.
+- 추가 재현 결과, active pane focus에서 sidebar가 있는 상태로 split하면 split 후 sidebar를 kill/reopen하는 흐름 때문에 새 pane에 `%`가 남았습니다. split wrapper는 sidebar를 유지한 채 현재 work pane만 tmux 기본 split으로 나누도록 단순화했습니다.
 
 작업 결과:
 - `scripts/tmux-session-launcher`의 sidebar open/split 경로 처리를 target pane 기준으로 정리했습니다.
 - `dotfiles/tmux.conf`에서 `%`/`"`도 `|`/`_`와 동일하게 sidebar-aware split wrapper를 타도록 변경했습니다.
-- `dotfiles/tmux.zshrc`에 split 직후 초기 화면 정리 플래그 처리를 추가했습니다.
+- active pane focus와 sidebar focus 양쪽에서 split 후 새 pane에 `%` 없이 `$` prompt만 표시되는 것을 확인했습니다.
 - history 문서에 bugfix와 남은 제한을 기록했습니다.
 
 남은 질문:
-- 실제 설치 환경에서는 `tmux-session-launcher`와 `tmux-zshrc` hidden dependency가 함께 갱신되어야 합니다.
+- 실제 설치 환경에서는 `tmux-session-launcher`와 `tmux.conf`가 함께 갱신되어야 합니다.
 
 ## 2026-06-20 - tmux sidebar layout/delete refactor 진행
 

@@ -6,7 +6,6 @@ SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
-WORK_PANE_COMMAND="${TMUX_SESSION_WORK_PANE_COMMAND:-exec env ZDOTDIR=\"$HOME/.cache/dotfiles\" DOTFILES_TMUX_CLEAR_ON_START=1 PROMPT=\"\$ \" PS1=\"\$ \" /bin/zsh}"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 SELF_PANE="${TMUX_PANE:-}"
 current_session="$(tmux display-message -p '#S')"
@@ -263,12 +262,7 @@ select_work_pane_from_sidebar()
 split_work_pane()
 {
     direction="$1"
-    sidebar_pane="$(find_sidebar_pane)"
-    target_window=""
-    width=""
     work_path=""
-    current_pane_id="$(tmux display-message -p '#{pane_id}')"
-    sidebar_is_current=false
 
     if current_pane_is_sidebar; then
         select_work_pane_from_sidebar
@@ -276,31 +270,14 @@ split_work_pane()
             tmux display-message 'No work pane found for split.'
             return 0
         fi
-        sidebar_is_current=true
     fi
 
     work_path="$(target_pane_path)"
 
-    if [ -n "$sidebar_pane" ] && [ "$sidebar_is_current" = "false" ] && [ "$current_pane_id" != "$sidebar_pane" ]; then
-        target_window="$(window_target "$sidebar_pane")"
-        remember_sidebar_width
-        width="$(sidebar_width)"
-        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
-        restore_work_layout "$target_window"
-    fi
-
     case "$direction" in
-        horizontal) tmux split-window -h -c "$work_path" "$WORK_PANE_COMMAND" ;;
-        vertical) tmux split-window -v -c "$work_path" "$WORK_PANE_COMMAND" ;;
+        horizontal) tmux split-window -h -c "$work_path" ;;
+        vertical) tmux split-window -v -c "$work_path" ;;
     esac
-    if [ -n "$sidebar_pane" ] && [ "$sidebar_is_current" = "false" ] && [ "$current_pane_id" != "$sidebar_pane" ]; then
-        save_work_layout "$target_window"
-        open_sidebar "$target_window" "true" "$width" "$work_path"
-    else
-        if [ "$sidebar_is_current" = "false" ]; then
-            save_work_layout
-        fi
-    fi
 }
 
 switch_session()

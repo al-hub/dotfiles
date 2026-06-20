@@ -31,14 +31,12 @@
 
 요약:
 - sidebar가 열린 상태에서 split wrapper를 실행할 때 새 pane과 sidebar가 잘못된 current path를 공유하지 않도록 target pane의 현재 경로를 직접 읽어 사용하게 했습니다.
-- split 후 reopen 되는 sidebar에도 동일한 target path를 넘겨 pane 초기 상태가 흔들리지 않게 했습니다.
+- split 중 sidebar를 죽였다가 다시 여는 흐름을 제거하고, 현재 work pane을 tmux 기본 split 방식으로 나누게 했습니다.
 - tmux 기본 `%`/`"` split key가 sidebar pane을 직접 split하지 않도록 기존 `|`/`_`와 같은 launcher wrapper로 연결했습니다.
-- active pane focus 상태에서 sidebar가 있는 채로 split할 때 work pane command의 초기 zsh prompt `%`가 보이지 않도록, 새 work pane에는 tmux 전용 zsh command를 명시하고 zshrc에서 `DOTFILES_TMUX_CLEAR_ON_START=1`을 한 번 처리하게 했습니다.
 
 변경 파일:
-- `scripts/tmux-session-launcher`: target pane current path helper 추가, split/open_sidebar 경로 인자화
+- `scripts/tmux-session-launcher`: target pane current path helper 추가, split 경로를 sidebar kill/reopen 없이 tmux 기본 split으로 단순화
 - `dotfiles/tmux.conf`: `%`/`"` split binding을 sidebar-aware wrapper로 변경
-- `dotfiles/tmux.zshrc`: split 직후 초기 화면 정리 플래그 처리 추가
 - `HISTORY.md`, `CONVERSATION.md`: bugfix 기록
 
 검증:
@@ -46,6 +44,7 @@
 - `zsh -n dotfiles/tmux.zshrc`: 통과
 - `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
 - isolated tmux 서버에서 sidebar open, active pane focus, vertical split 실행 후 새 pane에 `%` 없이 `$` prompt만 표시 확인
+- isolated tmux 서버에서 sidebar focus, vertical split 실행 후 새 pane에 `%` 없이 `$` prompt만 표시 확인
 
 후속 주의:
 - tmux 기본 split/resize를 직접 실행하는 경우까지 완전히 추적하는 구조는 아닙니다. sidebar 안에서는 launcher wrapper를 쓰는 전제를 유지합니다.
