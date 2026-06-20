@@ -27,6 +27,23 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - All delete archive 중 sidebar만 닫히는 버그 수정
+
+요약:
+- sidebar가 열린 상태에서 `d` -> `All` -> `y` 실행 시, archive 중 sidebar pane이 먼저 닫혀 `kill-server`까지 진행되지 않던 문제를 수정했습니다.
+- All delete도 current session archive-delete와 동일하게 tmux `run-shell -b` 독립 프로세스가 archive 후 server 종료를 처리하게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: All delete archive/no-archive를 background command로 분리
+- `HISTORY.md`, `CONVERSATION.md`: bugfix 기록
+
+검증:
+- isolated tmux 서버에서 sidebar + split work pane 상태로 `--delete-all-sessions-after-archive true` 실행 후 모든 session archive 생성 및 server 종료 확인
+- isolated tmux 서버에서 `--delete-all-sessions-after-archive false` 실행 후 server 종료 확인
+
+후속 주의:
+- archive path는 여전히 live sidebar pane을 닫을 수 있으므로, 다음 리팩토링에서는 archive를 read-only snapshot 방식으로 바꾸는 것이 우선입니다.
+
 ## 2026-06-21 - current session delete archive 중 sidebar만 닫히는 버그 수정
 
 요약:

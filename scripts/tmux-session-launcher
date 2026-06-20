@@ -1026,6 +1026,14 @@ $(tmux list-sessions -F '#{session_name}' 2>/dev/null)
 EOF
 }
 
+delete_all_sessions_after_archive()
+{
+    should_archive="${1:-false}"
+
+    archive_all_sessions "$should_archive"
+    tmux kill-server
+}
+
 fallback_session()
 {
     deleting="$1"
@@ -1068,6 +1076,15 @@ run_current_session_delete()
     quoted_archive="$(shell_quote "$should_archive")"
 
     tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive"
+}
+
+run_all_sessions_delete()
+{
+    should_archive="$1"
+    quoted_script="$(shell_quote "$SCRIPT_PATH")"
+    quoted_archive="$(shell_quote "$should_archive")"
+
+    tmux run-shell -b "$quoted_script --delete-all-sessions-after-archive $quoted_archive"
 }
 
 archive_selected_indices()
@@ -1245,10 +1262,9 @@ tui_delete_session()
             return 0
         fi
         case "$prompt_result" in
-            [Yy]|[Yy][Ee][Ss]) archive_all_sessions true ;;
-            *) archive_all_sessions false ;;
+            [Yy]|[Yy][Ee][Ss]) run_all_sessions_delete true ;;
+            *) run_all_sessions_delete false ;;
         esac
-        tmux kill-server
         exit 0
     fi
 
@@ -1579,6 +1595,10 @@ main()
             ;;
         --delete-session-after-archive)
             delete_session_after_archive "${2:-}" "${3:-false}"
+            return 0
+            ;;
+        --delete-all-sessions-after-archive)
+            delete_all_sessions_after_archive "${2:-false}"
             return 0
             ;;
         --sidebar|"")

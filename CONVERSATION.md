@@ -27,6 +27,22 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - All delete archive 중 sidebar만 닫힘
+
+사용자 요청:
+- sidebar를 열고 split으로 pane이 생성된 뒤 `delete -> All -> y`를 누르면 session 전체가 닫히지 않고 sidebar만 닫히는 경우가 남아 있다고 보고했습니다.
+
+해석/결정:
+- `All -> y` 경로도 `archive_all_sessions true`를 현재 sidebar TUI 프로세스에서 직접 실행하고 있었습니다. archive 중 현재 sidebar pane이 닫히면 후속 `kill-server`가 실행되지 않는 구조였습니다.
+- All delete도 tmux `run-shell -b`로 archive와 server 종료를 독립 프로세스에 맡기도록 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `--delete-all-sessions-after-archive` 내부 명령과 All delete enqueue 경로를 추가했습니다.
+- archive 저장 경로와 no-archive 경로 모두 server 종료를 확인했습니다.
+
+남은 질문:
+- archive가 live pane을 닫는 구조는 남아 있으므로 다음 리팩토링에서 read-only snapshot archive로 바꾸는 것이 좋습니다.
+
 ## 2026-06-21 - current session delete archive 중 sidebar만 닫힘
 
 사용자 요청:
