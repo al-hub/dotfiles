@@ -118,7 +118,8 @@ prepare_window_for_archive()
     fi
 
     if [ -n "$sidebar_pane" ]; then
-        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
+        printf '\n'
+        return 0
     fi
 
     tmux display-message -p -t "$target" '#{window_layout}' 2>/dev/null || true
@@ -357,6 +358,11 @@ split_work_pane()
 {
     direction="$1"
     work_path=""
+    sidebar_pane="$(find_sidebar_pane)"
+    sidebar_width=""
+    target_window=""
+    before_panes=""
+    new_pane_id=""
 
     if current_pane_is_sidebar; then
         select_work_pane_from_sidebar
@@ -367,11 +373,28 @@ split_work_pane()
     fi
 
     work_path="$(target_pane_path)"
+    target_window="$(window_target)"
+
+    if [ -n "$sidebar_pane" ]; then
+        sidebar_width="$(current_sidebar_width)"
+        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
+        restore_work_layout "$target_window"
+    fi
+
+    before_panes="$(list_window_panes "$target_window")"
 
     case "$direction" in
         horizontal) tmux split-window -h -c "$work_path" ;;
         vertical) tmux split-window -v -c "$work_path" ;;
     esac
+
+    new_pane_id="$(new_pane_from_snapshot "$before_panes" "$target_window")"
+
+    if [ -n "$sidebar_pane" ]; then
+        save_work_layout "$target_window"
+        open_sidebar "$target_window" "false" "$sidebar_width" "$work_path" "true"
+        [ -n "$new_pane_id" ] && tmux select-pane -t "$new_pane_id" 2>/dev/null || true
+    fi
 }
 
 switch_session()
@@ -1067,7 +1090,7 @@ delete_session_after_archive()
     fi
 }
 
-run_current_session_delete()
+run_session_delete()
 {
     session_name="$1"
     should_archive="$2"
@@ -1275,29 +1298,18 @@ tui_delete_session()
 
     case "$answer" in
         [Yy]|[Yy][Ee][Ss])
+            run_session_delete "$selected_session" true
             if [ "$selected_session" = "$current_session" ]; then
-                run_current_session_delete "$selected_session" true
                 exit 0
-            else
-                archive_session "$selected_session" >/dev/null || true
-                tmux kill-session -t "=$selected_session"
-                selected_session="$current_session"
             fi
+            selected_session="$current_session"
             ;;
         '')
+            run_session_delete "$selected_session" false
             if [ "$selected_session" = "$current_session" ]; then
-                next_session="$(fallback_session "$selected_session")"
-                if [ -n "$next_session" ]; then
-                    tmux switch-client -t "=$next_session" 2>/dev/null || true
-                    tmux kill-session -t "=$selected_session"
-                    exit 0
-                fi
-                tmux kill-server
                 exit 0
-            else
-                tmux kill-session -t "=$selected_session"
-                selected_session="$current_session"
             fi
+            selected_session="$current_session"
             ;;
     esac
 }

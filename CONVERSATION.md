@@ -27,6 +27,24 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - sidebar archive/delete 구조 개선
+
+사용자 요청:
+- 유사한 sidebar/split/delete/history 오류가 반복되어 구조적인 개선이 필요하다고 보고했고, 우선순위 분석 후 진행을 요청했습니다.
+
+해석/결정:
+- 핵심 원인을 archive 준비 함수가 상태 조회 중 live sidebar pane을 직접 닫는 구조로 판단했습니다.
+- archive는 live tmux 상태를 변경하지 않고, 삭제는 TUI가 직접 처리하지 않고 background backend에 위임하는 방향을 선택했습니다.
+- sidebar가 열린 상태에서 split wrapper를 사용할 때는 work layout을 갱신하기 위해 sidebar를 잠시 떼고 다시 붙이는 방식으로 stale layout을 줄이기로 했습니다.
+
+작업 결과:
+- `prepare_window_for_archive`에서 sidebar `kill-pane`을 제거했습니다.
+- current/other session delete가 모두 `run_session_delete` backend를 타도록 정리했습니다.
+- `split_work_pane`이 sidebar가 있는 경우 work layout을 갱신하고 sidebar를 복구하도록 수정했습니다.
+
+남은 질문:
+- tmux 기본 split 명령으로 sidebar 상태의 work 영역을 직접 변경하는 경우까지 완전 추적하려면, tmux layout 문자열에서 sidebar subtree를 제거하고 정규화하는 별도 parser가 필요할 수 있습니다.
+
 ## 2026-06-21 - All delete archive 중 sidebar만 닫힘
 
 사용자 요청:
