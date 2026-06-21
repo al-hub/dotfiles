@@ -27,6 +27,66 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - sidebar 애니메이션 갱신 주기 분리
+
+요약:
+- sidebar 애니메이션을 더 짧은 poll 주기로 돌리고, age 갱신과 분리해 더 부드럽게 보이도록 조정했습니다.
+- 기존 1초 단위 age refresh는 유지하고, sweep frame은 별도 갱신으로 돌립니다.
+- poll 기본값은 `0.12s`로 두었습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: sidebar poll timeout 추가, age refresh와 animation repaint 분리
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 예정
+
+후속 주의:
+- `TMUX_SESSION_SIDEBAR_POLL_TIMEOUT`으로 poll 주기를 조절할 수 있습니다.
+
+## 2026-06-21 - sidebar sweep 색상 톤 조정
+
+요약:
+- sidebar 세션명 sweep 색감을 하늘색 계열에서 흰색-회색 계열로 바꿨습니다.
+- Codex 느낌에 맞춰 장식성보다 텍스트 강조감을 더 남기는 팔레트로 정리했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: gradient sweep 팔레트를 grayscale로 조정
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 예정
+
+후속 주의:
+- 상태 판정 로직은 유지하고 색상만 바꿨습니다.
+
+## 2026-06-21 - sidebar 애니메이션 깜빡임과 대상 판정 수정
+
+요약:
+- v0.3 sidebar 애니메이션이 visible row 전체를 반복 repaint해 깜빡이던 문제를 줄였습니다.
+- sweep 대상 판정을 session-wide busy가 아니라 session 안의 work pane 기준으로 분리했습니다.
+- `top`, `btop`, `htop`, `watch` 같은 모니터링 command는 foreground여도 sweep 대상에서 제외했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: active work pane 판정, 세션명 cell 부분 repaint, passive command 제외 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n install.sh`: 통과
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`: 통과
+- `sh -n install_dotfiles.sh`: 통과
+- `git diff --check`: 통과
+- tmux 설정 로딩 검증: 통과
+- isolated tmux에서 focus가 다른 세션으로 이동한 상태에서도 `sleep` 실행 세션은 animate=true 확인
+- isolated tmux에서 shell-only 세션은 animate=false 확인
+- isolated tmux에서 `top` 실행 세션은 animate=false 확인
+
+후속 주의:
+- ai-cli의 yes/no 입력 대기 같은 앱별 상태 판정은 아직 별도 어댑터가 필요합니다.
+- focus와 무관하게 session 내부에서 work command가 살아 있으면 sweep 대상이 됩니다.
+
 ## 2026-06-21 - sidebar busy session name 애니메이션 추가
 
 요약:

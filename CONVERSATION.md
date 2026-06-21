@@ -27,6 +27,53 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - sidebar 애니메이션 주기 분리
+
+사용자 요청:
+- 현재 gradient sweep이 버벅이고 부드럽지 않아서, 애니메이션과 age 갱신을 분리하는 방식으로 개선하길 요청했습니다.
+
+해석/결정:
+- 입력 폴링 주기를 짧게 두고, age 갱신은 1초 단위로 유지하면서 sweep frame만 별도 주기로 갱신하기로 했습니다.
+
+작업 결과:
+- sidebar poll timeout을 0.12초로 조정했습니다.
+- age refresh와 animation repaint를 `elif`가 아닌 독립 분기로 돌리도록 바꿨습니다.
+
+남은 질문:
+- 없습니다.
+
+## 2026-06-21 - sidebar sweep 색감 정리
+
+사용자 요청:
+- 현재 하늘색 느낌의 gradient sweep을 Codex 같은 흰색~회색 톤으로 바꾸길 요청했습니다.
+
+해석/결정:
+- sweep 색상만 바꾸고 상태 판정이나 애니메이션 범위는 그대로 유지하기로 했습니다.
+- 목적은 장식적인 색감보다 텍스트 강조감을 높이는 것입니다.
+
+작업 결과:
+- sidebar sweep 팔레트를 grayscale로 변경했습니다.
+
+남은 질문:
+- 없습니다.
+
+## 2026-06-21 - sidebar 애니메이션 깜빡임 수정
+
+사용자 요청:
+- v0.3 로컬 테스트 중 sidebar row/column 전체가 깜빡이고, 활성 pane이 있는 session name만 gradient sweep 되어야 하는데 대상 판정이 잘못된 것 같다고 보고했습니다.
+
+해석/결정:
+- 원인은 애니메이션 tick마다 visible rows 전체를 `clear_line` 후 다시 그리는 구조와, sweep 대상이 focus된 pane에만 묶여 있던 점으로 판단했습니다.
+- row 전체 repaint 대신 세션명 cell만 부분 repaint하고, session 내부에 work command가 살아 있는 한 sweep 하도록 수정하기로 했습니다.
+
+작업 결과:
+- `session_has_work_pane`을 추가해 focus와 무관하게 session 내부의 work command를 기준으로 animation 대상 여부를 계산했습니다.
+- `top`, `btop`, `htop`, `watch`와 shell 계열 command는 passive command로 간주해 sweep에서 제외했습니다.
+- 애니메이션 tick에서는 animated row의 session name cell만 다시 그리도록 변경했습니다.
+
+남은 질문:
+- ai-cli의 입력 대기/작업 중 상태 구분은 아직 앱별 어댑터 설계가 필요합니다.
+
 ## 2026-06-21 - sidebar 세션명 gradient 애니메이션
 
 사용자 요청:
