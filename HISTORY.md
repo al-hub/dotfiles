@@ -27,6 +27,112 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - delete 경로 디버그 로그 추가
+
+요약:
+- sidebar에서 세션 삭제 시 `server exited unexpectedly`가 왜 발생하는지 확인하기 위해 delete 경로에 디버그 로그를 추가했습니다.
+- 현재 client session, target session의 client 보유 여부, fallback session, kill-server 진입 여부를 남기도록 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: delete_session_after_archive와 tui_delete_session에 debug_log 추가
+- `HISTORY.md`, `CONVERSATION.md`: 디버그 작업 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- 다음 재현에서 `/tmp/tmux-session-launcher-debug.log` 또는 `TMUX_SESSION_LAUNCHER_DEBUG_FILE`로 실제 분기값을 확인합니다.
+
+## 2026-06-21 - delete y 경로 진입점 추가 로그
+
+요약:
+- `delete -> y`에서 로그가 비는 현상을 좁히기 위해, `run_session_delete` 호출 전후와 `main` 시작/종료까지 디버그 로그를 추가했습니다.
+- backend 이전에 launcher가 끊기는지, backend 호출 후에 끊기는지 구분하려는 목적입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: main/run_session_delete/tui_delete_session에 debug_log 추가
+- `HISTORY.md`, `CONVERSATION.md`: 디버그 범위 확장 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- 다음 재현에서는 `main start`, `before run_session_delete`, `after run_session_delete`가 실제로 남는지 확인합니다.
+
+## 2026-06-21 - delete 후 render 경로 로그 추가
+
+요약:
+- `delete -> Enter`에서 backend 이후 UI 재렌더까지 실제로 진행되는지 확인하려고 `collect_sessions`, `render_full`, delete case 전후 로그를 추가했습니다.
+- delete backend가 아니라 후속 UI 갱신 구간에서 상태가 꼬이는지 분리하기 위한 조치입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: collect_sessions/render_full/main delete case에 debug_log 추가
+- `HISTORY.md`, `CONVERSATION.md`: 추적 범위 확장 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- 다음 재현에서 delete 후 `collect_sessions end`와 `render_full end`가 찍히는지 확인합니다.
+
+## 2026-06-21 - delete 후 wait와 snapshot 조회로 레이스 완화
+
+요약:
+- `delete -> Enter` 경로에서 backend가 세션을 지우는 동안 UI가 즉시 재렌더되며 상태가 꼬이는 문제를 완화했습니다.
+- 삭제 대상 세션이 사라질 때까지 짧게 기다린 뒤 `collect_sessions`를 다시 돌리도록 했고, 세션 목록 조회도 스냅샷 기반으로 바꿨습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: wait_for_session_absence 추가, delete 경로 대기, collect_sessions 스냅샷화
+- `HISTORY.md`, `CONVERSATION.md`: 근본 수정 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- 다음 재현에서 `delete -> Enter`가 더 이상 `collect_sessions` 중간 종료를 만들지 확인합니다.
+
+## 2026-06-21 - sidebar session delete handoff 보강
+
+요약:
+- sidebar에서 새 세션을 만든 뒤 그 세션을 delete할 때, 삭제 대상 세션에 client가 붙어 있으면 backend가 먼저 fallback 세션으로 handoff하도록 보강했습니다.
+- delete가 현재 세션인지 여부만 보던 조건을 넓혀, tmux가 실제로 target session에 client를 들고 있는 경우도 보호합니다.
+- archive/delete 백엔드가 세션 종료와 함께 끊기면서 shell 오류로 번지는 경로를 줄이기 위한 방어선입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: delete_session_after_archive client handoff 조건 강화
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- mock tmux 환경에서 target session client 존재 시 `switch-client -t =base` 후 `kill-session -t =new` 순서 확인
+
+후속 주의:
+- 실제 attached tmux 세션에서 한 번 더 재현 확인이 필요합니다.
+
+## 2026-06-21 - sidebar 현재 세션 삭제 시 client 선전환 수정
+
+요약:
+- sidebar에서 새 세션을 만들고 그 세션을 삭제할 때, 삭제 대상이 현재 붙어 있는 세션이면 먼저 fallback 세션으로 client를 옮기도록 바꿨습니다.
+- 기존 백그라운드 delete는 현재 세션 안에서 돌다가 끊길 수 있어서, 현재 세션을 먼저 비우고 나서 kill-session 하도록 순서를 조정했습니다.
+- 다른 세션이 있을 때 current session delete가 shell을 같이 흔드는 경로를 줄입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: current session delete 시 fallback session으로 선전환 후 delete enqueue
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- mock tmux 환경에서 current session delete 시 `switch-client -t =new` 후 `RUN:old true` 순서 확인
+
+후속 주의:
+- All delete는 기존처럼 전체 server 종료 경로를 유지합니다.
+
 ## 2026-06-21 - codex/gemini AI CLI descendant 탐지 보강
 
 요약:

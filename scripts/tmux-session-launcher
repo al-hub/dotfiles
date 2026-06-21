@@ -54,6 +54,26 @@ session_exists()
     tmux has-session -t "=$1" >/dev/null 2>&1
 }
 
+wait_for_session_absence()
+{
+    session_name="$1"
+    timeout="${2:-50}"
+    delay="${3:-0.05}"
+    i=0
+
+    while [ "$i" -lt "$timeout" ]; do
+        if ! session_exists "$session_name"; then
+            debug_log "wait_for_session_absence session=$session_name gone after=$i"
+            return 0
+        fi
+        sleep "$delay"
+        i=$((i + 1))
+    done
+
+    debug_log "wait_for_session_absence timeout session=$session_name"
+    return 1
+}
+
 find_sidebar_pane()
 {
     target="${1:-}"
@@ -642,6 +662,7 @@ collect_sessions()
 {
     current_session="$(tmux display-message -p '#S')"
     old_selected="$selected_session"
+    debug_log "collect_sessions start current_session=$current_session old_selected=$old_selected"
     session_names=()
     session_created=()
     session_status=()
@@ -650,6 +671,8 @@ collect_sessions()
     snapshot_signature=""
     found_selected=false
     index=0
+
+    sessions_snapshot="$(tmux list-sessions -F '#{session_name}	#{session_created}' 2>/dev/null || true)"
 
     while IFS="$(printf '\t')" read -r name created; do
         [ -n "$name" ] || continue
@@ -682,7 +705,7 @@ EOF
         fi
         index=$((index + 1))
     done <<EOF
-$(tmux list-sessions -F '#{session_name}	#{session_created}' 2>/dev/null)
+$sessions_snapshot
 EOF
 
     if [ "${#session_names[@]}" -eq 0 ]; then
@@ -703,6 +726,7 @@ EOF
 
     selected_session="${session_names[$selected_index]}"
     ensure_selection_visible
+    debug_log "collect_sessions end current_session=$current_session selected_session=$selected_session selected_index=$selected_index count=${#session_names[@]}"
 }
 
 ensure_selection_visible()
@@ -1020,6 +1044,7 @@ render_full()
 {
     last_width="$(pane_width)"
     last_height="$(pane_height)"
+    debug_log "render_full start current_session=$current_session selected_session=$selected_session view_mode=$view_mode count=${#session_names[@]}"
     printf '\033[H\033[2J'
     hide_cursor
     render_header
@@ -1028,6 +1053,7 @@ render_full()
         render_history
     fi
     render_footer
+    debug_log "render_full end current_session=$current_session selected_session=$selected_session view_mode=$view_mode"
 }
 
 render_age_cells()
@@ -1054,12 +1080,15 @@ refresh_if_needed()
     old_width="$last_width"
     old_height="$last_height"
 
+    debug_log "refresh_if_needed start old_signature=$old_signature old_width=$old_width old_height=$old_height"
     collect_sessions
     if [ "$old_signature" != "$snapshot_signature" ] ||
         [ "$old_width" != "$(pane_width)" ] ||
         [ "$old_height" != "$(pane_height)" ]; then
+        debug_log "refresh_if_needed render because signature_or_size_changed new_signature=$snapshot_signature new_width=$(pane_width) new_height=$(pane_height)"
         render_full
     fi
+    debug_log "refresh_if_needed end current_session=$current_session selected_session=$selected_session signature=$snapshot_signature"
 }
 
 restore_terminal()
@@ -1120,6 +1149,20 @@ message_line()
     clear_line
     printf '%s' "$(truncate_text "$message" "$(pane_width)")"
     sleep 1
+}
+
+debug_log()
+{
+    debug_file="${TMUX_SESSION_LAUNCHER_DEBUG_FILE:-/tmp/tmux-session-launcher-debug.log}"
+    debug_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+
+    if [ "$debug_enabled" != "1" ]; then
+        return 0
+    fi
+
+    {
+        printf '%s %s\n' "$(date '+%F %T')" "$*"
+    } >> "$debug_file" 2>/dev/null || true
 }
 
 safe_file_part()
@@ -1281,15 +1324,35 @@ delete_session_after_archive()
 
     session_exists "$session_name" || return 0
 
+    current_client_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+    target_has_clients=false
+    if tmux list-clients -t "=$session_name" >/dev/null 2>&1; then
+        target_has_clients=true
+    fi
+    next_session="$(fallback_session "$session_name")"
+
+    debug_log "delete_session_after_archive start session=$session_name should_archive=$should_archive current_client_session=$current_client_session target_has_clients=$target_has_clients next_session=$next_session"
+
+    if [ "$current_client_session" = "$session_name" ] || [ "$target_has_clients" = true ]; then
+        if [ -n "$next_session" ]; then
+            debug_log "delete_session_after_archive switch-client to fallback session=$next_session from session=$session_name"
+            tmux switch-client -t "=$next_session" 2>/dev/null || true
+        else
+            debug_log "delete_session_after_archive no fallback session for session=$session_name"
+        fi
+    fi
+
     if [ "$should_archive" = "true" ]; then
+        debug_log "delete_session_after_archive archive session=$session_name"
         archive_session "$session_name" >/dev/null || true
     fi
 
-    next_session="$(fallback_session "$session_name")"
     if [ -n "$next_session" ]; then
+        debug_log "delete_session_after_archive kill-session session=$session_name next_session=$next_session"
         tmux switch-client -t "=$next_session" 2>/dev/null || true
         tmux kill-session -t "=$session_name" 2>/dev/null || true
     else
+        debug_log "delete_session_after_archive kill-server session=$session_name"
         tmux kill-server
     fi
 }
@@ -1302,6 +1365,7 @@ run_session_delete()
     quoted_session="$(shell_quote "$session_name")"
     quoted_archive="$(shell_quote "$should_archive")"
 
+    debug_log "run_session_delete session=$session_name should_archive=$should_archive"
     tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive"
 }
 
@@ -1502,15 +1566,51 @@ tui_delete_session()
 
     case "$answer" in
         [Yy]|[Yy][Ee][Ss])
-            run_session_delete "$selected_session" true
+            debug_log "tui_delete_session confirm yes selected=$selected_session current=$current_session"
+            deleted_session="$selected_session"
+            deleting_current_session=false
             if [ "$selected_session" = "$current_session" ]; then
+                next_session="$(fallback_session "$deleted_session")"
+                debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
+                if [ -n "$next_session" ]; then
+                    tmux switch-client -t "=$next_session" 2>/dev/null || true
+                    current_session="$next_session"
+                fi
+                deleting_current_session=true
+            fi
+            debug_log "tui_delete_session before run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+            run_session_delete "$deleted_session" true
+            debug_log "tui_delete_session after run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+            if [ "$deleting_current_session" = "false" ]; then
+                wait_for_session_absence "$deleted_session" || true
+            fi
+            if [ "$deleting_current_session" = "true" ]; then
+                debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
                 exit 0
             fi
             selected_session="$current_session"
             ;;
         '')
-            run_session_delete "$selected_session" false
+            debug_log "tui_delete_session confirm enter selected=$selected_session current=$current_session"
+            deleted_session="$selected_session"
+            deleting_current_session=false
             if [ "$selected_session" = "$current_session" ]; then
+                next_session="$(fallback_session "$deleted_session")"
+                debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
+                if [ -n "$next_session" ]; then
+                    tmux switch-client -t "=$next_session" 2>/dev/null || true
+                    current_session="$next_session"
+                fi
+                deleting_current_session=true
+            fi
+            debug_log "tui_delete_session before run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+            run_session_delete "$deleted_session" false
+            debug_log "tui_delete_session after run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+            if [ "$deleting_current_session" = "false" ]; then
+                wait_for_session_absence "$deleted_session" || true
+            fi
+            if [ "$deleting_current_session" = "true" ]; then
+                debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
                 exit 0
             fi
             selected_session="$current_session"
@@ -1745,9 +1845,12 @@ run_tui()
                     delete_selected_archives
                     collect_history
                 else
+                    debug_log "main delete before tui_delete_session current_session=$current_session selected_session=$selected_session"
                     tui_delete_session
+                    debug_log "main delete after tui_delete_session current_session=$current_session selected_session=$selected_session"
                 fi
                 collect_sessions
+                debug_log "main delete after collect_sessions current_session=$current_session selected_session=$selected_session"
                 render_full
                 ;;
             history)
@@ -1786,6 +1889,7 @@ run_tui()
 main()
 {
     require_command tmux
+    debug_log "main start args=$* current_session=$(tmux display-message -p '#S' 2>/dev/null || true)"
 
     case "${1:-}" in
         --open-sidebar)
@@ -1831,6 +1935,7 @@ main()
     esac
 
     run_tui
+    debug_log "main end args=$*"
 }
 
 main "$@"

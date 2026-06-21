@@ -27,6 +27,96 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - delete 경로 디버그 로그로 원인 추적
+
+사용자 요청:
+- sidebar에서 새 세션을 만들고 그 세션을 delete할 때 `[server exited unexpectedly]`가 계속 뜨므로, 디버깅 로그를 넣고 근본 원인을 다시 보자고 요청했습니다.
+
+해석/결정:
+- delete 대상 세션에 client가 붙어 있는지, fallback session이 무엇인지, 실제로 `kill-server`로 떨어지는지 확인해야 한다고 판단했습니다.
+- 재현 시점의 분기값을 남기는 lightweight debug 로그를 추가했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `debug_log`를 추가하고 delete 경로에서 현재 client, target client, fallback session, kill-server 진입 여부를 기록하도록 했습니다.
+
+남은 질문:
+- 다음 재현에서 어떤 분기가 `server exited unexpectedly`를 유발하는지 로그로 확인해야 합니다.
+
+## 2026-06-21 - delete y 경로 로그 비어 있음
+
+사용자 요청:
+- `delete -> y`만 했을 때 동일 오류가 나는데, 디버그 로그가 남지 않는다고 보고했습니다.
+
+해석/결정:
+- 백엔드보다 앞단에서 끊기는지 확인하기 위해 `main` 시작/종료, `run_session_delete` 호출 전후, `tui_delete_session` 진입부까지 로그 범위를 넓혔습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 추가 로그를 넣어 `y` 경로의 실제 끊김 지점을 확인할 준비를 했습니다.
+
+남은 질문:
+- 다음 재현에서 `main start`조차 안 찍히면, launcher가 아닌 tmux/prompt 입력 흐름 문제로 봐야 합니다.
+
+## 2026-06-21 - delete 후 render 경로까지 추적
+
+사용자 요청:
+- `delete -> Enter`에서 에러가 난다고 하면서, 정확한 오류 위치와 원인을 분석하자고 요청했습니다.
+
+해석/결정:
+- delete backend 호출 후 `collect_sessions`와 `render_full`까지 이어지는지 확인해야 한다고 판단했습니다.
+- backend는 정상 종료되더라도, 후속 UI 갱신이 깨지면 사용자는 같은 오류로 체감할 수 있습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 delete 케이스 전후와 render/refresh 경계 로그를 추가했습니다.
+
+남은 질문:
+- 다음 재현에서 `main delete after collect_sessions`와 `render_full end`가 찍히는지 확인해야 합니다.
+
+## 2026-06-21 - delete 후 대기와 스냅샷 조회 적용
+
+사용자 요청:
+- delete 레이스를 줄이기 위해 wait와 snapshot 조회를 둘 다 적용하자고 했습니다.
+
+해석/결정:
+- 삭제 대상 세션이 사라질 때까지 짧게 기다린 뒤 UI를 다시 그리도록 하고, 세션 목록 조회를 한 번에 스냅샷으로 읽도록 바꿨습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `wait_for_session_absence`를 추가했고, `delete -> Enter` 경로에서 삭제 완료를 기다린 후 재갱신하도록 바꿨습니다.
+
+남은 질문:
+- 다음 재현에서 `delete -> Enter` 경로의 중간 종료가 사라지는지 확인해야 합니다.
+
+## 2026-06-21 - sidebar delete server exited unexpectedly
+
+사용자 요청:
+- sidebar에서 새 세션을 만든 뒤 그 세션을 delete하면, 다른 세션이 있어도 `[server exited unexpectedly]`가 뜨면서 shell 자체가 이상 종료된다고 보고했습니다.
+
+해석/결정:
+- delete 대상 세션에 client가 붙어 있는 경우를 더 넓게 방어해야 한다고 판단했습니다.
+- current session 여부만 보는 대신, tmux가 target session에 client를 실제로 들고 있으면 backend가 먼저 fallback session으로 handoff하도록 바꿨습니다.
+
+작업 결과:
+- `delete_session_after_archive`가 `list-clients -t =session`를 확인한 뒤, 필요하면 `switch-client`를 먼저 수행하고 `kill-session`을 이어서 수행하도록 강화했습니다.
+- mock tmux에서 target session client 존재 시 `switch-client -t =base` 뒤 `kill-session -t =new` 순서를 확인했습니다.
+
+남은 질문:
+- 실제 attached tmux에서 재검증이 필요합니다.
+
+## 2026-06-21 - current session delete shell error
+
+사용자 요청:
+- sidebar에서 새 세션을 하나 생성하고 그 세션을 delete하면, 다른 세션이 있어도 이상 종료되면서 동작 중이던 shell이 심각한 오류에 빠진다고 보고했습니다.
+
+해석/결정:
+- 삭제 대상이 현재 붙어 있는 세션이면, 해당 세션 내부에서 백그라운드 delete를 기다리지 말고 먼저 fallback 세션으로 client를 옮겨야 한다고 판단했습니다.
+- 그 뒤에 기존 `run_session_delete` 경로로 archive/kill을 enqueue하면 현재 세션이 끊길 때 delete 작업이 함께 죽는 경로를 줄일 수 있습니다.
+
+작업 결과:
+- `tui_delete_session`이 current session delete 시 `switch-client`를 먼저 수행하고, 그 다음에 `run_session_delete`를 enqueue하도록 바뀌었습니다.
+- mock tmux에서 `switch-client -t =new` 다음 `RUN:old true` 순서를 확인했습니다.
+
+남은 질문:
+- 없습니다.
+
 ## 2026-06-21 - codex/gemini AI CLI 판정 보강
 
 사용자 요청:
