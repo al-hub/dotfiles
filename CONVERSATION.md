@@ -85,6 +85,51 @@
 남은 질문:
 - 다음 재현에서 `delete -> Enter` 경로의 중간 종료가 사라지는지 확인해야 합니다.
 
+## 2026-06-21 - sidebar split 재부착 기준 고정
+
+사용자 요청:
+- sidebar가 있는 상태에서 split하면 새 pane에 `%`가 보이고, 다시 split하면 sidebar가 사라진다고 보고했습니다.
+
+해석/결정:
+- sidebar를 다시 붙일 때 window 전체가 아니라 실제 target work pane에 고정해야 한다고 판단했습니다.
+- split 직후 sidebar가 잘못된 pane에 붙거나 사라지는 경로를 줄이기 위해 `open_sidebar` 대상 pane을 명시했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 `split_work_pane`가 `open_sidebar`를 target work pane 기준으로 호출하도록 수정했습니다.
+
+남은 질문:
+- 다음 재현에서 sidebar가 유지되고, 연속 split이 정상인지 확인해야 합니다.
+
+## 2026-06-21 - sidebar split의 복귀 대상 수정
+
+사용자 요청:
+- sidebar가 있는 상태에서 split하면 `%` 프롬프트가 나오고, 다시 split하면 `No work pane found for split.`가 뜬다고 보고했습니다.
+
+해석/결정:
+- sidebar에서 work pane으로 돌아갈 때 옆 pane 기준보다 마지막 work pane 기준이 더 안전하다고 판단했습니다.
+- `select-pane -l`을 우선 쓰고, 실패하면 비-sidebar pane을 찾도록 바꿨습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 `select_work_pane_from_sidebar` 복귀 로직을 수정했습니다.
+
+남은 질문:
+- 다음 재현에서 연속 split이 정상 동작하는지 확인해야 합니다.
+
+## 2026-06-21 - sidebar split의 work pane 대상 직접 선택
+
+사용자 요청:
+- sidebar가 있는 상태에서 가로 split 후 `%` 프롬프트가 남고, 다시 split하면 `No work pane found for split.`가 계속 난다고 보고했습니다.
+
+해석/결정:
+- current pane 복귀에 기대는 방식이 부족하다고 판단했습니다.
+- 현재 window의 실제 work pane을 직접 찾아 그 pane을 split 대상으로 삼도록 바꿨습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `current_window_work_pane`를 추가하고 `split_work_pane`가 explicit target pane을 쓰도록 수정했습니다.
+
+남은 질문:
+- 다음 재현에서 첫 split의 `%`와 두 번째 split 실패가 같이 사라지는지 확인해야 합니다.
+
 ## 2026-06-21 - sidebar delete server exited unexpectedly
 
 사용자 요청:

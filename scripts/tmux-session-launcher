@@ -366,61 +366,69 @@ current_pane_is_sidebar()
     [ "$(tmux display-message -p '#{pane_title}')" = "$SIDEBAR_TITLE" ]
 }
 
-select_work_pane_from_sidebar()
+current_window_work_pane()
 {
-    current_pane="$(tmux display-message -p '#{pane_id}')"
-
-    tmux select-pane -R 2>/dev/null || true
-    if [ "$(tmux display-message -p '#{pane_id}')" = "$current_pane" ]; then
-        work_pane="$(
-            tmux list-panes -F '#{pane_id}	#{pane_title}' |
-                awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }'
-        )"
-        [ -n "$work_pane" ] && tmux select-pane -t "$work_pane"
+    target_window="${1:-$(window_target)}"
+    pane_id="$(
+        tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}	#{pane_active}' 2>/dev/null |
+            awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title && $3 == 1 { print $1; exit }'
+    )"
+    if [ -n "$pane_id" ]; then
+        printf '%s\n' "$pane_id"
+        return 0
     fi
+
+    tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}' 2>/dev/null |
+        awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }'
 }
 
 split_work_pane()
 {
     direction="$1"
     work_path=""
-    sidebar_pane="$(find_sidebar_pane)"
-    sidebar_width=""
     target_window=""
+    target_work_pane=""
     before_panes=""
     new_pane_id=""
 
     if current_pane_is_sidebar; then
-        select_work_pane_from_sidebar
-        if current_pane_is_sidebar; then
+        target_work_pane="$(current_window_work_pane)"
+        if [ -z "$target_work_pane" ]; then
             tmux display-message 'No work pane found for split.'
             return 0
         fi
+        tmux select-pane -t "$target_work_pane" 2>/dev/null || true
     fi
 
-    work_path="$(target_pane_path)"
     target_window="$(window_target)"
-
-    if [ -n "$sidebar_pane" ]; then
-        sidebar_width="$(current_sidebar_width)"
-        tmux kill-pane -t "$sidebar_pane" 2>/dev/null || true
-        restore_work_layout "$target_window"
+    if [ -n "$target_work_pane" ]; then
+        work_path="$(target_pane_path "$target_work_pane")"
+        target_window="$(window_target "$target_work_pane")"
+    else
+        work_path="$(target_pane_path)"
     fi
 
     before_panes="$(list_window_panes "$target_window")"
 
     case "$direction" in
-        horizontal) tmux split-window -h -c "$work_path" ;;
-        vertical) tmux split-window -v -c "$work_path" ;;
+        horizontal)
+            if [ -n "$target_work_pane" ]; then
+                tmux split-window -t "$target_work_pane" -h -c "$work_path"
+            else
+                tmux split-window -h -c "$work_path"
+            fi
+            ;;
+        vertical)
+            if [ -n "$target_work_pane" ]; then
+                tmux split-window -t "$target_work_pane" -v -c "$work_path"
+            else
+                tmux split-window -v -c "$work_path"
+            fi
+            ;;
     esac
 
     new_pane_id="$(new_pane_from_snapshot "$before_panes" "$target_window")"
-
-    if [ -n "$sidebar_pane" ]; then
-        save_work_layout "$target_window"
-        open_sidebar "$target_window" "false" "$sidebar_width" "$work_path" "true"
-        [ -n "$new_pane_id" ] && tmux select-pane -t "$new_pane_id" 2>/dev/null || true
-    fi
+    [ -n "$new_pane_id" ] && tmux select-pane -t "$new_pane_id" 2>/dev/null || true
 }
 
 switch_session()

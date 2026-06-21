@@ -95,6 +95,57 @@
 후속 주의:
 - 다음 재현에서 `delete -> Enter`가 더 이상 `collect_sessions` 중간 종료를 만들지 확인합니다.
 
+## 2026-06-21 - sidebar split reopen를 work pane에 고정
+
+요약:
+- sidebar가 있는 상태에서 split할 때 sidebar를 다시 붙이는 기준을 window 전체가 아니라 실제 target work pane으로 고정했습니다.
+- split 직후 sidebar가 사라지거나 다른 pane에 붙는 현상을 줄이기 위한 변경입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: split_work_pane에서 open_sidebar 대상 pane을 target work pane으로 고정
+- `HISTORY.md`, `CONVERSATION.md`: split 재부착 경로 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- sidebar가 있는 상태에서 연속 split 시 sidebar가 유지되는지 다시 확인합니다.
+
+## 2026-06-21 - sidebar split의 work pane 복귀 기준 수정
+
+요약:
+- sidebar가 켜진 상태에서 split을 반복할 때 work pane 탐지가 불안정한 문제를 줄이기 위해, sidebar에서 복귀할 때 `select-pane -R` 대신 `select-pane -l`을 우선 사용하도록 바꿨습니다.
+- 마지막으로 활성화된 work pane을 기준으로 돌아가게 해서, 레이아웃 변화에 덜 흔들리도록 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: select_work_pane_from_sidebar 복귀 기준 변경
+- `HISTORY.md`, `CONVERSATION.md`: split bug 분석 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- sidebar가 있는 상태에서 연속 split을 다시 재현해, `No work pane found for split.`가 사라지는지 확인합니다.
+
+## 2026-06-21 - sidebar split의 work pane 대상 직접 선택
+
+요약:
+- sidebar가 있는 상태에서 split할 때 current pane 상태에 기대지 않고, 현재 window의 실제 work pane을 직접 찾아 그 pane을 split 대상으로 삼도록 바꿨습니다.
+- `select-pane -l` 기반 복귀가 충분하지 않았던 문제를 구조적으로 줄이기 위한 수정입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: current_window_work_pane 추가 및 split_work_pane 타깃 명시화
+- `HISTORY.md`, `CONVERSATION.md`: split 재설계 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- sidebar가 있는 상태에서 첫 split 이후 `%`가 남는지, 두 번째 split이 정상 동작하는지 다시 확인합니다.
+
 ## 2026-06-21 - sidebar session delete handoff 보강
 
 요약:
