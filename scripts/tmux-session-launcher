@@ -4,6 +4,7 @@ set -euo pipefail
 SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
+SIDEBAR_ANIMATION_ENABLED="${TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED:-true}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
@@ -30,6 +31,7 @@ stty_state=""
 prompt_result=""
 prompt_cancelled=false
 view_mode="sessions"
+animation_frame=0
 
 die()
 {
@@ -769,6 +771,42 @@ render_history()
     done
 }
 
+print_session_name()
+{
+    name="$1"
+    width="$2"
+    status="$3"
+    text="$(truncate_text "$name" "$width")"
+    text_width="${#text}"
+    padding=$((width - text_width))
+
+    if [ "$status" = "busy" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
+        for ((i = 0; i < text_width; i++)); do
+            char="${text:i:1}"
+            phase=$(((i - animation_frame + 12) % 12))
+            case "$phase" in
+                0) color=51 ;;
+                1) color=87 ;;
+                2) color=123 ;;
+                3) color=159 ;;
+                4) color=195 ;;
+                5) color=159 ;;
+                6) color=123 ;;
+                7) color=87 ;;
+                *) color=250 ;;
+            esac
+            printf '\033[38;5;%sm%s' "$color" "$char"
+        done
+        printf '\033[0m'
+    else
+        printf '%s' "$text"
+    fi
+
+    if [ "$padding" -gt 0 ]; then
+        printf '%*s' "$padding" ''
+    fi
+}
+
 render_row()
 {
     index="$1"
@@ -780,14 +818,15 @@ render_row()
     name_width=$((width - 2 - 1 - age_width - 2))
 
     [ "$name_width" -lt 1 ] && name_width=1
-    name="$(truncate_text "${session_names[$index]}" "$name_width")"
-
     move_cursor "$line" 1
     clear_line
     if [ "$width" -lt 16 ]; then
-        printf '%s %s' "$mark" "$(truncate_text "${session_names[$index]}" "$((width - 3))")"
+        printf '%s ' "$mark"
+        print_session_name "${session_names[$index]}" "$((width - 3))" "${session_status[$index]}"
     else
-        printf '%s %-*s %s ' "$mark" "$name_width" "$name" "$age"
+        printf '%s ' "$mark"
+        print_session_name "${session_names[$index]}" "$name_width" "${session_status[$index]}"
+        printf ' %s ' "$age"
     fi
 }
 
@@ -1569,6 +1608,9 @@ run_tui()
             refresh_if_needed
             render_age_cells
             last_tick="$now"
+        elif [ "$view_mode" = "sessions" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
+            animation_frame=$(((animation_frame + 1) % 12))
+            render_visible_rows
         fi
     done
 }

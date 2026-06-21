@@ -27,6 +27,25 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - sidebar busy session name 애니메이션 추가
+
+요약:
+- sidebar 세션 목록에서 `busy` 상태인 세션명에 왼쪽에서 오른쪽으로 흐르는 ANSI gradient sweep 효과를 추가했습니다.
+- 애니메이션은 sidebar row의 세션명에만 적용하고, idle 세션은 기존 표시를 유지합니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: busy 세션명 ANSI gradient 출력과 짧은 row repaint 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- isolated tmux context에서 busy 세션명 ANSI 출력, idle 세션명 plain 출력 확인
+
+후속 주의:
+- `TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED=false`로 애니메이션을 끌 수 있습니다.
+- busy 판정은 기존 `session_is_busy` 휴리스틱을 그대로 사용합니다.
+
 ## 2026-06-21 - sidebar open 단축키와 delete 문구 조정
 
 요약:
