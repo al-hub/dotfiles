@@ -27,6 +27,110 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-21 - codex/gemini AI CLI descendant 탐지 보강
+
+요약:
+- `codex`와 `gemini`가 tmux에서 `node` wrapper를 거쳐 실행되면서 direct child argv만으로는 AI pane으로 놓치던 문제를 보강했습니다.
+- pane의 직접 자식과 그 자식 한 단계 아래까지 `pgrep`로 확인해 `codex`, `gemini` 실행 흔적을 잡도록 바꿨습니다.
+- 이후 `codex`와 `gemini`도 `active -> waiting` 전환이 확인됐습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: descendant process 탐지 regex를 path-aware로 보강
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- 실제 tmux에서 `codex`: `CODEX1:active`, `CODEX2:waiting` 확인
+- 실제 tmux에서 `gemini`: `GEMINI1:active`, `GEMINI2:waiting` 확인
+
+후속 주의:
+- `waiting`은 여전히 screen snapshot 기반 휴리스틱이며, CLI별 hook이 생기면 더 정확한 상태로 대체할 수 있습니다.
+
+## 2026-06-21 - codex/claude AI CLI 판정 보강
+
+요약:
+- `codex`가 tmux에서 `node`로만 보이는 경우가 있어, `pane_current_command`만으로는 AI pane으로 잡히지 않는 문제를 보강했습니다.
+- pane의 직접 자식 프로세스 argv를 확인해 `codex`, `claude`, `gemini`, `opencode`, `ollama` 실행 흔적을 잡도록 했습니다.
+- `opencode`/`ollama`는 기존처럼 동작하고, `codex`/`claude`도 AI pane으로 들어와 active/waiting 판정에 합류합니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: pane child process argv 기반 AI pane 탐지 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- 실제 tmux에서 `codex` 실행 후 `session_cli_state[0] = active` 확인
+- 실제 tmux에서 `claude` 실행 후 `session_cli_state[0] = active` 확인
+
+후속 주의:
+- `codex`/`claude`의 waiting은 화면 스냅샷 변화에 여전히 의존한다.
+
+## 2026-06-21 - AI CLI waiting을 screen hash로 실용화
+
+요약:
+- AI CLI가 pane에 붙어 있지만 화면 변화가 거의 없는 상태를 `waiting`으로 보기 위해, AI pane 전용 `capture-pane` 해시 비교를 넣었습니다.
+- blank line을 제거한 최근 화면 조각만 해시하고, 연속 동일한 스냅샷이 잡히면 `waiting`으로 내립니다.
+- `active`는 화면이 달라질 때 유지하고, `idle`은 기존 non-AI fallback과 shell-only 판정에 남깁니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: AI pane fingerprint helper, consecutive snapshot based waiting 판정 추가
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- mock `tmux` 환경에서 `active -> waiting` 전환 확인
+- 실제 `opencode` 세션에서 `FIRST:active`, `SECOND:active`, `THIRD:waiting` 확인
+
+후속 주의:
+- `waiting`은 여전히 휴리스틱이며, CLI별 hook이 있으면 나중에 더 정확한 상태로 대체할 수 있습니다.
+
+## 2026-06-21 - AI CLI 종료 후 active 잔류 수정
+
+요약:
+- `opencode`를 종료한 뒤에도 sidebar가 계속 active처럼 남는 경로를 좁혔습니다.
+- AI CLI가 실제로 pane에 붙어 있을 때만 `active/waiting`을 쓰고, 종료 후 shell prompt로 돌아온 세션은 기존 `busy/idle` 휴리스틱으로 다시 판단합니다.
+- shell-only pane은 idle로 떨어지고, non-AI work pane은 기존 busy 판정을 유지합니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: AI CLI adapter가 non-AI fallback을 `session_is_busy`로 바꾸도록 수정
+- `HISTORY.md`, `CONVERSATION.md`: 변경 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- mock `tmux` 환경에서 `codex` live: `active`
+- mock `tmux` 환경에서 `codex` 오래된 activity: `waiting`
+- mock `tmux` 환경에서 shell-only: `idle`
+- mock `tmux` 환경에서 non-shell work command: `active`
+
+후속 주의:
+- `waiting`은 아직 CLI별 hook이 없어서 session activity 기반 휴리스틱이다.
+
+## 2026-06-21 - AI CLI status adapter 초안 반영
+
+요약:
+- sidebar 애니메이션 대상 판정을 AI CLI status adapter로 분리했습니다.
+- `codex`, `claude`, `gemini`, `opencode`, `ollama`를 known AI CLI command로 취급하고, active/waiting/idle 상태를 얇게 분리했습니다.
+- active 세션만 sweep 애니메이션을 유지하고, passive shell/monitoring command는 기존 idle 경로를 유지합니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: AI CLI command registry, session activity age helper, session CLI state adapter 추가
+- `HISTORY.md`, `CONVERSATION.md`: 계획과 검증 기록 추가
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- mock `tmux` 환경에서 `session_cli_state_for_session ai`: `active`, `waiting` 확인
+- mock `tmux` 환경에서 shell command 세션: `idle` 확인
+- `bash -lc 'tmux(){ ... }; source <(head -n -1 scripts/tmux-session-launcher); ...'`: tmux 로드 확인
+
+후속 주의:
+- 현재 adapter는 command name과 session activity만 보는 얕은 휴리스틱입니다.
+- Claude Code의 hook 이벤트처럼 더 정교한 상태 전이는 나중에 별도 확장으로 붙일 수 있습니다.
+
 ## 2026-06-21 - sidebar 애니메이션 갱신 주기 분리
 
 요약:

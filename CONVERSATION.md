@@ -27,6 +27,87 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-21 - codex/gemini AI CLI 판정 보강
+
+사용자 요청:
+- `opencode`, `ollama`, `claude`는 의도대로 동작하지만 `codex`, `gemini`는 아직 의도대로 동작하지 않는다고 보고했습니다.
+
+해석/결정:
+- `codex`와 `gemini`는 tmux에서 `node` wrapper와 하위 프로세스 조합으로 보이는 경우가 있어, direct child argv만 보는 방식이 충분하지 않다고 판단했습니다.
+- pane의 직접 자식과 한 단계 아래 child까지 `pgrep`로 확인해 `codex`/`gemini` 실행 흔적을 잡도록 보강했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 AI CLI process 탐지를 descendant-aware로 바꿨습니다.
+- 실제 tmux에서 `codex`는 `active -> waiting`, `gemini`도 `active -> waiting`으로 전환되는 것을 확인했습니다.
+
+남은 질문:
+- 없습니다.
+
+## 2026-06-21 - codex/claude 판정 보강
+
+사용자 요청:
+- `opencode`와 `ollama`는 의도대로 동작하지만, `codex`와 `claude`에서는 의도대로 동작하지 않는다고 보고했습니다.
+
+해석/결정:
+- `codex`가 tmux에서 `node`로만 보이는 환경이 있어 `pane_current_command`만으로는 AI pane을 놓친다고 판단했습니다.
+- pane의 직접 자식 프로세스 argv까지 확인해 `codex`와 `claude` 실행 흔적을 잡도록 보강했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 pane child process 기반 AI CLI 탐지를 추가했습니다.
+- 실제 tmux에서 `codex`와 `claude` 실행 후 둘 다 `active`로 잡히는 것을 확인했습니다.
+
+남은 질문:
+- `waiting`은 여전히 화면 스냅샷 변화 휴리스틱에 의존하므로, CLI별 hook이 생기면 더 정확하게 대체할 수 있습니다.
+
+## 2026-06-21 - AI CLI waiting 실용화
+
+사용자 요청:
+- AI CLI가 붙어 있고 해당 pane 화면 변화가 없을 때를 `waiting`으로 정의하는 방향을 제안했고, 최대한 가볍게 실용적으로 구현해 달라고 요청했습니다.
+
+해석/결정:
+- AI CLI pane만 대상으로 최근 `capture-pane` 스냅샷을 해시하고, blank line을 제거한 뒤 연속 동일한 화면이면 `waiting`으로 보기로 했습니다.
+- `active`는 화면 변화가 있을 때, `waiting`은 연속 동일 화면일 때로 두고, `idle`은 기존 non-AI / shell-only fallback을 유지합니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 AI pane fingerprint helper와 consecutive snapshot 기반 `waiting` 판정을 추가했습니다.
+- mock tmux에서 `active -> waiting` 전환을 확인했고, 실제 `opencode` 세션에서도 `FIRST:active`, `SECOND:active`, `THIRD:waiting`을 확인했습니다.
+
+남은 질문:
+- CLI별로 더 정확한 waiting을 원하면, 나중에 hook 기반 상태 신호를 우선 적용할 수 있습니다.
+
+## 2026-06-21 - opencode 종료 후 active 잔류
+
+사용자 요청:
+- `opencode`를 실행하면 active가 되고, `/exit`로 빠져나와도 계속 active처럼 보인다고 보고했습니다.
+
+해석/결정:
+- AI CLI가 종료된 뒤에도 최근 `session_activity`만 남아 있으면 active로 남는 경로를 줄이기로 했습니다.
+- AI CLI가 pane에 실제로 붙어 있을 때만 `active/waiting`을 사용하고, 종료 후 shell prompt는 기존 busy/idle 휴리스틱으로 되돌립니다.
+
+작업 결과:
+- `session_cli_state_for_session`의 non-AI fallback을 `session_is_busy` 기준으로 바꿨습니다.
+- mock `tmux` 환경에서 `codex` live는 `active`, 오래된 activity는 `waiting`, shell-only는 `idle`, non-shell work는 `active`를 확인했습니다.
+
+남은 질문:
+- `waiting`을 정확하게 만들려면 provider-specific hook이 필요합니다.
+
+## 2026-06-21 - AI CLI status adapter 계획 반영
+
+사용자 요청:
+- `codex`, `claude`, `gemini`, `opencode`, `ollama` 기준으로 AI CLI status adapter 계획을 다시 정리하고, 복잡도를 올리지 않는 범위에서 구현을 진행하길 요청했습니다.
+
+해석/결정:
+- 공식 문서와 저장소를 훑어본 결과, Claude Code는 hooks로 lifecycle 이벤트를 노출하지만 나머지는 terminal-first CLI라서 처음부터 복잡한 상태 추적을 넣지 않기로 했습니다.
+- sidebar에는 얇은 registry를 두고, command name과 `session_activity`만으로 `active`, `waiting`, `idle`을 나누는 방식으로 구현하기로 했습니다.
+- active 상태만 sweep 애니메이션을 유지하고, waiting/idle은 기본 표시로 두어 구조를 단순하게 유지합니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 AI CLI command registry와 session CLI state adapter를 추가했습니다.
+- mock `tmux` 환경에서 `active`, `waiting`, `idle` 판정과 shell-only `idle` 판정을 확인했습니다.
+
+남은 질문:
+- 실제 CLI별로 yes/no 입력 대기와 작업 중 상태를 구분하려면, provider-specific hook이나 wrapper가 추가로 필요할 수 있습니다.
+
 ## 2026-06-21 - sidebar 애니메이션 주기 분리
 
 사용자 요청:

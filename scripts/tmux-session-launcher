@@ -17,6 +17,8 @@ selected_session="$current_session"
 declare -a session_names=()
 declare -a session_created=()
 declare -a session_status=()
+declare -a session_cli_state=()
+declare -A session_ai_fingerprint=()
 declare -a session_animate=()
 declare -a history_files=()
 declare -a history_titles=()
@@ -430,24 +432,76 @@ is_passive_command()
     esac
 }
 
-session_has_work_pane()
+is_ai_cli_command()
 {
-    session_name="$1"
+    case "$1" in
+        codex|claude|gemini|opencode|ollama) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-    while IFS="$(printf '\t')" read -r pane_session pane_title command_name; do
-        [ "$pane_session" = "$session_name" ] || continue
-        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
-        if ! is_passive_command "$command_name"; then
+pane_has_ai_cli_process()
+{
+    pane_id="$1"
+    pane_pid=""
+
+    pane_pid="$(tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
+    [ -n "$pane_pid" ] || return 1
+
+    if pgrep -a -P "$pane_pid" 2>/dev/null |
+        grep -Eq '(^|[[:space:]/])(codex|claude|gemini|opencode|ollama)([[:space:]]|$)'; then
+        return 0
+    fi
+
+    while IFS= read -r child_pid; do
+        [ -n "$child_pid" ] || continue
+        if pgrep -a -P "$child_pid" 2>/dev/null |
+            grep -Eq '(^|[[:space:]/])(codex|claude|gemini|opencode|ollama)([[:space:]]|$)'; then
             return 0
         fi
     done <<EOF
-$(tmux list-panes -a -F '#{session_name}	#{pane_title}	#{pane_current_command}' 2>/dev/null)
+$(pgrep -P "$pane_pid" 2>/dev/null)
 EOF
 
     return 1
 }
 
-session_is_busy()
+session_ai_pane_for_session()
+{
+    session_name="$1"
+
+    while IFS="$(printf '\t')" read -r pane_session pane_id pane_title command_name; do
+        [ "$pane_session" = "$session_name" ] || continue
+        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        if is_ai_cli_command "$command_name" || pane_has_ai_cli_process "$pane_id"; then
+            printf '%s\n' "$pane_id"
+            return 0
+        fi
+    done <<EOF
+$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}' 2>/dev/null)
+EOF
+
+    return 1
+}
+
+session_ai_fingerprint_for_pane()
+{
+    pane_id="$1"
+    capture=""
+
+    capture="$(
+        tmux capture-pane -p -t "$pane_id" -S -12 2>/dev/null |
+            tr -d '\r' |
+            sed '/^[[:space:]]*$/d' |
+            cksum
+    )"
+
+    printf '%s\n' "$capture" | awk '{ print $1 ":" $2 }'
+}
+
+# Keep the adapter narrow: known AI CLI panes can animate while they are active,
+# and non-AI work panes fall back to the existing busy/idle heuristic.
+session_activity_age()
 {
     session_name="$1"
     now="$(date +%s)"
@@ -457,7 +511,33 @@ session_is_busy()
         ''|*[!0-9]*) activity=0 ;;
     esac
 
-    if [ $((now - activity)) -gt "$SIDEBAR_BUSY_SECONDS" ]; then
+    printf '%s\n' "$((now - activity))"
+}
+
+session_cli_state_for_session()
+{
+    session_name="$1"
+    pane_id="$(session_ai_pane_for_session "$session_name" || true)"
+
+    if [ -n "$pane_id" ]; then
+        fingerprint="$(session_ai_fingerprint_for_pane "$pane_id")"
+        printf 'active\t%s\n' "$fingerprint"
+        return 0
+    fi
+
+    if session_is_busy "$session_name"; then
+        printf 'active\t\n'
+    else
+        printf 'idle\t\n'
+    fi
+}
+
+session_is_busy()
+{
+    session_name="$1"
+    activity_age="$(session_activity_age "$session_name")"
+
+    if [ "$activity_age" -gt "$SIDEBAR_BUSY_SECONDS" ]; then
         return 1
     fi
 
@@ -565,6 +645,7 @@ collect_sessions()
     session_names=()
     session_created=()
     session_status=()
+    session_cli_state=()
     session_animate=()
     snapshot_signature=""
     found_selected=false
@@ -573,17 +654,27 @@ collect_sessions()
     while IFS="$(printf '\t')" read -r name created; do
         [ -n "$name" ] || continue
         status_value="$(session_status "$name")"
-        if session_has_work_pane "$name"; then
-            animate_value="true"
-        else
-            animate_value="false"
+        cli_state_value=""
+        ai_fingerprint_value=""
+        IFS="$(printf '\t')" read -r cli_state_value ai_fingerprint_value <<EOF
+$(session_cli_state_for_session "$name")
+EOF
+        animate_value="false"
+        if [ "$cli_state_value" = "active" ] && [ -n "$ai_fingerprint_value" ]; then
+            if [ "${session_ai_fingerprint[$name]:-}" = "$ai_fingerprint_value" ]; then
+                cli_state_value="waiting"
+            else
+                animate_value="true"
+            fi
         fi
 
         session_names+=("$name")
         session_created+=("$created")
         session_status+=("$status_value")
+        session_cli_state+=("$cli_state_value")
+        session_ai_fingerprint["$name"]="$ai_fingerprint_value"
         session_animate+=("$animate_value")
-        snapshot_signature="${snapshot_signature}${name}:${created}:${status_value}:${animate_value}|"
+        snapshot_signature="${snapshot_signature}${name}:${created}:${status_value}:${cli_state_value}:${animate_value}|"
 
         if [ "$name" = "$old_selected" ]; then
             selected_index="$index"
