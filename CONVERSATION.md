@@ -27,6 +27,201 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-22 - sidebar animation left-to-right smoothing
+
+사용자 요청:
+- animate 효과가 왼쪽에서 오른쪽으로 흐르길 원했고, 중간에 멈짓하는 구간 없이 더 부드럽게 이어지길 요청했습니다.
+- 너무 검정색이 진하게 내려오는 건 이질감이 있어서 줄이고 싶다고 했습니다.
+- 너무 밝아서 변화를 못 느끼는 것도 피하고 싶다고 했습니다.
+- 이미지처럼 옅은 회색 위에 밝은 흰색 하이라이트가 지나가는 느낌을 원했습니다.
+
+해석/결정:
+- 기존의 이산적인 색 구간을 줄이고, 위상을 반전해 흐름 방향을 좌->우로 맞추기로 했습니다.
+- 세션별 독립 phase 구조는 유지하되, 프레임당 변화가 더 촘촘하게 이어지도록 했습니다.
+- 전체 색 폭을 흔들기보다, 옅은 회색 바탕 위에 좁은 흰색 하이라이트만 지나가게 하기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 phase 계산을 반전하고, 좁은 흰색 하이라이트와 옅은 회색 바탕 조합으로 바꿨습니다.
+
+남은 질문:
+- 실제 tmux에서 체감상 멈칫 구간이 충분히 사라졌는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar refactor candidate note
+
+사용자 요청:
+- 현재 상태를 정리하고, 리팩토링 요소는 md에만 기록해 두고 싶다고 했습니다.
+- 우선은 현재 상태를 커밋해 두길 원했습니다.
+
+해석/결정:
+- 멈칫의 근본 원인은 `collect_sessions`의 세션별 반복 계산 구조로 보이며, collector/renderer 분리나 snapshot 기반 구조 전환이 다음 후보라고 정리했습니다.
+- 지금 변경분은 보존하고, 구조 개선은 별도 작업으로 분리하기로 했습니다.
+
+작업 결과:
+- `HISTORY.md`와 `CONVERSATION.md`에 리팩토링 후보와 구조 개선 방향을 짧게 기록했습니다.
+
+남은 질문:
+- 구조 개선을 실제로 적용할지, 적용한다면 collector/renderer 분리 수준까지 갈지 결정이 필요합니다.
+
+## 2026-06-22 - sidebar hotspot timing instrumentation
+
+사용자 요청:
+- 미세한 멈짓이 남아 있어서, 먼저 가장 비싼 호출들을 살펴보자고 했습니다.
+
+해석/결정:
+- debug 모드에서만 비용이 큰 hotspot의 실제 시간을 남기도록 계측을 넣었습니다.
+- `collect_sessions` 내부의 `list-sessions`, `list-panes`, `display-message`, `capture-pane`, `pgrep`를 분리해서 관찰하기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 timing helper와 hotspot 계측을 추가했습니다.
+
+남은 질문:
+- debug 로그를 한 번 돌려 실제 병목이 어디인지 확인해야 합니다.
+
+## 2026-06-22 - sidebar stdout parse 제거
+
+사용자 요청:
+- stdout 파싱 부분만 side-effect 없이 수정할 수 있는지 물었습니다.
+- 가능한 경우 주석도 달아 두는 게 좋겠다고 했습니다.
+
+해석/결정:
+- hot path에서 command substitution 결과를 다시 `read`로 파싱하는 구조를 없애고, scratch 변수에 결과를 채우는 방식으로 바꾸기로 했습니다.
+- 동작 의미는 유지하되, shell parsing 비용을 줄이는 방향으로 정리했습니다.
+
+작업 결과:
+- `session_cli_state_for_session`가 stdout 대신 전역 scratch 변수에 결과를 적재하도록 변경했습니다.
+- hot path가 그 scratch 변수를 바로 읽도록 바꿨고, 이유를 주석으로 남겼습니다.
+
+남은 질문:
+- debug timing에서 `parse-sessions` 구간이 실제로 줄었는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar AI fingerprint 캐시 연장
+
+사용자 요청:
+- 1초 경계 멈짓은 줄었지만, 약 3초 주기 멈칫이 남아 있어 상태 갱신과 관련된지 점검해 달라고 했습니다.
+- 배경은 지금보다 좀 더 어두운 회색이어도 된다고 했습니다.
+
+해석/결정:
+- 주기적 멈칫의 가능성이 큰 `capture-pane` 계열 AI fingerprint 재조회 주기를 늘리고, direct AI pane은 activity freshness와 분리해 계속 animate 되도록 했습니다.
+- probe로 발견된 AI pane은 direct 경로로 승격해 이후 refresh 비용을 낮추기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 AI fingerprint 캐시 TTL을 추가하고, probe/direct AI 판정 경로를 안정화했습니다.
+- 배경 회색을 한 단계 더 어둡게 조정했습니다.
+
+남은 질문:
+- 실제 tmux에서 3초 주기 멈칫이 충분히 줄었는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar animation tick 가속
+
+사용자 요청:
+- 멈짓은 조금 줄었지만 아직 느껴지고, 애니메이션 속도는 지금보다 약간 더 빠르길 원했습니다.
+
+해석/결정:
+- 애니메이션 tick 자체를 조금 더 촘촘하게 만들고, 프레임 진행폭을 키워 체감 속도를 올리기로 했습니다.
+- 반복적인 상태 갱신은 조금 더 늦춰서 주기성 멈칫이 덜 느껴지도록 조정했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 poll timeout을 줄이고, animation frame step을 늘렸습니다.
+- state refresh cadence를 조금 더 느리게 바꿨습니다.
+
+남은 질문:
+- 실제 tmux에서 속도와 멈칫 체감이 원하는 수준인지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar epoch builtin 최적화
+
+사용자 요청:
+- 애니메이션 프레임 진행폭은 `+1`로 두고 싶다고 했습니다.
+- 5초 주기 멈짓이 남아 있어서, 더 가볍게 바꿀 수 있다면 side effect가 없어야 한다고 했습니다.
+
+해석/결정:
+- 외부 `date +%s`를 자주 호출하는 경로를 줄이면 동작은 그대로 두고 비용만 낮출 수 있다고 판단했습니다.
+- 애니메이션은 요청대로 `+1` step으로 유지했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 bash epoch builtin helper를 추가해 hot path의 epoch 조회를 줄였습니다.
+- 애니메이션 프레임 진행폭을 `+1`로 되돌렸습니다.
+
+남은 질문:
+- 실제 tmux에서 5초 주기 멈칫이 충분히 줄었는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar state snapshot 단순화
+
+사용자 요청:
+- 애니메이션 스타일은 마음에 들지만 멈짓거림과 무거운 느낌이 남아 있어, 모니터링과 동작 경로를 점검해 복잡도를 줄이고 side-effect 없이 가볍게 만들고 싶다고 했습니다.
+
+해석/결정:
+- 성능 병목은 렌더링보다 상태 수집에 있다고 보고, session별로 반복되던 pane snapshot 호출을 한 번으로 묶기로 했습니다.
+- 오래된 session은 AI probe를 건너뛰어 불필요한 `pgrep`와 `capture-pane`를 줄이기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 pane snapshot 캐시와 activity age 캐시를 추가하고, stale session은 AI probe를 early exit 하도록 바꿨습니다.
+
+남은 질문:
+- 실제 tmux에서 멈칫감이 줄었는지, 그리고 기존 동작에 side-effect가 없는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar animate 지속성 복구
+
+사용자 요청:
+- 각 session이 독립적으로 계속 animate 되어야 하는데, 현재는 멈추는 버그가 발생한다고 보고했습니다.
+- 멈짓거림도 여전히 있어, 무게 외의 원인도 같이 보아야 한다고 했습니다.
+
+해석/결정:
+- animation lifetime이 activity freshness에 묶인 부분을 떼어내고, AI pane이 존재하는 동안은 animate를 유지하도록 바꾸기로 했습니다.
+- fingerprint 재조회는 짧게 캐시해서 불필요한 capture-pane 반복을 줄이기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 AI pane 판정을 caching-aware하게 바꾸고, direct AI pane은 quiet 상태에서도 animate가 유지되도록 했습니다.
+
+남은 질문:
+- 실제 tmux에서 AI pane이 계속 animate 되는지, 그리고 멈짓거림이 어느 정도 줄었는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar refresh cadence 완화
+
+사용자 요청:
+- 멈짓거림이 완화되었지만 여전히 있고, 정확히 1초 주기로 느껴진다고 했습니다.
+- 배경 회색은 지금보다 조금 더 어두워도 된다고 했습니다.
+
+해석/결정:
+- 1초 경계에서의 상태 수집과 렌더 갱신을 더 느린 cadence로 분리해, animation tick과 겹치는 부담을 줄이기로 했습니다.
+- highlight는 유지하되 background gray를 조금 더 어둡게 내려 대비를 살리기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 `SIDEBAR_STATE_REFRESH_SECONDS` cadence를 추가하고, 기본 배경색을 더 어둡게 조정했습니다.
+
+남은 질문:
+- 3초 cadence가 충분히 부드러운지, status freshness가 과하게 늦어지지 않는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar animation row refresh 분리
+
+사용자 요청:
+- animate 효과는 동작 조건에서 자연스럽게 유지하되, sidebar 전체가 위에서 아래로 refresh되는 현상은 없애고 싶다고 요청했습니다.
+
+해석/결정:
+- AI pane의 `active/waiting` 전환을 전체 스냅샷 변화로 보지 않고, row 단위 repaint로만 처리하도록 분리했습니다.
+- 세션별 seed를 도입해 name animation phase를 독립화하고, 전역 프레임만 공유하던 구조를 완화했습니다.
+- 애니메이션은 기존처럼 프레임별로 갱신하되, 상태 변화가 있는 row만 다시 그립니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 세션별 animation seed를 추가하고, snapshot signature를 경량화하며, 애니메이션 상태 변화 row를 별도 repaint하도록 했습니다.
+
+남은 질문:
+- 실제 tmux에서 active/waiting 전환이 많은 경우에도 전체 refresh 없이 자연스럽게 보이는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar animation refresh flicker
+
+사용자 요청:
+- sidebar에서 애니메이션이 여러 개 동시에 동작할 때 refresh가 일어나 눈에 거슬린다고 보고했습니다.
+
+해석/결정:
+- 애니메이션 프레임 변화 자체를 전체 스냅샷 변화로 취급하지 않고, 실제 상태 변화만 `render_full`을 트리거하도록 조정하기로 했습니다.
+- 그 결과 애니메이션은 유지하면서도, 반복 프레임에서는 부분 repaint만 수행하게 됩니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 snapshot signature에서 애니메이션 프레임 항목을 제외했습니다.
+
+남은 질문:
+- 실제 tmux에서 여러 애니메이션 row가 동시에 움직일 때 깜빡임이 충분히 줄었는지 확인이 필요합니다.
+
 ## 2026-06-21 - delete 경로 디버그 로그로 원인 추적
 
 사용자 요청:

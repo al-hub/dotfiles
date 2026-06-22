@@ -5,7 +5,9 @@ SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
 SIDEBAR_ANIMATION_ENABLED="${TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED:-true}"
-SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.12}"
+SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.08}"
+SIDEBAR_STATE_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_STATE_REFRESH_SECONDS:-5}"
+SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS:-12}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
@@ -19,10 +21,22 @@ declare -a session_created=()
 declare -a session_status=()
 declare -a session_cli_state=()
 declare -A session_ai_fingerprint=()
+declare -A session_ai_fingerprint_checked_at=()
+declare -A session_activity_age_cache=()
+declare -A session_has_busy_command=()
+declare -A session_ai_probe_pane_ids=()
+declare -A session_ai_direct_pane_id=()
+declare -A previous_session_animate=()
 declare -a session_animate=()
+declare -a session_animation_seed=()
+declare -a session_animation_refresh_indexes=()
 declare -a history_files=()
 declare -a history_titles=()
 declare -a history_checked=()
+# Hot-path helpers write into these scratch variables instead of printing and
+# reparsing stdout, which keeps the session refresh loop cheaper.
+session_cli_state_result=""
+session_ai_fingerprint_result=""
 snapshot_signature=""
 history_signature=""
 selected_index=0
@@ -36,6 +50,15 @@ prompt_result=""
 prompt_cancelled=false
 view_mode="sessions"
 animation_frame=0
+
+epoch_now()
+{
+    if [ -n "${EPOCHSECONDS:-}" ]; then
+        printf '%s\n' "$EPOCHSECONDS"
+    else
+        date +%s
+    fi
+}
 
 die()
 {
@@ -472,12 +495,29 @@ pane_has_ai_cli_process()
 {
     pane_id="$1"
     pane_pid=""
+    timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+    timing_start=""
+    timing_end=""
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_start="$(debug_now_us)"
+    fi
 
     pane_pid="$(tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
-    [ -n "$pane_pid" ] || return 1
+    if [ -z "$pane_pid" ]; then
+        if [ "$timing_enabled" = "1" ]; then
+            timing_end="$(debug_now_us)"
+            debug_log "timing pane_has_ai_cli_process pane_id=$pane_id result=miss us=$(( timing_end - timing_start ))"
+        fi
+        return 1
+    fi
 
     if pgrep -a -P "$pane_pid" 2>/dev/null |
         grep -Eq '(^|[[:space:]/])(codex|claude|gemini|opencode|ollama)([[:space:]]|$)'; then
+        if [ "$timing_enabled" = "1" ]; then
+            timing_end="$(debug_now_us)"
+            debug_log "timing pane_has_ai_cli_process pane_id=$pane_id result=hit us=$(( timing_end - timing_start ))"
+        fi
         return 0
     fi
 
@@ -485,12 +525,20 @@ pane_has_ai_cli_process()
         [ -n "$child_pid" ] || continue
         if pgrep -a -P "$child_pid" 2>/dev/null |
             grep -Eq '(^|[[:space:]/])(codex|claude|gemini|opencode|ollama)([[:space:]]|$)'; then
+            if [ "$timing_enabled" = "1" ]; then
+                timing_end="$(debug_now_us)"
+                debug_log "timing pane_has_ai_cli_process pane_id=$pane_id result=hit us=$(( timing_end - timing_start ))"
+            fi
             return 0
         fi
     done <<EOF
 $(pgrep -P "$pane_pid" 2>/dev/null)
 EOF
 
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing pane_has_ai_cli_process pane_id=$pane_id result=miss us=$(( timing_end - timing_start ))"
+    fi
     return 1
 }
 
@@ -516,6 +564,13 @@ session_ai_fingerprint_for_pane()
 {
     pane_id="$1"
     capture=""
+    timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+    timing_start=""
+    timing_end=""
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_start="$(debug_now_us)"
+    fi
 
     capture="$(
         tmux capture-pane -p -t "$pane_id" -S -12 2>/dev/null |
@@ -524,7 +579,29 @@ session_ai_fingerprint_for_pane()
             cksum
     )"
 
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing session_ai_fingerprint_for_pane pane_id=$pane_id us=$(( timing_end - timing_start ))"
+    fi
+
     printf '%s\n' "$capture" | awk '{ print $1 ":" $2 }'
+}
+
+session_animation_seed_for()
+{
+    local key="$1"
+    local seed=0
+    local i=0
+    local len="${#key}"
+    local char
+
+    while [ "$i" -lt "$len" ]; do
+        char="${key:i:1}"
+        seed=$(((seed + $(printf '%d' "'$char")) % 24))
+        i=$((i + 1))
+    done
+
+    printf '%s\n' "$seed"
 }
 
 # Keep the adapter narrow: known AI CLI panes can animate while they are active,
@@ -532,12 +609,26 @@ session_ai_fingerprint_for_pane()
 session_activity_age()
 {
     session_name="$1"
-    now="$(date +%s)"
+    now="${current_epoch_second:-}"
+    [ -n "$now" ] || now="$(epoch_now)"
+    timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+    timing_start=""
+    timing_end=""
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_start="$(debug_now_us)"
+    fi
+
     activity="$(tmux display-message -p -t "=$session_name:" '#{session_activity}' 2>/dev/null || printf '0')"
 
     case "$activity" in
         ''|*[!0-9]*) activity=0 ;;
     esac
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing session_activity_age session=$session_name us=$(( timing_end - timing_start ))"
+    fi
 
     printf '%s\n' "$((now - activity))"
 }
@@ -545,41 +636,73 @@ session_activity_age()
 session_cli_state_for_session()
 {
     session_name="$1"
-    pane_id="$(session_ai_pane_for_session "$session_name" || true)"
+    now="${current_epoch_second:-}"
+    [ -n "$now" ] || now="$(epoch_now)"
+    session_cli_state_result=""
+    session_ai_fingerprint_result=""
+
+    pane_id="${session_ai_direct_pane_id[$session_name]:-}"
 
     if [ -n "$pane_id" ]; then
+        checked_at="${session_ai_fingerprint_checked_at[$session_name]:-0}"
+        if [ "$checked_at" -gt 0 ] && [ $((now - checked_at)) -lt "$SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS" ] && [ -n "${session_ai_fingerprint[$session_name]:-}" ]; then
+            session_cli_state_result="active"
+            session_ai_fingerprint_result="${session_ai_fingerprint[$session_name]}"
+            return 0
+        fi
         fingerprint="$(session_ai_fingerprint_for_pane "$pane_id")"
-        printf 'active\t%s\n' "$fingerprint"
-        return 0
+        if [ -n "$fingerprint" ]; then
+            session_ai_fingerprint["$session_name"]="$fingerprint"
+            session_ai_fingerprint_checked_at["$session_name"]="$now"
+            session_cli_state_result="active"
+            session_ai_fingerprint_result="$fingerprint"
+            return 0
+        fi
+    fi
+
+    probe_ids="${session_ai_probe_pane_ids[$session_name]:-}"
+    if [ -n "$probe_ids" ]; then
+        checked_at="${session_ai_fingerprint_checked_at[$session_name]:-0}"
+        if [ "$checked_at" -gt 0 ] && [ $((now - checked_at)) -lt "$SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS" ] && [ -n "${session_ai_fingerprint[$session_name]:-}" ]; then
+            session_cli_state_result="active"
+            session_ai_fingerprint_result="${session_ai_fingerprint[$session_name]}"
+            return 0
+        fi
+        while IFS= read -r probe_pane_id; do
+            [ -n "$probe_pane_id" ] || continue
+            if pane_has_ai_cli_process "$probe_pane_id"; then
+                fingerprint="$(session_ai_fingerprint_for_pane "$probe_pane_id")"
+                if [ -n "$fingerprint" ]; then
+                    session_ai_direct_pane_id["$session_name"]="$probe_pane_id"
+                    session_ai_fingerprint["$session_name"]="$fingerprint"
+                    session_ai_fingerprint_checked_at["$session_name"]="$now"
+                    session_cli_state_result="active"
+                    session_ai_fingerprint_result="$fingerprint"
+                    return 0
+                fi
+            fi
+        done <<EOF
+$probe_ids
+EOF
     fi
 
     if session_is_busy "$session_name"; then
-        printf 'active\t\n'
+        session_cli_state_result="active"
     else
-        printf 'idle\t\n'
+        session_cli_state_result="idle"
     fi
 }
 
 session_is_busy()
 {
     session_name="$1"
-    activity_age="$(session_activity_age "$session_name")"
+    activity_age="${session_activity_age_cache[$session_name]:-}"
 
-    if [ "$activity_age" -gt "$SIDEBAR_BUSY_SECONDS" ]; then
-        return 1
-    fi
+    [ -n "$activity_age" ] || activity_age="$(session_activity_age "$session_name")"
+    [ "$activity_age" -le "$SIDEBAR_BUSY_SECONDS" ] || return 1
+    [ "${session_has_busy_command[$session_name]:-false}" = "true" ] || return 1
 
-    while IFS="$(printf '\t')" read -r pane_session pane_title command_name; do
-        [ "$pane_session" = "$session_name" ] || continue
-        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
-        if ! is_shell_command "$command_name"; then
-            return 0
-        fi
-    done <<EOF
-$(tmux list-panes -a -F '#{session_name}	#{pane_title}	#{pane_current_command}' 2>/dev/null)
-EOF
-
-    return 1
+    return 0
 }
 
 session_status()
@@ -607,7 +730,7 @@ format_duration()
 session_age()
 {
     created="$1"
-    now="$(date +%s)"
+    now="$(epoch_now)"
 
     case "$created" in
         ''|*[!0-9]*) created="$now" ;;
@@ -668,44 +791,115 @@ show_cursor()
 
 collect_sessions()
 {
+    timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+    timing_start=""
+    timing_end=""
+    list_sessions_start=""
+    list_panes_start=""
+    parse_panes_start=""
+    parse_sessions_start=""
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_start="$(debug_now_us)"
+    fi
+    current_epoch_second="$(epoch_now)"
+    old_current_session="$current_session"
     current_session="$(tmux display-message -p '#S')"
     old_selected="$selected_session"
     debug_log "collect_sessions start current_session=$current_session old_selected=$old_selected"
+    previous_session_animate=()
+    for index in "${!session_names[@]}"; do
+        previous_session_animate["${session_names[$index]}"]="${session_animate[$index]}"
+    done
     session_names=()
     session_created=()
     session_status=()
     session_cli_state=()
     session_animate=()
+    session_animation_seed=()
+    session_animation_refresh_indexes=()
+    session_activity_age_cache=()
+    session_has_busy_command=()
+    session_ai_probe_pane_ids=()
+    session_ai_direct_pane_id=()
     snapshot_signature=""
     found_selected=false
     index=0
 
+    if [ "$timing_enabled" = "1" ]; then
+        list_sessions_start="$(debug_now_us)"
+    fi
     sessions_snapshot="$(tmux list-sessions -F '#{session_name}	#{session_created}' 2>/dev/null || true)"
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing collect_sessions list-sessions us=$(( timing_end - list_sessions_start )) count=$(printf '%s\n' "$sessions_snapshot" | sed '/^$/d' | wc -l)"
+        list_panes_start="$(debug_now_us)"
+    fi
+    panes_snapshot="$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}' 2>/dev/null || true)"
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing collect_sessions list-panes us=$(( timing_end - list_panes_start )) count=$(printf '%s\n' "$panes_snapshot" | sed '/^$/d' | wc -l)"
+        parse_panes_start="$(debug_now_us)"
+    fi
+
+    while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command; do
+        [ -n "$pane_session" ] || continue
+        [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+
+        if [ "${session_ai_probe_pane_ids[$pane_session]:-}" != "" ]; then
+            session_ai_probe_pane_ids["$pane_session"]="${session_ai_probe_pane_ids[$pane_session]}
+$pane_id"
+        else
+            session_ai_probe_pane_ids["$pane_session"]="$pane_id"
+        fi
+
+        if ! is_shell_command "$pane_command"; then
+            session_has_busy_command["$pane_session"]="true"
+        fi
+
+        if is_ai_cli_command "$pane_command"; then
+            session_ai_direct_pane_id["$pane_session"]="$pane_id"
+        fi
+    done <<EOF
+$panes_snapshot
+EOF
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing collect_sessions parse-panes us=$(( timing_end - parse_panes_start ))"
+        parse_sessions_start="$(debug_now_us)"
+    fi
 
     while IFS="$(printf '\t')" read -r name created; do
         [ -n "$name" ] || continue
+        activity_age="$(session_activity_age "$name")"
+        session_activity_age_cache["$name"]="$activity_age"
         status_value="$(session_status "$name")"
         cli_state_value=""
         ai_fingerprint_value=""
-        IFS="$(printf '\t')" read -r cli_state_value ai_fingerprint_value <<EOF
-$(session_cli_state_for_session "$name")
-EOF
+        session_cli_state_for_session "$name"
+        cli_state_value="$session_cli_state_result"
+        ai_fingerprint_value="$session_ai_fingerprint_result"
         animate_value="false"
         if [ "$cli_state_value" = "active" ] && [ -n "$ai_fingerprint_value" ]; then
+            animate_value="true"
             if [ "${session_ai_fingerprint[$name]:-}" = "$ai_fingerprint_value" ]; then
                 cli_state_value="waiting"
-            else
-                animate_value="true"
             fi
         fi
+        animation_seed_value="$(session_animation_seed_for "${name}:${created}")"
 
         session_names+=("$name")
         session_created+=("$created")
         session_status+=("$status_value")
         session_cli_state+=("$cli_state_value")
         session_ai_fingerprint["$name"]="$ai_fingerprint_value"
+        session_ai_fingerprint_checked_at["$name"]="$current_epoch_second"
         session_animate+=("$animate_value")
-        snapshot_signature="${snapshot_signature}${name}:${created}:${status_value}:${cli_state_value}:${animate_value}|"
+        session_animation_seed+=("$animation_seed_value")
+        if [ "${previous_session_animate[$name]:-}" != "$animate_value" ]; then
+            session_animation_refresh_indexes+=("$index")
+        fi
+        snapshot_signature="${snapshot_signature}${name}:${created}|"
 
         if [ "$name" = "$old_selected" ]; then
             selected_index="$index"
@@ -715,6 +909,19 @@ EOF
     done <<EOF
 $sessions_snapshot
 EOF
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing collect_sessions parse-sessions us=$(( timing_end - parse_sessions_start )) total_us=$(( timing_end - timing_start )) session_count=${#session_names[@]}"
+    fi
+
+    if [ "$current_session" != "$old_current_session" ]; then
+        for index in "${!session_names[@]}"; do
+            if [ "${session_names[$index]}" = "$old_current_session" ] ||
+                [ "${session_names[$index]}" = "$current_session" ]; then
+                session_animation_refresh_indexes+=("$index")
+            fi
+        done
+    fi
 
     if [ "${#session_names[@]}" -eq 0 ]; then
         selected_session=""
@@ -935,6 +1142,7 @@ print_session_name()
     name="$1"
     width="$2"
     animate="$3"
+    seed="${4:-0}"
     text="$(truncate_text "$name" "$width")"
     text_width="${#text}"
     padding=$((width - text_width))
@@ -942,17 +1150,15 @@ print_session_name()
     if [ "$animate" = "true" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
         for ((i = 0; i < text_width; i++)); do
             char="${text:i:1}"
-            phase=$(((i - animation_frame + 12) % 12))
+            phase=$(((i - animation_frame + seed + 24) % 24))
             case "$phase" in
                 0) color=255 ;;
                 1) color=254 ;;
-                2) color=253 ;;
-                3) color=252 ;;
-                4) color=251 ;;
-                5) color=250 ;;
-                6) color=248 ;;
-                7) color=246 ;;
-                *) color=244 ;;
+                2) color=252 ;;
+                3) color=250 ;;
+                4) color=248 ;;
+                5) color=246 ;;
+                *) color=241 ;;
             esac
             printf '\033[38;5;%sm%s' "$color" "$char"
         done
@@ -986,7 +1192,7 @@ render_session_name_cell()
 
     [ "$name_width" -lt 1 ] && name_width=1
     move_cursor "$line" 4
-    print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}"
+    print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}" "${session_animation_seed[$index]}"
 }
 
 render_row()
@@ -1004,10 +1210,10 @@ render_row()
     clear_line
     if [ "$width" -lt 16 ]; then
         printf '%s ' "$mark"
-        print_session_name "${session_names[$index]}" "$((width - 3))" "${session_animate[$index]}"
+        print_session_name "${session_names[$index]}" "$((width - 3))" "${session_animate[$index]}" "${session_animation_seed[$index]}"
     else
         printf '%s ' "$mark"
-        print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}"
+        print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}" "${session_animation_seed[$index]}"
         printf ' %s ' "$age"
     fi
 }
@@ -1025,6 +1231,19 @@ render_animated_name_cells()
         fi
         index=$((index + 1))
     done
+}
+
+refresh_sidebar_state_if_due()
+{
+    now_epoch="$(epoch_now)"
+    if [ -z "${last_state_refresh_epoch:-}" ] ||
+        [ $((now_epoch - last_state_refresh_epoch)) -ge "$SIDEBAR_STATE_REFRESH_SECONDS" ]; then
+        refresh_if_needed
+        last_state_refresh_epoch="$now_epoch"
+        return 0
+    fi
+
+    return 1
 }
 
 render_visible_rows()
@@ -1082,8 +1301,25 @@ render_age_cells()
     done
 }
 
+render_animation_state_changes()
+{
+    for index in "${session_animation_refresh_indexes[@]}"; do
+        if row_is_visible "$index"; then
+            render_row "$index"
+        fi
+    done
+    session_animation_refresh_indexes=()
+}
+
 refresh_if_needed()
 {
+    timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
+    timing_start=""
+    timing_end=""
+
+    if [ "$timing_enabled" = "1" ]; then
+        timing_start="$(debug_now_us)"
+    fi
     old_signature="$snapshot_signature"
     old_width="$last_width"
     old_height="$last_height"
@@ -1095,6 +1331,10 @@ refresh_if_needed()
         [ "$old_height" != "$(pane_height)" ]; then
         debug_log "refresh_if_needed render because signature_or_size_changed new_signature=$snapshot_signature new_width=$(pane_width) new_height=$(pane_height)"
         render_full
+    fi
+    if [ "$timing_enabled" = "1" ]; then
+        timing_end="$(debug_now_us)"
+        debug_log "timing refresh_if_needed total_us=$(( timing_end - timing_start ))"
     fi
     debug_log "refresh_if_needed end current_session=$current_session selected_session=$selected_session signature=$snapshot_signature"
 }
@@ -1171,6 +1411,15 @@ debug_log()
     {
         printf '%s %s\n' "$(date '+%F %T')" "$*"
     } >> "$debug_file" 2>/dev/null || true
+}
+
+debug_now_us()
+{
+    if [ -n "${EPOCHREALTIME:-}" ]; then
+        printf '%s\n' "${EPOCHREALTIME/./}"
+    else
+        date +%s%6N
+    fi
 }
 
 safe_file_part()
@@ -1808,7 +2057,7 @@ run_tui()
     mark_sidebar_pane
     collect_sessions
     render_full
-    last_tick="$(date +%s)"
+    last_tick="$(epoch_now)"
 
     while true; do
         key="$(read_key "$SIDEBAR_POLL_TIMEOUT" || true)"
@@ -1880,15 +2129,16 @@ run_tui()
                 ;;
         esac
 
-        now="$(date +%s)"
+        now="$(epoch_now)"
         if [ "$now" != "$last_tick" ]; then
-            refresh_if_needed
             render_age_cells
             last_tick="$now"
         fi
 
+        refresh_sidebar_state_if_due && render_animation_state_changes
+
         if [ "$view_mode" = "sessions" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
-            animation_frame=$(((animation_frame + 1) % 12))
+            animation_frame=$(((animation_frame + 1) % 24))
             render_animated_name_cells
         fi
     done
