@@ -27,6 +27,21 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-23 - v0.4 release note
+
+사용자 요청:
+- 현재 정리를 `v0.4`로 하고, 이 내용도 커밋에 반영한 뒤 tag까지 달자고 했습니다.
+
+해석/결정:
+- sidebar fingerprint/state 정리와 cursor blink 리팩토링 항목을 `v0.4` 릴리스 기준으로 묶고, 문서에 버전 표기를 반영하기로 했습니다.
+
+작업 결과:
+- `README.md`와 `AGENTS.md`의 버전 표기를 `v0.4` 기준으로 정리했습니다.
+- `HISTORY.md`와 `CONVERSATION.md`에 v0.4 릴리스 맥락을 추가했습니다.
+
+남은 질문:
+- 실제 코드 변경 없이 문서 릴리스만 반영했으므로, 이후 필요하면 다음 커밋에서 코드 정리와 분리하면 됩니다.
+
 ## 2026-06-23 - sidebar cursor blink refactor item
 
 사용자 요청:

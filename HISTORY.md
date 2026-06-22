@@ -27,6 +27,21 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-23 - v0.4 release note
+
+요약:
+- sidebar fingerprint/state 정리와 cursor blink 관련 리팩토링 항목을 `v0.4` 릴리스 맥락으로 묶었습니다.
+- 이번 릴리스는 실제 코드 안정화와 후속 리팩토링 분리를 같이 기록하는 기준점입니다.
+
+변경 파일:
+- `HISTORY.md`, `CONVERSATION.md`, `README.md`, `AGENTS.md`: v0.4 릴리스 표기 반영
+
+검증:
+- 없음
+
+후속 주의:
+- cursor blink는 아직 리팩토링 항목으로 남아 있으며, 별도 커서/포커스 정책 정리가 필요합니다.
+
 ## 2026-06-23 - sidebar cursor blink refactor item
 
 요약:

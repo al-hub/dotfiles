@@ -6,7 +6,7 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. 현재 작업은 v0.2로 진행 중이지만, `v0.2` tag는 아직 만들지 않았습니다.
+- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. 현재 작업은 v0.4로 정리했고, `v0.4` tag를 별도 릴리스 기준으로 사용합니다.
 - 기본 enabled 설치 항목은 사용자에게 `tmux`만 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`는 hidden dependency로 함께 설치됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
