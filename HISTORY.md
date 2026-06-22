@@ -27,6 +27,150 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-23 - tmux AI CLI fingerprint/state 최종 정리
+
+요약:
+- 실제 원인은 AI CLI fingerprint를 캐시한 상태에서 `waiting` 판정이 stale fingerprint를 기준으로 유지되던 점이었습니다.
+- 캐시를 제거한 뒤, 현재는 pane 내용을 직접 읽고 이전 fingerprint와 즉시 비교하는 단순한 경로만 남겼습니다.
+- 관련 캐시/refresh 보조 변수도 정리해서, 코드와 실제 동작이 일치하도록 만들었습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: fingerprint 캐시 및 refresh 보조 변수 제거, state debug 로그 단순화
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: 통과
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d && tmux -L codex-dotfiles-test kill-server`: 통과
+
+후속 주의:
+- spinner가 fingerprint 본문에 섞이는 경우만 추가로 정규화하면 됩니다.
+
+## 2026-06-23 - tmux AI CLI fingerprint cache 제거
+
+요약:
+- fingerprint를 캐시하면 waiting에서 active로 돌아오는 전환이 늦거나 멈출 수 있어서, AI CLI fingerprint를 매번 직접 읽도록 되돌렸습니다.
+- 상태 판정은 fingerprint 비교만 유지하고, stale cache는 사용하지 않게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: AI CLI fingerprint cached branch 제거
+
+검증:
+- 아직 미실행
+
+후속 주의:
+- direct fingerprint capture 비용이 늘 수 있지만, 현재 판정 지연보다 우선합니다.
+
+## 2026-06-23 - tmux AI CLI waiting 판정 단순화
+
+요약:
+- cached 경로가 `active/animate=true`를 붙잡는 문제를 줄이기 위해, fingerprint가 같으면 무조건 `waiting`으로 내리도록 상태 판정을 단순화했습니다.
+- fingerprint 값이 동일한데도 animate가 계속 도는 경로를 막는 쪽으로 조정했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: cached 특례를 제거하고 fingerprint 동일 시 `waiting` 처리
+
+검증:
+- 아직 미실행
+
+후속 주의:
+- fingerprint 자체가 아직 흔들리면, 여전히 마지막 줄/본문 정규화가 추가로 필요할 수 있습니다.
+
+## 2026-06-23 - tmux AI CLI fingerprint 최소 안정화
+
+요약:
+- AI CLI pane의 fingerprint가 spinner 같은 마지막 줄 변화에 끌려다니지 않도록, 마지막 한 줄을 fingerprint 입력에서 제외했습니다.
+- 상태 머신은 그대로 두고 fingerprint 입력만 단순화해서 `waiting` 오판을 줄이는 쪽으로 조정했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `session_ai_fingerprint_for_pane()`에서 마지막 줄을 무시하도록 fingerprint 입력 정리
+
+검증:
+- 아직 미실행
+
+후속 주의:
+- spinner가 마지막이 아닌 본문 줄에 섞이는 경우는 추가 정규화가 필요할 수 있습니다.
+
+## 2026-06-23 - sidebar fingerprint state debug logs
+
+요약:
+- waiting 판정이 왜 바뀌는지 보기 위해, fingerprint 생성 직후와 상태 판정 직후의 debug 로그를 추가했습니다.
+- debug 모드에서만 동작하며, fingerprint 값과 상태 전이를 함께 추적할 수 있습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: fingerprint / state debug 로그 추가
+- `HISTORY.md`, `CONVERSATION.md`: debug logging 맥락 기록
+
+검증:
+- 미실행
+
+후속 주의:
+- `TMUX_SESSION_LAUNCHER_DEBUG=1`로 실행해 fingerprint와 state 로그를 비교합니다.
+
+## 2026-06-23 - sidebar waiting cache state fix
+
+요약:
+- cached fingerprint 구간에서 waiting 상태를 유지하도록 정리했습니다.
+- active 상태는 계속 animate 되고, waiting은 cached refresh에서도 멈춘 상태로 남게 했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: cached fingerprint의 state 전이를 단순화
+- `HISTORY.md`, `CONVERSATION.md`: waiting cache state 맥락 기록
+
+검증:
+- 미실행
+
+후속 주의:
+- 실제 tmux에서 waiting 시 애니메이션이 즉시 멈추는지, active 시에는 계속 도는지 확인합니다.
+
+## 2026-06-23 - sidebar cached fingerprint keeps animation
+
+요약:
+- AI CLI의 화면 fingerprint가 캐시된 경우에는 기존 animate 상태를 유지하고, fresh capture에서만 waiting 전환을 판단하도록 바꿨습니다.
+- active 상태가 있는데도 1회만 animate되거나 바로 멈추는 side effect를 줄이기 위한 조정입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: fingerprint source를 `fresh/cached`로 구분하고 cached 구간은 previous animate를 유지
+- `HISTORY.md`, `CONVERSATION.md`: cached/fresh 구분 맥락 기록
+
+검증:
+- 미실행
+
+후속 주의:
+- 실제 tmux에서 AI CLI가 active일 때는 animate가 유지되고, fresh capture에서 동일 fingerprint면 waiting으로 멈추는지 확인합니다.
+
+## 2026-06-22 - sidebar previous fingerprint compare fix
+
+요약:
+- `waiting` 전환 기준을 현재 fingerprint가 아니라 이전 fingerprint와 비교하도록 고쳐서, 애니메이션이 아예 안 도는 문제를 해결했습니다.
+- fingerprint를 상태 함수 안에서 갱신하는 구조와 비교 위치가 충돌하던 버그였습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: 이전 fingerprint를 먼저 저장한 뒤 animate 여부 비교
+- `HISTORY.md`, `CONVERSATION.md`: compare fix 맥락 기록
+
+검증:
+- `bash -n scripts/tmux-session-launcher`
+- `git diff --check`
+
+후속 주의:
+- 실제 tmux에서 AI CLI가 active일 때만 animate가 켜지고, fingerprint가 같아지면 waiting으로 내려가는지 확인합니다.
+
+## 2026-06-22 - sidebar waiting stops animation
+
+요약:
+- AI pane이 조용해져 `waiting`으로 떨어지면 애니메이션도 멈추도록 바꿨습니다.
+- `active` 상태에서만 animate를 유지해, 상태 변화가 없는데도 계속 흐르는 문제를 줄였습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `waiting` 시 animate=false로 전환
+- `HISTORY.md`, `CONVERSATION.md`: 상태-애니메이션 분리 맥락 기록
+
+검증:
+- 미실행
+
+후속 주의:
+- 실제 tmux에서 `active -> waiting` 전환 시 애니메이션이 즉시 멈추는지 확인합니다.
+
 ## 2026-06-22 - tmux color theme refactor note
 
 요약:

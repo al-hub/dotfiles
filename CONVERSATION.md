@@ -27,6 +27,137 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-23 - tmux AI CLI fingerprint/state 최종 정리
+
+사용자 요청:
+- 현재는 정상동작하지만, 원인을 정확히 분석해서 side effect 없도록 관련 부분을 개선하자고 했습니다.
+
+해석/결정:
+- stale fingerprint cache가 `waiting`을 붙잡고 있던 것이 핵심 원인이었고, 관련 보조 변수도 함께 제거해 코드와 실제 동작을 맞췄습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 fingerprint cache, refresh 보조 변수, 관련 debug 로그를 정리했습니다.
+
+남은 질문:
+- spinner가 fingerprint 본문에 섞이는 특이 케이스만 추가 정규화가 필요할 수 있습니다.
+
+## 2026-06-23 - tmux AI CLI fingerprint cache 제거
+
+사용자 요청:
+- waiting으로 멈춘 뒤 다시 진행되지 않는다고 했습니다.
+
+해석/결정:
+- fingerprint 캐시가 stale 상태를 만들고 있다고 보고, AI CLI fingerprint를 매번 직접 읽도록 되돌렸습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 AI CLI fingerprint cached branch를 제거했습니다.
+
+남은 질문:
+- direct fingerprint capture 비용이 얼마나 되는지 실제 사용감을 보고 판단해야 합니다.
+
+## 2026-06-23 - tmux AI CLI waiting 판정 단순화
+
+사용자 요청:
+- fingerprint 입력을 단순화했는데도 still animate가 멈추지 않는다고 했고, 상태 판정을 더 단순하게 고치길 원했습니다.
+
+해석/결정:
+- cached 경로가 animate를 붙잡는 문제를 제거하기 위해, fingerprint가 같으면 무조건 `waiting`으로 내리도록 판정을 단순화했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 cached 특례를 제거하고 fingerprint 동일 시 `waiting`으로 바꾸도록 수정했습니다.
+
+남은 질문:
+- fingerprint가 여전히 흔들리면 spinner/커서가 본문 줄에 섞이는 정규화가 추가로 필요할 수 있습니다.
+
+## 2026-06-23 - tmux AI CLI fingerprint 최소 안정화
+
+사용자 요청:
+- fingerprint가 흔들리는 것이 근본 원인이라면 더 간단한 방식으로 고치자고 했고, 진행을 요청했습니다.
+
+해석/결정:
+- 상태 머신은 그대로 두고, fingerprint 입력에서 마지막 한 줄만 제외하는 최소 수정으로 안정성을 높이기로 했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 AI CLI fingerprint 입력에서 마지막 줄을 무시하도록 바꿨습니다.
+- `HISTORY.md`와 `CONVERSATION.md`에 관련 맥락을 추가했습니다.
+
+남은 질문:
+- spinner가 마지막 줄이 아니라 본문 줄에 섞이는 경우는 추가 정규화가 필요할 수 있습니다.
+
+## 2026-06-23 - sidebar fingerprint state debug logs
+
+사용자 요청:
+- waiting 계산이 제대로 되는지 보기 위해, 어떤 로그를 넣을지 묻고 실제로 넣어 달라고 했습니다.
+
+해석/결정:
+- fingerprint 생성 직후와 상태 판정 직후를 각각 로그로 남기면, 화면 변화와 fingerprint 변화, 그리고 active/waiting/animate 전이를 분리해서 볼 수 있습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 debug 전용 로그를 추가했습니다.
+
+남은 질문:
+- `TMUX_SESSION_LAUNCHER_DEBUG=1`에서 찍히는 fingerprint/state 로그를 보고, waiting 기준이 과도한지 확인하면 됩니다.
+
+## 2026-06-23 - sidebar waiting cache state fix
+
+사용자 요청:
+- waiting인데도 계속 animate가 도는 현상을 보고했고, waiting 계산이 제대로 되지 않는 것 같다고 했습니다.
+
+해석/결정:
+- cached fingerprint 구간에서 이전 animate를 무조건 유지하던 부분이 waiting을 깨고 있다고 판단했습니다.
+- cached 상태에서는 previous state가 waiting이면 그대로 멈추고, 아니면 active로 계속 움직이도록 단순화했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`의 cached 상태 전이를 정리했습니다.
+
+남은 질문:
+- 실제 tmux에서 waiting 상태가 즉시 멈추는지 확인이 필요합니다.
+
+## 2026-06-23 - sidebar cached fingerprint keeps animation
+
+사용자 요청:
+- 현재 기준으로 AI CLI일 때 animate가 돌고, AI CLI가 waiting일 때는 멈추게 하는 방향이 좋겠다고 했습니다.
+
+해석/결정:
+- fingerprint가 캐시된 경우까지 매번 waiting으로 판정하면 animate가 1회만 돌 수 있으므로, cached/fresh를 구분해야 한다고 판단했습니다.
+- fresh capture에서만 waiting을 결정하고, cached 구간은 이전 animate 상태를 유지하도록 수정했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에 fingerprint source 구분을 추가했습니다.
+
+남은 질문:
+- 실제 tmux에서 active일 때는 계속 animate되고, waiting으로 바뀔 때 멈추는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar previous fingerprint compare fix
+
+사용자 요청:
+- AI CLI가 실행 중인데도 애니메이션이 아예 안 도는 이상 동작을 보고했습니다.
+
+해석/결정:
+- `session_cli_state_for_session`가 fingerprint를 먼저 배열에 써버리기 때문에, 직후 비교가 항상 자기 자신과 같아지는 버그로 판단했습니다.
+- 이전 fingerprint를 호출 전에 보관해 비교해야 실제 변화 여부를 알 수 있습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 이전 fingerprint를 먼저 저장한 뒤 animate 여부를 판정하도록 수정했습니다.
+
+남은 질문:
+- 실제 tmux에서 active일 때만 animate되고, waiting으로 바뀌면 멈추는지 확인이 필요합니다.
+
+## 2026-06-22 - sidebar waiting stops animation
+
+사용자 요청:
+- `waiting`에서도 애니메이션이 계속 도는 것 같아서, 1번 방식이 더 실용적이지 않겠냐고 했습니다.
+
+해석/결정:
+- `waiting`을 애니메이션 정지 상태로 두는 편이 상태 의미와 더 잘 맞고, 무거운 동작도 줄일 수 있다고 판단했습니다.
+- `active`일 때만 animate를 유지하도록 최소 수정했습니다.
+
+작업 결과:
+- `scripts/tmux-session-launcher`에서 fingerprint가 같아 `waiting`으로 내려가면 `animate=false`가 되도록 바꿨습니다.
+
+남은 질문:
+- 실제 tmux에서 `active -> waiting` 전환 시 애니메이션이 자연스럽게 멈추는지 확인이 필요합니다.
+
 ## 2026-06-22 - tmux color theme refactor note
 
 사용자 요청:

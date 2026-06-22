@@ -7,7 +7,6 @@ SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
 SIDEBAR_ANIMATION_ENABLED="${TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED:-true}"
 SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.08}"
 SIDEBAR_STATE_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_STATE_REFRESH_SECONDS:-5}"
-SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS:-12}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
@@ -21,7 +20,6 @@ declare -a session_created=()
 declare -a session_status=()
 declare -a session_cli_state=()
 declare -A session_ai_fingerprint=()
-declare -A session_ai_fingerprint_checked_at=()
 declare -A session_activity_age_cache=()
 declare -A session_has_busy_command=()
 declare -A session_ai_probe_pane_ids=()
@@ -563,7 +561,8 @@ EOF
 session_ai_fingerprint_for_pane()
 {
     pane_id="$1"
-    capture=""
+    capture_text=""
+    fingerprint=""
     timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
     timing_start=""
     timing_end=""
@@ -572,19 +571,33 @@ session_ai_fingerprint_for_pane()
         timing_start="$(debug_now_us)"
     fi
 
-    capture="$(
+    capture_text="$(
         tmux capture-pane -p -t "$pane_id" -S -12 2>/dev/null |
             tr -d '\r' |
             sed '/^[[:space:]]*$/d' |
-            cksum
+            awk 'NR==1 { first = $0; prev = $0; next }
+                 { print prev; prev = $0 }
+                 END { if (NR == 1) print first }'
     )"
+    fingerprint="$(printf '%s' "$capture_text" | cksum | awk '{ print $1 ":" $2 }')"
+
+    if [ "$timing_enabled" = "1" ]; then
+        if [ -n "$capture_text" ]; then
+            capture_lines="$(printf '%s\n' "$capture_text" | awk 'END{print NR}')"
+            capture_tail_preview="$(printf '%s\n' "$capture_text" | tail -n 3 | tr '\n' '|')"
+        else
+            capture_lines=0
+            capture_tail_preview=""
+        fi
+        debug_log "fingerprint pane_id=$pane_id lines=$capture_lines fp=$fingerprint tail=${capture_tail_preview%|}"
+    fi
 
     if [ "$timing_enabled" = "1" ]; then
         timing_end="$(debug_now_us)"
         debug_log "timing session_ai_fingerprint_for_pane pane_id=$pane_id us=$(( timing_end - timing_start ))"
     fi
 
-    printf '%s\n' "$capture" | awk '{ print $1 ":" $2 }'
+    printf '%s\n' "$fingerprint"
 }
 
 session_animation_seed_for()
@@ -636,24 +649,15 @@ session_activity_age()
 session_cli_state_for_session()
 {
     session_name="$1"
-    now="${current_epoch_second:-}"
-    [ -n "$now" ] || now="$(epoch_now)"
     session_cli_state_result=""
     session_ai_fingerprint_result=""
 
     pane_id="${session_ai_direct_pane_id[$session_name]:-}"
 
     if [ -n "$pane_id" ]; then
-        checked_at="${session_ai_fingerprint_checked_at[$session_name]:-0}"
-        if [ "$checked_at" -gt 0 ] && [ $((now - checked_at)) -lt "$SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS" ] && [ -n "${session_ai_fingerprint[$session_name]:-}" ]; then
-            session_cli_state_result="active"
-            session_ai_fingerprint_result="${session_ai_fingerprint[$session_name]}"
-            return 0
-        fi
         fingerprint="$(session_ai_fingerprint_for_pane "$pane_id")"
         if [ -n "$fingerprint" ]; then
             session_ai_fingerprint["$session_name"]="$fingerprint"
-            session_ai_fingerprint_checked_at["$session_name"]="$now"
             session_cli_state_result="active"
             session_ai_fingerprint_result="$fingerprint"
             return 0
@@ -662,12 +666,6 @@ session_cli_state_for_session()
 
     probe_ids="${session_ai_probe_pane_ids[$session_name]:-}"
     if [ -n "$probe_ids" ]; then
-        checked_at="${session_ai_fingerprint_checked_at[$session_name]:-0}"
-        if [ "$checked_at" -gt 0 ] && [ $((now - checked_at)) -lt "$SIDEBAR_AI_FINGERPRINT_REFRESH_SECONDS" ] && [ -n "${session_ai_fingerprint[$session_name]:-}" ]; then
-            session_cli_state_result="active"
-            session_ai_fingerprint_result="${session_ai_fingerprint[$session_name]}"
-            return 0
-        fi
         while IFS= read -r probe_pane_id; do
             [ -n "$probe_pane_id" ] || continue
             if pane_has_ai_cli_process "$probe_pane_id"; then
@@ -675,7 +673,6 @@ session_cli_state_for_session()
                 if [ -n "$fingerprint" ]; then
                     session_ai_direct_pane_id["$session_name"]="$probe_pane_id"
                     session_ai_fingerprint["$session_name"]="$fingerprint"
-                    session_ai_fingerprint_checked_at["$session_name"]="$now"
                     session_cli_state_result="active"
                     session_ai_fingerprint_result="$fingerprint"
                     return 0
@@ -876,15 +873,20 @@ EOF
         status_value="$(session_status "$name")"
         cli_state_value=""
         ai_fingerprint_value=""
+        previous_ai_fingerprint_value="${session_ai_fingerprint[$name]:-}"
         session_cli_state_for_session "$name"
         cli_state_value="$session_cli_state_result"
         ai_fingerprint_value="$session_ai_fingerprint_result"
         animate_value="false"
         if [ "$cli_state_value" = "active" ] && [ -n "$ai_fingerprint_value" ]; then
-            animate_value="true"
-            if [ "${session_ai_fingerprint[$name]:-}" = "$ai_fingerprint_value" ]; then
+            if [ "$previous_ai_fingerprint_value" = "$ai_fingerprint_value" ]; then
                 cli_state_value="waiting"
+            else
+                animate_value="true"
             fi
+        fi
+        if [ "${TMUX_SESSION_LAUNCHER_DEBUG:-0}" = "1" ]; then
+            debug_log "state session=$name prev_fp=$previous_ai_fingerprint_value fp=$ai_fingerprint_value state=$cli_state_value animate=$animate_value"
         fi
         animation_seed_value="$(session_animation_seed_for "${name}:${created}")"
 
@@ -893,7 +895,6 @@ EOF
         session_status+=("$status_value")
         session_cli_state+=("$cli_state_value")
         session_ai_fingerprint["$name"]="$ai_fingerprint_value"
-        session_ai_fingerprint_checked_at["$name"]="$current_epoch_second"
         session_animate+=("$animate_value")
         session_animation_seed+=("$animation_seed_value")
         if [ "${previous_session_animate[$name]:-}" != "$animate_value" ]; then
