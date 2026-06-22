@@ -27,6 +27,51 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-23 - sidebar cursor blink refactor item
+
+요약:
+- sidebar animated 상태에서 보이던 불규칙한 커서 blink는 sidebar 렌더만의 문제가 아니라, 포커스된 pane의 cursor 정책이나 tmux redraw 타이밍과 얽힌 리팩토링 항목으로 남겨두기로 했습니다.
+- 현재 증상은 sidebar가 포커스일 때는 덜 보이고, active window 쪽에 포커스가 가면 더 잘 보인다는 점에서 pane focus side effect 가능성이 큽니다.
+
+변경 파일:
+- `HISTORY.md`, `CONVERSATION.md`: cursor blink를 refactoring 항목으로 기록
+
+검증:
+- 없음
+
+후속 주의:
+- 실제 수정은 cursor 정책/partial redraw 공통화/tmux focus 시그널 경로를 분리하는 쪽으로 별도 작업이 필요합니다.
+
+## 2026-06-23 - sidebar partial redraw cursor anchor
+
+요약:
+- 부분 렌더가 끝난 뒤 커서 위치가 들쭉날쭉 남지 않도록, animated/state 갱신 경로의 종료 위치를 footer 라인으로 고정했습니다.
+- 커서 hide만으로 해결되지 않는 경우를 대비한 보완 조치입니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: partial redraw 종료 후 `move_cursor "$last_height" 1` 추가
+
+검증:
+- 아직 미실행
+
+후속 주의:
+- 그래도 보이면 실제로는 terminal cursor가 아니라 tmux/pane redraw 타이밍 문제일 수 있습니다.
+
+## 2026-06-23 - sidebar animate cursor blink 완화
+
+요약:
+- sidebar의 부분 렌더 경로에서도 커서를 숨기도록 해서, 애니메이션 중에 커서가 불규칙하게 깜빡이는 side effect를 줄였습니다.
+- 애니메이션 상태 판정은 건드리지 않고 렌더링만 조정했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `render_animated_name_cells()`와 `render_animation_state_changes()`에서 `hide_cursor` 보장
+
+검증:
+- 아직 미실행
+
+후속 주의:
+- 만약 여전히 커서가 보이면, partial redraw 후 안전 위치로 커서를 돌려놓는 후속 정리가 필요할 수 있습니다.
+
 ## 2026-06-23 - tmux AI CLI fingerprint/state 최종 정리
 
 요약:
