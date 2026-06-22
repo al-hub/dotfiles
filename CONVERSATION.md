@@ -27,6 +27,181 @@
 - 다음에 확인할 점
 ```
 
+## 2026-06-22 - tmux color theme refactor note
+
+사용자 요청:
+- 시력과 관련된 색상 내용을 함께 커밋해 두고, refactoring 요소로 theme를 나중에 바꿀 수 있도록 메모만 남기고 싶다고 했습니다.
+
+해석/결정:
+- 현재는 색상 값을 그대로 유지하고, 나중에 theme를 바꿀 때 건드릴 지점을 `window-style`, `window-active-style`, `pane-border-format` 중심으로 분리해 적어 두기로 했습니다.
+
+작업 결과:
+- 색상 결정 기록과 함께 theme refactor 메모를 추가했습니다.
+
+남은 질문:
+- 실제 theme 토큰화를 코드로 분리할지는 다음 작업에서 결정하면 됩니다.
+
+## 2026-06-22 - tmux active pane path format fix
+
+사용자 요청:
+- 활성 pane 경로의 스타일을 적용했더니, 활성 쪽은 안 보이고 비활성 쪽에 `bold]` 같은 오류 문자열이 나타났다고 했습니다.
+
+해석/결정:
+- style escape를 조건식 안에서 합쳐 쓴 방식이 tmux 파서와 맞지 않았다고 보고, `fg`와 `bold`를 분리해서 다시 구성하기로 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 `pane-border-format`을 분리된 스타일 escape로 고쳤습니다.
+
+남은 질문:
+- 실제 tmux에서 활성 pane 경로가 제대로 강조되는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux active pane path emphasis
+
+사용자 요청:
+- 활성 pane의 경로 폰트만 더 진한 색으로 표시할 수 있는지 물었고, 적용해 보자고 했습니다.
+
+해석/결정:
+- `pane-border-format`는 조건 스타일을 받을 수 있으므로, `pane_active`일 때만 더 밝고 bold한 텍스트를 쓰는 방식으로 최소 수정했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 `pane-border-format`을 활성/비활성 조건 스타일로 바꿨습니다.
+
+남은 질문:
+- 실제 tmux에서 active path만 의도대로 강조되는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux active border raised slightly
+
+사용자 요청:
+- 활성 window 배경은 `#0d1112` 계열로 두고, 경계도 약간 올리고 싶다고 했습니다.
+
+해석/결정:
+- active background와 border를 함께 조금만 올리면 focus가 더 잘 읽히면서도 시각적 부담은 크게 늘지 않는다고 판단했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 active window background와 active border tone을 소폭 올렸습니다.
+
+남은 질문:
+- 실제 tmux에서 border가 적절한지 확인이 필요합니다.
+
+## 2026-06-22 - tmux active background nudged lower
+
+사용자 요청:
+- 현재에서 활성값을 조금 더 낮춰보고 싶다고 했습니다.
+
+해석/결정:
+- inactive는 그대로 두고 active background만 한 단계 내리면, focus 구분을 약간만 줄이면서 시각적 피로도도 낮출 수 있다고 판단했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 active window background를 더 어두운 톤으로 낮췄습니다.
+
+남은 질문:
+- 실제 tmux에서 차등이 너무 약해지지 않았는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux active background lowered
+
+사용자 요청:
+- 비활성 `window-style`는 `#0b0d0e`로 두고, 활성값을 낮춰서 차등을 다시 맞추고 싶다고 했습니다.
+
+해석/결정:
+- inactive를 고정한 뒤 active background와 active border만 아래로 내려, 대비를 줄이되 focus는 남기는 방향으로 정리했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 active window background를 더 어두운 톤으로 낮췄습니다.
+
+남은 질문:
+- 실제 tmux에서 원하는 만큼만 차등이 남았는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux focus contrast nudged down
+
+사용자 요청:
+- 지금 차등값은 나쁘지 않지만, 매우 미세하게 더 줄이고 싶다고 했습니다.
+
+해석/결정:
+- 활성 배경은 그대로 두고, 비활성 배경만 한 단계 밝게 해서 focus 구분을 유지한 채 대비를 약간 낮추기로 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 inactive background를 아주 조금 올렸습니다.
+
+남은 질문:
+- 실제 tmux에서 차등이 여전히 읽히는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux focus contrast reduced
+
+사용자 요청:
+- 지금의 차등이 너무 심하니, 다시 줄이자고 했습니다.
+
+해석/결정:
+- active/inactive 배경 차이는 유지하되, 눈에 거슬리지 않는 중간값으로 되돌리기로 했습니다.
+- border도 너무 튀지 않게 원래 톤에 가까운 수준으로 맞췄습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 contrast를 완화했습니다.
+
+남은 질문:
+- 실제 tmux에서 차등이 적절한지, focus는 읽히는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux focus contrast widened
+
+사용자 요청:
+- 아직 focus 구분이 잘 안 되니, 오히려 차등을 더 주고 싶다고 했습니다.
+
+해석/결정:
+- 시력 친화적인 검정 계열은 유지하되, inactive window를 더 어둡게 내려서 active window와의 차이를 분명하게 하기로 했습니다.
+- border도 함께 살짝 조정해 focus가 눈에 더 빨리 잡히도록 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 active/inactive background 대비를 다시 벌렸습니다.
+
+남은 질문:
+- 실제 tmux에서 차이가 충분히 읽히는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux inactive background slightly darker
+
+사용자 요청:
+- 현재 상태에서 비활성 window 배경을 약간만 더 어둡게 내리고 싶다고 했습니다.
+- 목표는 시력적인 편안함을 최대한 유지하면서 focus 영역을 쉽게 구분하는 것입니다.
+
+해석/결정:
+- focus 구분은 active window 배경 차이로 유지하고, 비활성 배경만 아주 조금 더 어둡게 내려 대비를 정리하기로 했습니다.
+- border는 건드리지 않고 배경만 미세 조정해 부작용을 최소화했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 `window-style`과 그에 맞는 pane border 배경을 조금 더 어둡게 조정했습니다.
+
+남은 질문:
+- 실제 tmux에서 배경 차이가 너무 작거나 과하지 않은지 확인이 필요합니다.
+
+## 2026-06-22 - tmux focus tint 축소
+
+사용자 요청:
+- 직전 설정이 눈에는 더 편하다고 했고, 모든 설정은 직전으로 돌리되 active window 배경만 약간 다르게 두고 싶다고 했습니다.
+
+해석/결정:
+- active border 대비를 줄이고, window background 차이만 남기는 쪽이 가장 덜 거슬린다고 판단했습니다.
+- pane body tint는 계속 사용하지 않고, tmux가 확실히 지원하는 범위 내에서만 최소 차이를 유지하기로 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`를 직전 톤으로 되돌리고, active window 배경만 미세하게 구분하도록 정리했습니다.
+
+남은 질문:
+- 실제 tmux에서 배경 차이만으로 focus가 충분히 읽히는지 확인이 필요합니다.
+
+## 2026-06-22 - tmux focus tint 강화
+
+사용자 요청:
+- 경계만 바꾸면 focus 위치가 눈에 잘 안 들어오니, pane 배경 자체를 칠할 수 있는지 물었습니다.
+- 가능하다면 active 영역이 더 잘 보이도록 해보고 싶다고 했습니다.
+
+해석/결정:
+- tmux 일반 설정으로는 pane body 자체 tint가 제한적이므로, active window 전체에 아주 옅은 tint를 주고 active border 대비를 키우는 쪽이 가장 안전하다고 판단했습니다.
+- 배경은 거의 black에 가깝게 유지하고, focus 영역만 미세하게 cool charcoal 톤으로 띄우기로 했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`의 active window / active border 색을 조금 더 강하게 조정했습니다.
+
+남은 질문:
+- 실제 tmux에서 focus가 더 잘 읽히는지, 그리고 tint가 과하지 않은지 확인이 필요합니다.
+
 ## 2026-06-22 - sidebar animation left-to-right smoothing
 
 사용자 요청:
@@ -61,6 +236,22 @@
 
 남은 질문:
 - 구조 개선을 실제로 적용할지, 적용한다면 collector/renderer 분리 수준까지 갈지 결정이 필요합니다.
+
+## 2026-06-22 - tmux active window cool tint
+
+사용자 요청:
+- 현재 배경이 전부 black이라서, focus 되는 pane만 시력에 덜 부담되는 검정에 가까운 옅은 청록을 넣는 아이디어를 제안했습니다.
+- 시력과 관련된 자료를 바탕으로 보수적인 톤을 원했고, 후보 6개를 만들어 그중 best 1개를 적용하길 원했습니다.
+
+해석/결정:
+- tmux 3.2a의 제약상 pane body 자체를 직접 tint하기는 어렵다고 보고, active window와 border에만 아주 약한 cool charcoal를 적용하기로 했습니다.
+- 후보 중 가장 보수적인 쪽으로 `#101416`를 active window tint로 선택했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf`에 active window/background와 pane border tone을 추가했습니다.
+
+남은 질문:
+- 실제 tmux에서 focus 구분이 충분한지, 그리고 청록감이 과하지 않은지 확인이 필요합니다.
 
 ## 2026-06-22 - sidebar hotspot timing instrumentation
 
