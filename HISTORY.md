@@ -27,6 +27,49 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-06-23 - tmux sidebar animated cursor flicker age refresh fix
+
+요약:
+- animated 갱신뿐 아니라 매초 실행되는 age 갱신도 커서를 남길 수 있어서, 그 경로에도 `hide_cursor`를 추가했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `render_age_cells` 시작 시 `hide_cursor` 추가
+
+검증:
+- 아직 별도 자동 검증은 실행하지 않음
+
+후속 주의:
+- 여전히 보이면 `render_row` 종료 시점의 커서 위치를 강제로 하단 안전 위치로 옮기는 후속 조치가 필요합니다.
+
+## 2026-06-23 - tmux sidebar animated cursor flicker fix
+
+요약:
+- animated 세션 이름 갱신 경로에서 커서가 부분 redraw 뒤에 남아 보이는 문제를 줄이기 위해, 해당 경로에서 커서를 숨기도록 정리했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: animated name cell 갱신과 animation state redraw 시 `hide_cursor` 추가
+
+검증:
+- `git diff --check`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+
+후속 주의:
+- full render 경로는 이미 커서를 숨기고 있으므로, 남은 깜빡임이 있으면 부분 redraw가 아니라 tmux focus/cursor 복원 동작을 추가로 봐야 합니다.
+
+## 2026-06-23 - tmux 배경과 활성 배경 교체
+
+요약:
+- tmux 테마에서 일반 배경과 활성 배경의 톤을 서로 바꿔, active pane이 더 어두운 배경으로 보이게 조정했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: `window-style`와 `window-active-style`의 배경색을 교체
+
+검증:
+- 별도 자동 검증은 아직 실행하지 않음
+
+후속 주의:
+- pane border와 status bar 색은 그대로라서, 필요하면 다음 작업에서 함께 재조정할 수 있습니다.
+
 ## 2026-06-23 - v0.4 release note
 
 요약:
