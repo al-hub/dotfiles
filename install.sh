@@ -497,17 +497,21 @@ install_item()
     source_url="$(source_url "$source")"
     tmp_file="$(mktemp)"
 
-    if is_done "$name"; then
-        log "Skipping already processed item in this run: $name"
-        rm -f "$tmp_file"
-        return 0
-    fi
+     if stack_contains "$INSTALL_STACK" "$name"; then
+         stack_display="${INSTALL_STACK#|}"
+         stack_display="${stack_display%|}"
+         stack_display="${stack_display//|/ -> }"
+         stack_display="$stack_display -> $name"
+         log "Circular dependency detected: $name (stack: $stack_display)"
+         rm -f "$tmp_file"
+         return 1
+     fi
 
-    if stack_contains "$INSTALL_STACK" "$name"; then
-        log "Circular dependency detected: $name"
-        rm -f "$tmp_file"
-        return 1
-    fi
+     if is_done "$name"; then
+         log "Skipping already processed item in this run: $name"
+         rm -f "$tmp_file"
+         return 0
+     fi
 
     stack_push "$name"
 
@@ -524,11 +528,11 @@ install_item()
     if [ -f "$target_path" ] && cmp -s "$target_path" "$tmp_file"; then
         log "$name is already installed: $target_path"
         rm -f "$tmp_file"
-        after_install_item "$name" "$target"
-        mark_done "$name"
-        stack_pop "$name"
-        install_dependencies "$depends"
-        return
+         after_install_item "$name" "$target"
+         mark_done "$name"
+         install_dependencies "$depends"
+         stack_pop "$name"
+         return
     fi
 
     backup_path="-"
@@ -555,11 +559,11 @@ install_item()
     rm -f "$tmp_file"
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log "Installed $name to $target_path"
-    after_install_item "$name" "$target"
-    mark_done "$name"
-    stack_pop "$name"
-    install_dependencies "$depends"
-}
+     after_install_item "$name" "$target"
+     mark_done "$name"
+     install_dependencies "$depends"
+     stack_pop "$name"
+ }
 
 install_by_index()
 {
