@@ -100,9 +100,10 @@ get_hotkeys() {
         local formatted_key
         formatted_key=$(printf "%-18s" "$key_label")
 
-        # 출력 포맷: 가중치 | 정렬된키 | 설명 | 실제명령어
-        printf "%d|%s|%s|%s\n" "$weight" "$formatted_key" "$display_desc" "$clean_cmd"
-    done | sort -t'|' -k1,1n -k2,2 | sort -u -t'|' -k2,2
+        # 출력 포맷: 가중치 \t 정렬된키 \t 설명 \t 실제명령어
+        # 단축키나 명령어에 파이프(|) 기호가 섞여서 필드가 깨지는 오류를 방지하기 위해 탭(\t) 구분자 채택
+        printf "%d\t%s\t%s\t%s\n" "$weight" "$formatted_key" "$display_desc" "$clean_cmd"
+    done | sort -t$'\t' -k1,1n -k2,2 | sort -u -t$'\t' -k2,2
 }
 
 # 4. fzf 기반 대화형 실행기 구동
@@ -116,29 +117,29 @@ run_palette() {
     fi
 
     # fzf 실행 옵션:
-    # -d '|': 파이프 기호 기준으로 필드 분할
-    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 출력
+    # -d '\t': 탭 문자 기준으로 필드 분할 (단축키에 |가 들어있어도 완벽 방어)
+    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 이쁘게 출력
     # --no-border: tmux 팝업 테두리와 겹쳐 깨지는 버그 해결
-    # --margin=0,1: 팝업 좌측 끝 텍스트 깨짐/어긋남 방지용 좌우 1칸의 여백(마진) 확보
+    # --margin=0,2: 팝업 좌측/우측 끝 괘선 깨짐 및 어긋남 방지용 좌우 2칸의 안전 여백 확보
     # --height 100%: 팝업 공간을 꽉 채워 렌더링 오차 방지
     # --preview: 하단 영역에 실제 실행될 tmux 명령어 격리 노출
     # --tiebreak=index: 검색 매칭 시 가중치 정렬 순서를 유지하며 첫 번째 매치에 포커스 자동 고정
     local selected
-    selected=$(echo "$list" | fzf -d '|' --with-nth=2,3 \
+    selected=$(echo "$list" | fzf -d $'\t' --with-nth=2,3 \
         --no-border \
-        --margin=0,1 \
+        --margin=0,2 \
         --height 100% \
         --layout=reverse \
         --prompt="⌨️ 단축키 검색 및 실행> " \
         --header="Enter: 실행, Esc/q: 취소 (방향키로 명령 확인)" \
-        --preview="echo {} | cut -d'|' -f4-" \
-        --preview-window="down:3:wrap:noborder" \
+        --preview="echo {} | cut -f4-" \
+        --preview-window="down:2:wrap:border-top" \
         --tiebreak=index)
 
     if [ -n "$selected" ]; then
         # 선택된 결과에서 실제 명령어(네 번째 필드) 추출
         local cmd
-        cmd=$(echo "$selected" | cut -d'|' -f4- | sed 's/^[[:space:]]*//')
+        cmd=$(echo "$selected" | cut -f4- | sed 's/^[[:space:]]*//')
 
         # 팝업 중첩 및 레이스 방지:
         # 스크립트가 exit 0로 끝나면서 팝업이 자동으로 닫히도록 유도하고,
