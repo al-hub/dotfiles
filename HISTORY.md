@@ -28,6 +28,22 @@
 ```
 
 
+## 2026-07-12 - fzf supports_focus 판별 조건 버그 수정 (exit 1 오판 해결)
+
+요약:
+- fzf focus 지원 여부 검사 시 매칭 결과 없음으로 인해 fzf가 exit code 1을 리턴하여, 최신 fzf(0.74.0)에서도 focus 기능이 비활성화되던 버그를 수정했습니다.
+- `--filter ""` 옵션을 사용하여 매칭 성공(exit 0)을 유도하고, 오직 미지원 시의 문법 에러(exit 2)만 조건문에서 거르도록 개선했습니다.
+
+변경 파일:
+- `scripts/tmux-theme-picker`: supports_focus 검사 옵션을 `--filter ""`로 수정
+
+검증:
+- `bash -n scripts/tmux-theme-picker`: OK
+- 실제 fzf 0.74.0 환경에서 supports_focus가 참으로 판별되고 실시간 미리보기가 동작하는지 확인: OK
+
+후속 주의:
+- 없음
+
 ## 2026-07-12 - fzf 버전 호환성 처리로 tmux 테마 피커 팝업 강제 종료 버그 수정
 
 요약:
