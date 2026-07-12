@@ -149,14 +149,16 @@ execute_cmd() {
     first_word=$(echo "$cmd" | awk '{print $1}')
 
     if [[ "$first_word" == /* ]] || [[ "$first_word" == "eval" ]] || [[ "$first_word" == "tmux" ]] || command -v "$first_word" >/dev/null 2>&1; then
-        # 쉘 명령어 (절대경로, eval, tmux, PATH에 있는 실행파일) → run-shell로 실행
+        # 쉘 명령어 (절대경로, eval, tmux, PATH에 있는 실행파일) → run-shell로 동기 실행
         TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
+        echo $? > "$EXIT_LOG"
+        echo "SUCCESS" > "$STATUS_FILE"
     else
-        # tmux 내장 명령어 (display-popup, next-window 등) → 직접 호출
-        TMUX="$TMUX" tmux $cmd 2> "$ERR_LOG"
+        # tmux 내장 명령어 (display-popup, next-window 등)
+        # 현재 팔레트 팝업이 닫힌 뒤에 실행되어야 하므로 짧은 딜레이 후 백그라운드 실행
+        local tmux_socket="$TMUX"
+        (sleep 0.3 && TMUX="$tmux_socket" tmux $cmd 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE") &
     fi
-    echo $? > "$EXIT_LOG"
-    echo "SUCCESS" > "$STATUS_FILE"
 }
 
 # 4. fzf 기반 대화형 실행기 구동
