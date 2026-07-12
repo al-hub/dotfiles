@@ -2,23 +2,40 @@
 # scripts/tmux-command-palette
 # tmux 단축키 커맨드 팔레트 (fzf 기반)
 
-# 1. 쉘 스크립트 자체 내장 별칭 사전 (Alias) - Notes 설명이 없는 기본 명령어 보완용
+# 실행 대상 pane 식별자 확보 (비동기 TTY 유실 버그 완벽 방지용)
+TARGET_PANE="${TMUX_PANE:-}"
+if [ -z "$TARGET_PANE" ]; then
+    TARGET_PANE=$(tmux display-message -p '#{pane_id}' 2>/dev/null)
+fi
+
+# pane ID(%1 등)에서 특수문자를 제거하여 안전한 고유 파일명 식별자로 변환
+PANE_CLEAN_ID=$(echo "$TARGET_PANE" | tr -d '%')
+ERR_LOG="/tmp/tmux-cmd-palette-run-${PANE_CLEAN_ID}.err"
+STATUS_FILE="/tmp/tmux-cmd-palette-status-${PANE_CLEAN_ID}.log"
+EXIT_LOG="/tmp/tmux-cmd-palette-exit-${PANE_CLEAN_ID}.log"
+
+# 임시 매핑 파일 관리용 디렉토리 생성 및 정리 설정
+MAP_DIR="/tmp/tmux-cmd-palette-map.$$"
+mkdir -p "$MAP_DIR"
+MAP_FILE="$MAP_DIR/map"
+trap "rm -rf $MAP_DIR" EXIT
+
+# 1. 쉘 스크립트 자체 내장 별칭 사전 (Alias)
+# 터미널 폰트 너비 해석 오차(밀림 현상)를 방지하기 위해 이모지를 완전히 배제하고 콤팩트한 한글 텍스트만 사용
 declare -A ALIAS_MAP
-ALIAS_MAP["tmux-theme-picker"]="🎨 테마 피커 실행 (Theme Picker)"
-ALIAS_MAP["tmux-session-launcher --open-sidebar"]="🗂️ 세션 런처 사이드바 토글"
-ALIAS_MAP["next-window"]="➡️ 다음 윈도우로 이동 (Next Window)"
-ALIAS_MAP["previous-window"]="⬅️ 이전 윈도우로 이동 (Prev Window)"
-ALIAS_MAP["tmux-session-launcher --split-horizontal"]="✂️ 작업 영역 가로 분할 (Split Horizontal)"
-ALIAS_MAP["tmux-session-launcher --split-vertical"]="✂️ 작업 영역 세로 분할 (Split Vertical)"
-ALIAS_MAP["copy-mode"]="📝 텍스트 복사 모드 진입 (Copy Mode)"
+ALIAS_MAP["tmux-theme-picker"]="[테마] 테마 피커 실행"
+ALIAS_MAP["tmux-session-launcher --open-sidebar"]="[세션] 세션 런처 사이드바 토글"
+ALIAS_MAP["next-window"]="[윈도우] 다음 윈도우로 이동"
+ALIAS_MAP["previous-window"]="[윈도우] 이전 윈도우로 이동"
+ALIAS_MAP["tmux-session-launcher --split-horizontal"]="[분할] 작업 영역 가로 분할"
+ALIAS_MAP["tmux-session-launcher --split-vertical"]="[분할] 작업 영역 세로 분할"
+ALIAS_MAP["copy-mode"]="[복사] 텍스트 복사 모드 진입"
 
 # 2. tmux 내장 Notes (-N 옵션 정보) 추출 및 적재
 declare -A KEY_NOTES
 while IFS= read -r line; do
     if [ -n "$line" ]; then
-        # 첫 번째 필드(단축키)와 나머지 필드(설명) 분리
         key=$(echo "$line" | awk '{print $1}')
-        # C-a C-o 처럼 스페이스가 포함된 키 대응을 위해 첫 두 필드가 단축키인지 판별
         key_parts_count=$(echo "$line" | awk '{print $2}' | grep -E "^(C-|M-|S-|[a-zA-Z0-9\?\!\"\'\#\$\&\(\)\*\+\,\-\.\/\:\;\<\=\>\@\[\\\]\^\_\`\{\|\}\~])" | wc -l)
         if [ "$key_parts_count" -gt 0 ]; then
             key=$(echo "$line" | awk '{print $1 " " $2}')
@@ -28,125 +45,219 @@ while IFS= read -r line; do
         fi
         
         if [ -n "$key" ] && [ -n "$desc" ]; then
-            KEY_NOTES["$key"]="$desc"
+            # 사용자가 직접 등록한 설명의 이모지들을 괘선 보호를 위해 필터링하여 안전하게 한글/영문만 남김
+            clean_desc=$(echo "$desc" | sed -E 's/[🎨🗂️➡️⬅️✂️📝⌨️]//g' | sed 's/^[[:space:]]*//')
+            KEY_NOTES["$key"]="$clean_desc"
         fi
     fi
 done < <(tmux list-keys -N 2>/dev/null)
 
 # 3. 모든 단축키 목록 추출 및 정규화
 get_hotkeys() {
-    tmux list-keys | grep -E "(-T prefix|-T root)" | grep -vE "(Mouse|MouseDown|MouseDrag|DoubleClick|Wheel)" | while read -r line; do
-        # 라인 포맷: bind-key -T prefix key command...
-        local table=$(echo "$line" | awk '{print $3}')
-        local key=$(echo "$line" | awk '{print $4}')
-        local raw_cmd=$(echo "$line" | cut -d' ' -f5-)
+    idx=1
+    > "$MAP_FILE"
 
-        # 특수 이스케이프 문자 언이스케이프 보정
-        local clean_cmd=$(echo "$raw_cmd" | sed -e 's/\\;/;/g' -e 's/\\"/"/g' -e 's/\\\\/\\/g')
+    while read -r line; do
+        if [[ "$line" =~ -T[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+(.+) ]]; then
+            table="${BASH_REMATCH[1]}"
+            key="${BASH_REMATCH[2]}"
+            raw_cmd="${BASH_REMATCH[3]}"
 
-        # 키 매칭용 검색어 조립 (C-a T 또는 M-Left 등)
-        local lookup_key=""
-        if [ "$table" = "prefix" ]; then
-            lookup_key="C-a $key"
-        else
-            lookup_key="$key"
-        fi
+            clean_cmd=$(echo "$raw_cmd" | sed -e 's/\\"/"/g' -e 's/\\\\/\\/g')
 
-        # 1순위: tmux 내장 Notes 설명
-        # 2순위: ALIAS_MAP 수동 별칭 매핑
-        # 3순위: 날것의 명령어 그대로 노출 (Fallback)
-        local display_desc=""
-        local is_custom_desc=false
-        
-        if [ -n "${KEY_NOTES[$lookup_key]}" ]; then
-            display_desc="${KEY_NOTES[$lookup_key]}"
-            is_custom_desc=true
-        elif [ -n "${KEY_NOTES[$key]}" ]; then
-            display_desc="${KEY_NOTES[$key]}"
-            is_custom_desc=true
-        else
-            # ALIAS_MAP 매칭 확인
-            for pattern in "${!ALIAS_MAP[@]}"; do
-                if [[ "$clean_cmd" =~ $pattern ]]; then
-                    display_desc="${ALIAS_MAP[$pattern]}"
-                    is_custom_desc=true
-                    break
-                fi
-            done
-            if [ "$is_custom_desc" = false ]; then
-                display_desc="$clean_cmd"
+            lookup_key=""
+            if [ "$table" = "prefix" ]; then
+                lookup_key="C-a $key"
+            else
+                lookup_key="$key"
             fi
+
+            display_desc=""
+            is_custom_desc=false
+            
+            if [ -n "${KEY_NOTES[$lookup_key]}" ]; then
+                display_desc="${KEY_NOTES[$lookup_key]}"
+                is_custom_desc=true
+            elif [ -n "${KEY_NOTES[$key]}" ]; then
+                display_desc="${KEY_NOTES[$key]}"
+                is_custom_desc=true
+            else
+                for pattern in "${!ALIAS_MAP[@]}"; do
+                    if [[ "$clean_cmd" =~ $pattern ]]; then
+                        display_desc="${ALIAS_MAP[$pattern]}"
+                        is_custom_desc=true
+                        break
+                    fi
+                done
+                if [ "$is_custom_desc" = false ]; then
+                    display_desc="$clean_cmd"
+                fi
+            fi
+
+            weight=3
+            if [ "$is_custom_desc" = true ]; then
+                weight=0
+            elif [ "$table" = "prefix" ]; then
+                weight=1
+            else
+                weight=2
+            fi
+
+            key_label=""
+            if [ "$table" = "prefix" ]; then
+                key_label="[Ctrl+a $key]"
+            else
+                key_label="[$key]"
+            fi
+
+            formatted_key=$(printf "%-18s" "$key_label")
+            truncated_desc="${display_desc:0:30}"
+
+            printf "%d\t%s\n" "$idx" "$clean_cmd" >> "$MAP_FILE"
+            printf "%d\t%d\t%s\t%s\t%s\n" "$weight" "$idx" "$formatted_key" "$truncated_desc" "$clean_cmd"
+            
+            idx=$((idx + 1))
         fi
-
-        # 정렬 가중치 (0: 핵심 설명 키, 1: 일반 prefix 키, 2: 일반 root 키, 3: 설명 없는 키)
-        local weight=3
-        if [ "$is_custom_desc" = true ]; then
-            weight=0
-        elif [ "$table" = "prefix" ]; then
-            weight=1
-        else
-            weight=2
-        fi
-
-        # 단축키 라벨 포맷팅
-        local key_label=""
-        if [ "$table" = "prefix" ]; then
-            key_label="[Ctrl+a $key]"
-        else
-            key_label="[$key]"
-        fi
-
-        # 고정 폭(18자) 지정 - 영문/특수문자 괄호만 사용하여 줄 정렬을 완벽하게 맞춤
-        local formatted_key
-        formatted_key=$(printf "%-18s" "$key_label")
-
-        # 출력 포맷: 가중치 \t 정렬된키 \t 설명 \t 실제명령어
-        # 단축키나 명령어에 파이프(|) 기호가 섞여서 필드가 깨지는 오류를 방지하기 위해 탭(\t) 구분자 채택
-        printf "%d\t%s\t%s\t%s\n" "$weight" "$formatted_key" "$display_desc" "$clean_cmd"
-    done | sort -t$'\t' -k1,1n -k2,2 | sort -u -t$'\t' -k2,2
+    done < <(tmux list-keys | grep -E "(-T prefix|-T root)" | grep -vE "(Mouse|MouseDown|MouseDrag|DoubleClick|Wheel)") | sort -t$'\t' -k1,1n -k3,3 | sort -u -t$'\t' -k3,3
 }
 
 # 4. fzf 기반 대화형 실행기 구동
 run_palette() {
     local list
     list=$(get_hotkeys)
+
+    # 4-1. 자가 진단(Self-Test) 전용 분기 처리
+    if [ "$1" = "--test" ]; then
+        echo "[Self-Test] Starting tmux-command-palette validation..."
+        
+        if [ -z "$list" ]; then
+            echo "[Self-Test] FAIL: Hotkey list is empty."
+            exit 1
+        fi
+        echo "[Self-Test] PASS: Hotkey list populated."
+        
+        if [ ! -f "$MAP_FILE" ] || [ ! -s "$MAP_FILE" ]; then
+            echo "[Self-Test] FAIL: Map file not created or empty."
+            exit 1
+        fi
+        echo "[Self-Test] PASS: Map file successfully created."
+        
+        # 역추적 복원 테스트
+        test_target_line=$(echo "$list" | grep -E "(tmux-theme-picker|theme)" | head -n 1)
+        if [ -n "$test_target_line" ]; then
+            test_idx=$(echo "$test_target_line" | cut -f2)
+            echo "[Self-Test] Found theme picker index: $test_idx"
+            
+            recovered_cmd=$(grep -E "^$test_idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+            echo "[Self-Test] Recovered command: $recovered_cmd"
+            
+            if [[ "$recovered_cmd" == *"tmux-theme-picker"* && ! "$recovered_cmd" =~ "-T prefix" ]]; then
+                echo "[Self-Test] PASS: Command recovered correctly without prefix clutter!"
+            else
+                echo "[Self-Test] FAIL: Command recovery mismatch or prefix clutter detected."
+                exit 1
+            fi
+        else
+            local sample_line=$(echo "$list" | head -n 1)
+            local sample_idx=$(echo "$sample_line" | cut -f2)
+            local sample_cmd=$(grep -E "^$sample_idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+            if [ -n "$sample_cmd" ]; then
+                echo "[Self-Test] PASS: Sample index $sample_idx command recovered: $sample_cmd"
+            else
+                echo "[Self-Test] FAIL: Sample index recovery failed."
+                exit 1
+            fi
+        fi
+        
+        echo "[Self-Test] SUCCESS: All self-tests passed!"
+        exit 0
+    fi
+
+    # 4-2. 격리도가 높은 E2E 가상 임의 명령 실행 검증 모드 (--test-exec-cmd <cmd>)
+    # 단축키 데이터 구조나 윈도우 개수에 1%도 얽매이지 않는 완전 격리된 기능 무결성 보증
+    if [ "$1" = "--test-exec-cmd" ] && [ -n "$2" ]; then
+        local cmd="$2"
+        echo "[Test-Exec-Cmd] Command to run: $cmd"
+        rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
+        
+        echo "STARTED" > "$STATUS_FILE"
+        
+        local first_word
+        first_word=$(echo "$cmd" | awk '{print $1}')
+        if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+            cmd="tmux $cmd"
+        fi
+        
+        (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+        exit 0
+    fi
+
+    # 4-3. 동적 가상 실행 시뮬레이션 모드 (--test-exec <index>)
+    if [ "$1" = "--test-exec" ] && [ -n "$2" ]; then
+        local test_idx="$2"
+        local cmd
+        cmd=$(grep -E "^$test_idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+        
+        if [ -n "$cmd" ]; then
+            echo "[Test-Exec] Target index: $test_idx, Command: $cmd"
+            rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
+            
+            echo "STARTED" > "$STATUS_FILE"
+            
+            local first_word
+            first_word=$(echo "$cmd" | awk '{print $1}')
+            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+                cmd="tmux $cmd"
+            fi
+            
+            (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+            exit 0
+        else
+            echo "[Test-Exec] FAIL: Index $test_idx not found in mapping."
+            exit 1
+        fi
+    fi
     
     if ! command -v fzf >/dev/null 2>&1; then
         tmux display-message "Error: fzf is required for command palette."
         exit 1
     fi
 
-    # fzf 실행 옵션:
-    # -d '\t': 탭 문자 기준으로 필드 분할 (단축키에 |가 들어있어도 완벽 방어)
-    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 이쁘게 출력
-    # --no-border: tmux 팝업 테두리와 겹쳐 깨지는 버그 해결
-    # --margin=0,2: 팝업 좌측/우측 끝 괘선 깨짐 및 어긋남 방지용 좌우 2칸의 안전 여백 확보
-    # --height 100%: 팝업 공간을 꽉 채워 렌더링 오차 방지
-    # --preview: 하단 영역에 실제 실행될 tmux 명령어 격리 노출
-    # --tiebreak=index: 검색 매칭 시 가중치 정렬 순서를 유지하며 첫 번째 매치에 포커스 자동 고정
+    # fzf 실행 옵션
     local selected
-    selected=$(echo "$list" | fzf -d $'\t' --with-nth=2,3 \
+    selected=$(echo "$list" | fzf -d $'\t' --with-nth=3,4 \
         --no-border \
         --margin=0,2 \
         --height 100% \
         --layout=reverse \
-        --prompt="⌨️ 단축키 검색 및 실행> " \
+        --prompt="단축키 검색 및 실행> " \
         --header="Enter: 실행, Esc/q: 취소 (방향키로 명령 확인)" \
-        --preview="echo {} | cut -f4-" \
-        --preview-window="down:2:wrap:border-top" \
-        --tiebreak=index)
+        --preview="echo {} | cut -f5-" \
+        --preview-window="down:2:nowrap:border-top" \
+        --tiebreak=index \
+        --no-hscroll)
 
     if [ -n "$selected" ]; then
-        # 선택된 결과에서 실제 명령어(네 번째 필드) 추출
-        local cmd
-        cmd=$(echo "$selected" | cut -f4- | sed 's/^[[:space:]]*//')
+        local idx
+        idx=$(echo "$selected" | awk '{print $1}')
 
-        # 팝업 중첩 및 레이스 방지:
-        # 스크립트가 exit 0로 끝나면서 팝업이 자동으로 닫히도록 유도하고,
-        # 0.15초의 충분한 딜레이 후 tmux run-shell -b 비동기 방식으로 명령어 전달
-        (sleep 0.15 && tmux run-shell -b "$cmd") &
-        exit 0
+        local cmd
+        cmd=$(grep -E "^$idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+
+        if [ -n "$cmd" ]; then
+            rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
+            echo "STARTED" > "$STATUS_FILE"
+
+            local first_word
+            first_word=$(echo "$cmd" | awk '{print $1}')
+            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+                cmd="tmux $cmd"
+            fi
+
+            (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+            exit 0
+        fi
     fi
 }
 
-run_palette
+run_palette "$@"
