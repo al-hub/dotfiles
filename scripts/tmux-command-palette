@@ -117,30 +117,34 @@ run_palette() {
 
     # fzf 실행 옵션:
     # -d '|': 파이프 기호 기준으로 필드 분할
-    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 이쁘게 출력
+    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 출력
     # --no-border: tmux 팝업 테두리와 겹쳐 깨지는 버그 해결
+    # --margin=0,1: 팝업 좌측 끝 텍스트 깨짐/어긋남 방지용 좌우 1칸의 여백(마진) 확보
     # --height 100%: 팝업 공간을 꽉 채워 렌더링 오차 방지
     # --preview: 하단 영역에 실제 실행될 tmux 명령어 격리 노출
+    # --tiebreak=index: 검색 매칭 시 가중치 정렬 순서를 유지하며 첫 번째 매치에 포커스 자동 고정
     local selected
     selected=$(echo "$list" | fzf -d '|' --with-nth=2,3 \
         --no-border \
+        --margin=0,1 \
         --height 100% \
         --layout=reverse \
         --prompt="⌨️ 단축키 검색 및 실행> " \
         --header="Enter: 실행, Esc/q: 취소 (방향키로 명령 확인)" \
         --preview="echo {} | cut -d'|' -f4-" \
-        --preview-window="down:3:wrap:noborder")
+        --preview-window="down:3:wrap:noborder" \
+        --tiebreak=index)
 
     if [ -n "$selected" ]; then
         # 선택된 결과에서 실제 명령어(네 번째 필드) 추출
         local cmd
         cmd=$(echo "$selected" | cut -d'|' -f4- | sed 's/^[[:space:]]*//')
 
-        # 팝업 중첩 방지: 현재 커맨드 팔레트 팝업창 강제 즉시 종료
-        tmux display-popup -C
-
-        # 0.05초의 짧은 딜레이 후 쉘 비동기 실행 (팝업 레이아웃 깨짐 완전 방지)
-        (sleep 0.05 && eval "tmux $cmd") &
+        # 팝업 중첩 및 레이스 방지:
+        # 스크립트가 exit 0로 끝나면서 팝업이 자동으로 닫히도록 유도하고,
+        # 0.15초의 충분한 딜레이 후 tmux run-shell -b 비동기 방식으로 명령어 전달
+        (sleep 0.15 && tmux run-shell -b "$cmd") &
+        exit 0
     fi
 }
 
