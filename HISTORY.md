@@ -25,7 +25,26 @@
 
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
-```## 2026-07-12 - tmux 커맨드 팔레트 이중 run-shell 껍데기 탈피(Unwrap) 패치
+```
+## 2026-07-12 - tmux 팝업창 소멸에 의한 TMUX_PANE 유실 방지 2중 안전 장치 적용
+
+요약:
+- `display-popup` 내부 터미널 세션 기동 시, 환경 변수 `TMUX_PANE`이 원래 작업창 pane ID가 아닌 팝업창 자신의 임시 pane ID로 강제 덮어씌워지던 문제를 파악했습니다. 이로 인해 fzf 선택 완료 후 팝업창이 소멸되면 비동기 명령어(`tmux run-shell -t "$TARGET_PANE"`)가 공중 분해되던 맹점을 해결했습니다.
+- **2중 방어 조치**: `tmux.conf` 단축키 바인딩 시점에 원래 부모 pane의 진짜 ID를 환경변수로 강제 상속 주입(`env TMUX_PANE='#{pane_id}'`)하게끔 설정을 변경하고, 팔레트 스크립트 내부에서도 `TMUX_PANE` 오인 시 직전 활성 pane(`tmux display-message -p -t ! '#{pane_id}'`)으로 롤백 복원하는 Fallback 안전 장치를 이식했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: display-popup 호출 시 `env TMUX_PANE='#{pane_id}'` 상입 바인딩 갱신
+- `scripts/tmux-command-palette`: 팝업 pane 오인 시 이전 활성 pane(부모 pane)의 ID로 안전 Fallback 처리하는 로직 보완
+
+검증:
+- `bash -n scripts/tmux-command-palette`: OK
+- `./scripts/tmux-popup-detector`: 🟢 All Clean 검증 성공
+- 실제 사용자 실시간 세션 내 팝업 닫기 후 비동기 구동 동작성 검증: 정상 작동 성공
+
+후속 주의:
+- 없음
+
+## 2026-07-12 - tmux 커맨드 팔레트 이중 run-shell 껍데기 탈피(Unwrap) 패치
 
 요약:
 - 단축키 오리지널 명령어에 포함된 `run-shell`/`eval-shell`이 팔레트 비동기 구동부의 외곽 `run-shell`과 중첩되어 이중 `run-shell` 구조를 유발하고, TTY 단절에 따른 소켓 에러(`no current client`, Exit 1)로 실행 오동작이 일어나던 버그를 해결했습니다.

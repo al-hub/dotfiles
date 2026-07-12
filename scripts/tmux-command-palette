@@ -2,10 +2,17 @@
 # scripts/tmux-command-palette
 # tmux 단축키 커맨드 팔레트 (fzf 기반)
 
-# 실행 대상 pane 식별자 확보 (비동기 TTY 유실 버그 완벽 방지용)
+# 실행 대상 pane 식별자 확보 (비동기 TTY 유실 및 팝업창 소멸 오인 버그 완벽 방지용)
 TARGET_PANE="${TMUX_PANE:-}"
-if [ -z "$TARGET_PANE" ]; then
-    TARGET_PANE=$(tmux display-message -p '#{pane_id}' 2>/dev/null)
+# 만약 TARGET_PANE이 비어있거나, 팝업창 자신의 pane을 가리키고 있을 오류를 대비한 2중 Fallback
+if [ -z "$TARGET_PANE" ] || [ "$TARGET_PANE" = "$(tmux display-message -p '#{pane_id}' 2>/dev/null)" ]; then
+    # -t ! 옵션은 tmux 내에서 '마지막으로 활성화되었던 이전 pane(부모 작업 pane)'을 정확하게 저격함
+    LAST_PANE=$(tmux display-message -p -t ! '#{pane_id}' 2>/dev/null || true)
+    if [ -n "$LAST_PANE" ]; then
+        TARGET_PANE="$LAST_PANE"
+    else
+        TARGET_PANE=$(tmux display-message -p '#{pane_id}' 2>/dev/null)
+    fi
 fi
 
 # pane ID(%1 등)에서 특수문자를 제거하여 안전한 고유 파일명 식별자로 변환
