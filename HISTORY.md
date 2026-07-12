@@ -27,6 +27,40 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+## 2026-07-12 - URxvt keysym: Alt+Shift+Arrow → tmux resize 시퀀스 강제 매핑
+
+요약:
+- URxvt는 기본적으로 Shift+Arrow를 텍스트 선택으로 가로채서 tmux에 전달하지 않음
+- Alt+Shift+Arrow가 tmux `M-S-*` 바인딩(resize)에 도달하지 않는 문제
+- Xresources에 keysym 추가로 `\e[1;4D/C/A/B` 시퀀스를 URxvt가 직접 전송하도록 강제
+
+변경 파일:
+- `dotfiles/Xresources`: `M-S-Left/Right/Up/Down` keysym 4개 추가
+
+검증:
+- X 세션 안에서 `xrdb -merge ~/.Xresources` 후 URxvt 재시작 필요
+- 파일 문법 이상 없음
+
+후속 주의:
+- install.sh 실행 후 `xrdb -merge ~/.Xresources` 또는 로그인 재시작 필요
+- URxvt 재시작(새 창 열기)해야 keysym이 적용됨
+
+## 2026-07-12 - tmux pane 단축키 PowerShell 맞춤 및 재배치
+
+요약:
+- pane 이동을 `Ctrl+Arrow` → `Alt+Arrow`로 변경하여 PowerShell pane 이동 키와 통일
+- pane swap/reorder를 `Alt+Arrow` → `Ctrl+Alt+Arrow`로 변경 (충돌 해소)
+- pane 크기 조절 `Alt+Shift+Arrow` 새로 추가
+
+변경 파일:
+- `dotfiles/tmux.conf`: pane navigation/swap/resize 바인딩 전면 재배치
+
+검증:
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d && kill-server`: OK
+
+후속 주의:
+- URxvt 등 터미널에서 `Ctrl+Alt+Arrow`가 다른 기능(예: 데스크탑 workspace 이동)에 묶여 있을 수 있으므로 실제 환경에서 확인 필요
+
 ## 2026-06-23 - tmux sidebar animated cursor flicker age refresh fix
 
 요약:
