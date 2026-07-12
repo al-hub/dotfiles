@@ -19,7 +19,6 @@ while IFS= read -r line; do
         # 첫 번째 필드(단축키)와 나머지 필드(설명) 분리
         key=$(echo "$line" | awk '{print $1}')
         # C-a C-o 처럼 스페이스가 포함된 키 대응을 위해 첫 두 필드가 단축키인지 판별
-        # C-a 뒤에 다른 키가 오는 형식이 tmux list-keys -N의 기본 형식
         key_parts_count=$(echo "$line" | awk '{print $2}' | grep -E "^(C-|M-|S-|[a-zA-Z0-9\?\!\"\'\#\$\&\(\)\*\+\,\-\.\/\:\;\<\=\>\@\[\\\]\^\_\`\{\|\}\~])" | wc -l)
         if [ "$key_parts_count" -gt 0 ]; then
             key=$(echo "$line" | awk '{print $1 " " $2}')
@@ -48,10 +47,8 @@ get_hotkeys() {
         # 키 매칭용 검색어 조립 (C-a T 또는 M-Left 등)
         local lookup_key=""
         if [ "$table" = "prefix" ]; then
-            # prefix 매핑 키 (C-a T)
             lookup_key="C-a $key"
         else
-            # root 매핑 키 (M-Left)
             lookup_key="$key"
         fi
 
@@ -59,28 +56,53 @@ get_hotkeys() {
         # 2순위: ALIAS_MAP 수동 별칭 매핑
         # 3순위: 날것의 명령어 그대로 노출 (Fallback)
         local display_desc=""
+        local is_custom_desc=false
+        
         if [ -n "${KEY_NOTES[$lookup_key]}" ]; then
             display_desc="${KEY_NOTES[$lookup_key]}"
+            is_custom_desc=true
         elif [ -n "${KEY_NOTES[$key]}" ]; then
             display_desc="${KEY_NOTES[$key]}"
+            is_custom_desc=true
         else
             # ALIAS_MAP 매칭 확인
             for pattern in "${!ALIAS_MAP[@]}"; do
                 if [[ "$clean_cmd" =~ $pattern ]]; then
                     display_desc="${ALIAS_MAP[$pattern]}"
+                    is_custom_desc=true
                     break
                 fi
             done
-            [ -z "$display_desc" ] && display_desc="$clean_cmd"
+            if [ "$is_custom_desc" = false ]; then
+                display_desc="$clean_cmd"
+            fi
         fi
 
-        # 출력 포맷팅
-        if [ "$table" = "prefix" ]; then
-            printf "[Ctrl+a %s] %s | %s\n" "$key" "$display_desc" "$clean_cmd"
+        # 정렬 가중치 (0: 핵심 설명 키, 1: 일반 prefix 키, 2: 일반 root 키, 3: 설명 없는 키)
+        local weight=3
+        if [ "$is_custom_desc" = true ]; then
+            weight=0
+        elif [ "$table" = "prefix" ]; then
+            weight=1
         else
-            printf "[%s] %s | %s\n" "$key" "$display_desc" "$clean_cmd"
+            weight=2
         fi
-    done | sort -u
+
+        # 단축키 라벨 포맷팅
+        local key_label=""
+        if [ "$table" = "prefix" ]; then
+            key_label="[Ctrl+a $key]"
+        else
+            key_label="[$key]"
+        fi
+
+        # 고정 폭(18자) 지정 - 영문/특수문자 괄호만 사용하여 줄 정렬을 완벽하게 맞춤
+        local formatted_key
+        formatted_key=$(printf "%-18s" "$key_label")
+
+        # 출력 포맷: 가중치 | 정렬된키 | 설명 | 실제명령어
+        printf "%d|%s|%s|%s\n" "$weight" "$formatted_key" "$display_desc" "$clean_cmd"
+    done | sort -t'|' -k1,1n -k2,2 | sort -u -t'|' -k2,2
 }
 
 # 4. fzf 기반 대화형 실행기 구동
@@ -93,16 +115,26 @@ run_palette() {
         exit 1
     fi
 
-    # fzf 실행
+    # fzf 실행 옵션:
+    # -d '|': 파이프 기호 기준으로 필드 분할
+    # --with-nth=2,3: 가중치(필드1)와 명령어(필드4)를 숨기고 단축키(필드2)와 설명(필드3)만 화면에 이쁘게 출력
+    # --no-border: tmux 팝업 테두리와 겹쳐 깨지는 버그 해결
+    # --height 100%: 팝업 공간을 꽉 채워 렌더링 오차 방지
+    # --preview: 하단 영역에 실제 실행될 tmux 명령어 격리 노출
     local selected
-    selected=$(echo "$list" | fzf -d '|' --with-nth=1,2 \
+    selected=$(echo "$list" | fzf -d '|' --with-nth=2,3 \
+        --no-border \
+        --height 100% \
+        --layout=reverse \
         --prompt="⌨️ 단축키 검색 및 실행> " \
-        --header="Enter: 실행, Esc/q: 취소")
+        --header="Enter: 실행, Esc/q: 취소 (방향키로 명령 확인)" \
+        --preview="echo {} | cut -d'|' -f4-" \
+        --preview-window="down:3:wrap:noborder")
 
     if [ -n "$selected" ]; then
-        # 선택된 결과에서 실제 명령어(세 번째 필드) 추출 및 공백 제거
+        # 선택된 결과에서 실제 명령어(네 번째 필드) 추출
         local cmd
-        cmd=$(echo "$selected" | cut -d'|' -f3- | sed 's/^[[:space:]]*//')
+        cmd=$(echo "$selected" | cut -d'|' -f4- | sed 's/^[[:space:]]*//')
 
         # 팝업 중첩 방지: 현재 커맨드 팔레트 팝업창 강제 즉시 종료
         tmux display-popup -C
