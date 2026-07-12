@@ -26,6 +26,23 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-12 - tmux 커맨드 팔레트 fzf 선택 필드 파싱 교정 (근본 원인 해결)
+
+요약:
+- fzf 출력 형식에 정렬용 weight 필드가 맨 앞에 추가되었으나, 선택 후 인덱스 파싱 코드(`awk '{print $1}'`)가 여전히 첫 필드를 idx로 간주하여 weight 값(0, 1 등)을 인덱스로 잘못 사용했습니다. 이로 인해 MAP_FILE에서 매칭되는 명령어가 없어 아무 동작도 하지 않고 조용히 종료되는 치명적 묵묵부답 버그가 발생했습니다.
+- 비동기 딜레이(`sleep 0.15 && ... &`) 구조를 폐기하고 포그라운드 동기 전달 방식으로 전환하여 팝업 TTY 소멸에 의한 컨텍스트 단절도 함께 해결했습니다.
+
+변경 파일:
+- `scripts/tmux-command-palette`: `awk '{print $1}'` → `awk '{print $2}'` 교정, 3곳 비동기 딜레이 → 동기 전달 전환
+- `dotfiles/tmux.conf`: display-popup 호출 시 `env TMUX_PANE='#{pane_id}'` 주입
+
+검증:
+- 실제 사용자 소켓(`/tmp/tmux-1000/default`) 대상 `--test-exec 42` 시뮬레이션: pane 3개로 정상 분할 확인
+- `./scripts/tmux-popup-detector`: 🟢 All Clean
+
+후속 주의:
+- 없음
+
 ## 2026-07-12 - tmux 팝업창 소멸에 의한 TMUX_PANE 유실 방지 2중 안전 장치 적용
 
 요약:

@@ -210,7 +210,9 @@ run_palette() {
             cmd="tmux $cmd"
         fi
         
-        (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+        TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
+        echo $? > "$EXIT_LOG"
+        echo "SUCCESS" > "$STATUS_FILE"
         exit 0
     fi
 
@@ -233,7 +235,9 @@ run_palette() {
                 cmd="tmux $cmd"
             fi
             
-            (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+            TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
+            echo $? > "$EXIT_LOG"
+            echo "SUCCESS" > "$STATUS_FILE"
             exit 0
         else
             echo "[Test-Exec] FAIL: Index $test_idx not found in mapping."
@@ -262,7 +266,8 @@ run_palette() {
 
     if [ -n "$selected" ]; then
         local idx
-        idx=$(echo "$selected" | awk '{print $1}')
+        # fzf 출력 형식은 [weight, idx, key, desc, cmd] 순이므로 두 번째 필드인 idx를 획득해야 함
+        idx=$(echo "$selected" | awk '{print $2}')
 
         local cmd
         cmd=$(grep -E "^$idx[[:space:]]" "$MAP_FILE" | cut -f2-)
@@ -278,7 +283,9 @@ run_palette() {
                 cmd="tmux $cmd"
             fi
 
-            (sleep 0.15 && (TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE")) &
+            TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
+            echo $? > "$EXIT_LOG"
+            echo "SUCCESS" > "$STATUS_FILE"
             exit 0
         fi
     fi
