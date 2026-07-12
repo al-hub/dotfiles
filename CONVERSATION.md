@@ -27,6 +27,45 @@
 - 다음에 확인할 점
 ```
 
+
+## 2026-07-12 - tmux 실시간 테마 관리 시스템 고도화 및 시력 보호 테마 구현
+
+사용자 요청:
+- 기존 테마 계획을 기반으로 하되, 하드코딩된 기존 색상은 `baseline.conf`(baseline) 테마로 분리할 것.
+- 승인이 있기 전까지는 git commit & push를 수행하지 말 것.
+- 대중적으로 공개된 타 외부 테마들을 추가하고, 사용자가 기존 테마를 기반으로 복제/수정하여 커스텀 테마를 생성할 수 있도록 지원할 것.
+- 로컬에서 이를 직접 테스트 및 검증할 수 있는 설치 가이드를 제공할 것.
+- 최신 시력 및 안구 건강 관련 연구 논문을 바탕으로 과학적 근거를 지닌 3가지 고유 테마를 개발하고 그 근거를 기재할 것.
+- 코딩 전용 테마 3종을 추가로 설계 및 적용해 볼 것.
+- Reddit(r/unixporn 등)에서 언급이 많은 인기 테마 3종을 포팅하여 추가할 것.
+
+해석/결정:
+- **기존 색상 격리**: 기존 하드코딩된 dracula 테마 스타일을 `baseline.conf`로 완전히 분리해 테마 picker의 초기 테마로 잡았습니다. (이후 `classic-baseline`으로 분류 프리픽스화)
+- **테마 다양화 및 그룹 분류**: 인기 오픈소스 테마 포팅 4종에 Reddit 인기 테마 3종을 추가하고, 그룹별 프리픽스(`classic-`, `open-`, `eye-`, `code-`)를 파일명에 일관되게 주입하여 정리했습니다.
+- **복제/편집 기능 구현**: `tmux-theme-picker` 내에 `Ctrl+e` 키 바인딩 또는 fallback interactive read 입력을 통해, 선택한 테마를 `~/.config/tmux/themes/<새이름>.conf`에 복사하고 `$EDITOR`로 바로 로드 및 영구 설정이 가능하도록 설계했습니다.
+- **안구 건강 테마 3종 기획 및 개발**:
+  - `eye-astigmatism-safe` (난시 및 Halation 빛 번짐을 최소화하는 대비비 5.5:1 ~ 6:1의 마일드 다크 테마)
+  - `eye-circadian-warm` (멜라토닌 보존 및 야간 시각 세포 보호를 위한 청색광 차단 오렌지/앰버 테마)
+  - `eye-scotopic-forest` (저조도 야간 암순응 상태에서 감도가 높은 555nm 녹색 파장을 차용한 숲속 저조도 최적화 테마)
+- **코딩 전용 테마 3종 기획 및 개발**:
+  - `code-cyberpunk-neon` (개발자용 고대비 네온 보라/핑크 형광 테마로 집중도 증대)
+  - `code-monokai-pro` (차분하고 정돈된 Monokai Pro 색조를 tmux 스타일로 리파인)
+  - `code-github-light` (밝은 낮 코딩 환경에 최적화된 Github 공식 스타일 라이트 테마)
+- **Reddit 인기 테마 3종 포팅**:
+  - `open-rose-pine` (몽환적인 북유럽 감성의 어스름한 로즈/골드 테마)
+  - `open-gruvbox` (레트로 감성과 우수한 가독성의 터미널 불후의 명작 테마)
+  - `open-tokyonight` (화려한 네온사인 밤거리를 묘사한 도쿄 스타일 테마)
+- **로컬 가이드 및 빌드**: 환경변수 `REPO_RAW_URL`을 `file://` 스킴으로 지정하여 로컬 테스트하는 구체적 방법과 격리 소켓 테스트를 정리한 [docs/tmux-theme-guide.md](file:///home/al-hub/workspace/dotfiles/docs/tmux-theme-guide.md) 문서를 생성하여 제공했습니다.
+
+작업 결과:
+- `dotfiles/tmux.conf` 및 `install.toml`, `install.sh` 내에 `tmux-theme-picker` 배포 및 dynamic load 로직을 연동했습니다.
+- 테마 피커 스크립트(`scripts/tmux-theme-picker`)를 작성하고 실행 권한을 적용했습니다.
+- 14개의 테마 파일(classic-baseline, open-catppuccin-mocha, open-nord, open-onedark, open-solarized-dark, open-rose-pine, open-gruvbox, open-tokyonight, eye-astigmatism-safe, eye-circadian-warm, eye-scotopic-forest, code-cyberpunk-neon, code-monokai-pro, code-github-light)을 생성했습니다.
+- 로컬 테스트 및 과학적 배경지식을 정리한 가이드 문서 `docs/tmux-theme-guide.md`를 신규 작성 및 보강했습니다.
+
+남은 질문:
+- 사용자가 로컬 테스트를 마친 뒤 승인을 준다면, 변경된 파일들을 커밋 및 태깅하여 `v0.4` 이후의 stable 릴리스나 master 브랜치에 커밋/푸시해야 합니다.
+
 ## 2026-06-23 - tmux sidebar animated cursor flicker age refresh fix
 
 사용자 요청:

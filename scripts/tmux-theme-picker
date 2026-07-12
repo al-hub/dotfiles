@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+
+# 테마 디렉토리 설정 (사용자 설정 격리 보장)
+THEME_DIR="$HOME/.config/tmux/themes"
+CONFIG_THEME_FILE="$HOME/.config/tmux/theme.conf"
+
+
+# 테마 디렉토리가 없거나 비어있는 경우 자동 채우기
+if [ ! -d "$THEME_DIR" ] || [ -z "$(find "$THEME_DIR" -name "*.conf" 2>/dev/null)" ]; then
+    mkdir -p "$THEME_DIR"
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SRC_THEMES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/dotfiles/tmux/themes"
+    if [ -d "$SRC_THEMES_DIR" ]; then
+        cp "$SRC_THEMES_DIR"/*.conf "$THEME_DIR/" 2>/dev/null
+    fi
+fi
+
+# 테마 디렉토리 최종 검증
+if [ ! -d "$THEME_DIR" ] || [ -z "$(find "$THEME_DIR" -name "*.conf" 2>/dev/null)" ]; then
+    echo "Error: Theme directory not found or empty at $THEME_DIR"
+    exit 1
+fi
+
+# 원래 활성화되어 있던 테마 정보 파악
+if [ -f "$CONFIG_THEME_FILE" ]; then
+    ORIG_THEME="$CONFIG_THEME_FILE"
+else
+    ORIG_THEME="$THEME_DIR/classic-baseline.conf"
+fi
+
+# fzf 검색용 테마 목록 준비
+get_themes_list() {
+    find "$THEME_DIR" -name "*.conf" | while read -r filepath; do
+        filename=$(basename "$filepath")
+        theme_name="${filename%.conf}"
+        echo "${theme_name}:${filepath}"
+    done | sort
+}
+
+apply_theme_permanently() {
+    local theme_path="$1"
+    mkdir -p "$(dirname "$CONFIG_THEME_FILE")"
+    cp "$theme_path" "$CONFIG_THEME_FILE"
+    tmux source-file "$CONFIG_THEME_FILE" 2>/dev/null || tmux display-message "Theme applied permanently."
+}
+
+edit_theme() {
+    local orig_theme_name="$1"
+    local orig_theme_path="$2"
+    
+    clear
+    echo "=== Clone & Edit Theme ==="
+    echo "Cloning from: $orig_theme_name"
+    read -p "Enter new theme name (a-z, 0-9, -, _): " new_name
+    
+    # 입력 검증
+    if [[ ! "$new_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Invalid name. Only alphanumeric, dashes, and underscores allowed."
+        sleep 2
+        return 1
+    fi
+    
+    local new_theme_path="$THEME_DIR/${new_name}.conf"
+    if [ -f "$new_theme_path" ]; then
+        echo "Error: Theme '${new_name}' already exists."
+        sleep 2
+        return 1
+    fi
+    
+    cp "$orig_theme_path" "$new_theme_path"
+    
+    # 에디터 실행
+    ${EDITOR:-vi} "$new_theme_path"
+    
+    echo "Theme '${new_name}' created at $new_theme_path"
+    read -p "Do you want to apply this new theme now? [y/N] " yn
+    case $yn in
+        [Yy]* )
+            apply_theme_permanently "$new_theme_path"
+            ORIG_THEME="$new_theme_path"
+            ;;
+        * )
+            echo "Theme saved but not applied."
+            sleep 1
+            ;;
+    esac
+    return 0
+}
+
+run_picker() {
+    while true; do
+        local list
+        list=$(get_themes_list)
+        
+        if command -v fzf >/dev/null 2>&1; then
+            # fzf 사용
+            fzf_out=$(echo "$list" | fzf -d ':' --with-nth=1 \
+                --bind "focus:execute-silent(tmux source-file {2})" \
+                --header "Enter: Apply, Esc/q: Cancel, Ctrl-e: Clone & Edit" \
+                --expect="ctrl-e" \
+                --prompt="Select Theme> ")
+                
+            if [ -z "$fzf_out" ]; then
+                # Cancel/Esc
+                if [ -f "$ORIG_THEME" ]; then
+                    tmux source-file "$ORIG_THEME"
+                fi
+                exit 0
+            fi
+            
+            key_pressed=$(echo "$fzf_out" | head -n 1)
+            selected_item=$(echo "$fzf_out" | tail -n 1)
+            
+            if [ -z "$selected_item" ]; then
+                if [ -f "$ORIG_THEME" ]; then
+                    tmux source-file "$ORIG_THEME"
+                fi
+                exit 0
+            fi
+            
+            theme_name=$(echo "$selected_item" | cut -d':' -f1)
+            theme_path=$(echo "$selected_item" | cut -d':' -f2)
+            
+            if [ "$key_pressed" = "ctrl-e" ]; then
+                edit_theme "$theme_name" "$theme_path"
+                continue
+            else
+                apply_theme_permanently "$theme_path"
+                exit 0
+            fi
+        else
+            # fzf fallback
+            clear
+            echo "=== tmux Theme Picker (fallback) ==="
+            echo "fzf is not installed. Interactive preview is disabled."
+            echo "Select a theme by number (Ctrl+C to cancel):"
+            
+            local names=()
+            local paths=()
+            local i=1
+            while IFS=: read -r name path; do
+                names+=("$name")
+                paths+=("$path")
+                echo "$i) $name"
+                ((i++))
+            done <<< "$list"
+            
+            echo "$i) [Clone & Edit Existing Theme]"
+            
+            read -p "Choice [1-$i]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$i" ]; then
+                if [ "$choice" -eq "$i" ]; then
+                    echo "Choose a theme to clone from:"
+                    for idx in "${!names[@]}"; do
+                        echo "$((idx+1))) ${names[$idx]}"
+                    done
+                    read -p "Select base theme [1-${#names[@]}]: " base_choice
+                    if [[ "$base_choice" =~ ^[0-9]+$ ]] && [ "$base_choice" -ge 1 ] && [ "$base_choice" -le "${#names[@]}" ]; then
+                        local b_idx=$((base_choice-1))
+                        edit_theme "${names[$b_idx]}" "${paths[$b_idx]}"
+                    fi
+                else
+                    local s_idx=$((choice-1))
+                    apply_theme_permanently "${paths[$s_idx]}"
+                    exit 0
+                fi
+            else
+                echo "Invalid choice. Exiting."
+                exit 1
+            fi
+        fi
+    done
+}
+
+run_picker

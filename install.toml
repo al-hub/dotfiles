@@ -17,7 +17,7 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip"]
 packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker"]
 description = "tmux configuration"
 
 [[dotfiles]]
@@ -85,3 +85,15 @@ commands = ["xrdb", "urxvt"]
 packages = ["x11-xserver-utils", "rxvt-unicode"]
 depends = ["urxvt-resize-font"]
 description = "X resources configuration"
+
+[[dotfiles]]
+name = "tmux-theme-picker"
+enabled = false
+hidden = true
+source = "scripts/tmux-theme-picker"
+target = "~/.local/bin/tmux-theme-picker"
+commands = ["bash", "tmux"]
+packages = []
+depends = []
+description = "tmux theme picker script and settings"
+

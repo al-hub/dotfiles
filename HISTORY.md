@@ -27,6 +27,28 @@
 - 남은 위험, 다음 작업자가 확인할 점
 ```
 
+
+## 2026-07-12 - tmux 실시간 테마 관리 시스템 및 시력 보호 테마 추가
+
+요약:
+- 기존 tmux.conf의 스타일 설정을 theme 단위 conf 파일로 분리하고, fzf/TUI 기반 실시간 테마 피커 및 복제/편집 기능을 구현하여 install.sh 설치 흐름에 통합했습니다.
+- 시력 보호 3종, 코딩 전용 3종, 그리고 Reddit 인기 테마 3종(Rose Pine, Gruvbox, Tokyonight)을 포함한 총 14종의 테마를 개발/추가했습니다.
+
+변경 파일:
+- `dotfiles/tmux.conf`: 하드코딩된 스타일 제거, active theme 로드 및 Ctrl+a T 단축키 popup 바인딩 추가
+- `scripts/tmux-theme-picker`: fzf 실시간 미리보기 및 ctrl-e 기반 테마 복제/편집, non-fzf 번호 선택 fallback이 지원되는 테마 피커 스크립트 추가
+- `dotfiles/tmux/themes/`: classic-baseline, open-catppuccin-mocha, open-nord, open-onedark, open-solarized-dark, open-rose-pine, open-gruvbox, open-tokyonight, eye-astigmatism-safe, eye-circadian-warm, eye-scotopic-forest, code-cyberpunk-neon, code-monokai-pro, code-github-light 테마 파일들 추가
+- `install.toml`: tmux-theme-picker 디펜던시 모듈 정의 추가
+- `install.sh`: after_install_item에 tmux-theme-picker 설치 시 테마 파일들을 ~/.config/tmux/themes/로 자동 복사/다운로드 및 기본 테마 활성화 로직 구현
+- `docs/tmux-theme-guide.md`: 로컬 설치 테스트 가이드, 테마 편집 플로우, 시력 보호/코딩/Reddit 인기 테마들의 배경지식과 특징을 설명한 가이드 추가
+
+검증:
+- `bash -n install.sh && bash -n scripts/tmux-theme-picker`: OK
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d && kill-server`: OK
+
+후속 주의:
+- install.sh를 로컬에서 설치 테스트할 경우 REPO_RAW_URL 환경변수를 file:// 스킴으로 강제 지정하여 실행해야 로컬 수정한 테마 파일들이 복사됩니다. (가이드 문서 참조)
+
 ## 2026-07-12 - URxvt keysym: Alt+Shift+Arrow → tmux resize 시퀀스 강제 매핑
 
 요약:

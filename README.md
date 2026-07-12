@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 새 버전을 배포할 때는 해당 커밋에 `v0.4` 같은 git tag를 만들고, 사용자가 `--v v0.4`로 설치할 수 있게 합니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 새 버전을 배포할 때는 해당 커밋에 `v0.5` 같은 git tag를 만들고, 사용자가 `--v v0.5`로 설치할 수 있게 합니다.
 
 ## 현재 구조
 
@@ -53,11 +53,14 @@ dotfiles/
 │   ├── vimrc
 │   ├── myrc
 │   ├── Xresources
+│   ├── tmux/
+│   │   └── themes/               ← 테마 설정 파일들 (*.conf)
 │   └── urxvt/
 │       └── ext/
 │           └── resize-font
 ├── scripts/
-│   └── tmux-session-launcher
+│   ├── tmux-session-launcher
+│   └── tmux-theme-picker         ← 실시간 테마 피커 스크립트
 ├── get_dotfiles.sh
 ├── install_dotfiles.sh
 ├── shortcut.md
@@ -112,11 +115,11 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip"]
 packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker"]
 description = "tmux configuration"
 ```
 
-현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources, 그리고 tmux-theme-picker는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 새 모듈을 넣을 때는 `file / dependency / post-install / external CLI` 중 어느 형태인지 먼저 분류합니다.
 
@@ -172,6 +175,7 @@ mouse 기본 동작은 유지하며, sidebar의 session name 위치를 클릭한
 ```sh
 bash -n install.sh
 bash -n scripts/tmux-session-launcher
+bash -n scripts/tmux-theme-picker
 perl -c dotfiles/urxvt/ext/resize-font
 sh -n get_dotfiles.sh
 sh -n install_dotfiles.sh

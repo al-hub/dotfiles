@@ -470,6 +470,32 @@ after_install_item()
         tmux-session-launcher) ensure_executable "$target" ;;
         urxvt-resize-font) ensure_executable "$target" ;;
         tmux-xresources) load_xresources "$target" ;;
+        tmux-theme-picker)
+            ensure_executable "$target"
+            mkdir -p "$HOME/.config/tmux/themes"
+            themes="classic-baseline open-catppuccin-mocha open-nord open-onedark open-solarized-dark open-rose-pine open-gruvbox open-tokyonight eye-astigmatism-safe eye-circadian-warm eye-scotopic-forest code-cyberpunk-neon code-monokai-pro code-github-light"
+            for t in $themes; do
+                local t_source="dotfiles/tmux/themes/${t}.conf"
+                local t_target="$HOME/.config/tmux/themes/${t}.conf"
+                local t_url
+                t_url="$(source_url "$t_source")"
+                
+                if [[ "$t_url" =~ ^file:// ]]; then
+                    local src_path="${t_url#file://}"
+                    if [ -f "$src_path" ]; then
+                        cp "$src_path" "$t_target"
+                        log "Copied local theme $t to themes dir"
+                    fi
+                else
+                    download_file "$t_url" "$t_target"
+                    log "Downloaded theme $t to themes dir"
+                fi
+            done
+            if [ ! -f "$HOME/.config/tmux/theme.conf" ]; then
+                cp "$HOME/.config/tmux/themes/classic-baseline.conf" "$HOME/.config/tmux/theme.conf"
+                log "Initialized default theme as classic-baseline.conf"
+            fi
+            ;;
     esac
 }
 
