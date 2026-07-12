@@ -184,7 +184,7 @@ run_palette() {
         
         local first_word
         first_word=$(echo "$cmd" | awk '{print $1}')
-        if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+        if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
             cmd="tmux $cmd"
         fi
         
@@ -206,7 +206,7 @@ run_palette() {
             
             local first_word
             first_word=$(echo "$cmd" | awk '{print $1}')
-            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
                 cmd="tmux $cmd"
             fi
             
@@ -250,7 +250,7 @@ run_palette() {
 
             local first_word
             first_word=$(echo "$cmd" | awk '{print $1}')
-            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]]; then
+            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
                 cmd="tmux $cmd"
             fi
 

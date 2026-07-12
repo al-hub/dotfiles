@@ -26,6 +26,21 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-12 - tmux 커맨드 팔레트 지능형 래퍼 오판 방어 패치
+
+요약:
+- `tmux-session-launcher` 같은 시스템 PATH 상에 단독 쉘 명령어로 존재하는 실행 파일이 커맨드 팔레트의 지능형 래핑 로직에 의해 `tmux tmux-session-launcher ...` 형태로 강제 래핑되어 명령어 실패(Exit 1)를 유발하던 버그를 해결했습니다.
+- 자동 래핑 검사 조건식 내에 `command -v` 유효성 검사식을 결합하여, 단독 실행 가능한 명령어의 경우 앞에 `tmux `가 붙지 않도록 예외 처리를 정밀화했습니다.
+
+변경 파일:
+- `scripts/tmux-command-palette`: 188라인, 210라인, 254라인 부근의 자동 래핑 분기 식에 `! command -v "$first_word"` 검사 추가
+
+검증:
+- `bash -n scripts/tmux-command-palette`: OK
+- `./scripts/tmux-popup-detector`: 세로 분할(`_`) 시나리오 E2E 테스트에서 에러 없이 🟢 All Clean 통과 확인
+
+후속 주의:
+- 없음
 
 ## 2026-07-12 - tmux 커맨드 팔레트 양방향 상태 로깅 및 동적 런타임 디텍터 구현
 
