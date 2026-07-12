@@ -496,6 +496,7 @@ after_install_item()
                 log "Initialized default theme as classic-baseline.conf"
             fi
             ;;
+        tmux-command-palette) ensure_executable "$target" ;;
     esac
 }
 

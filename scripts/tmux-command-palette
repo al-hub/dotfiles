@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# scripts/tmux-command-palette
+# tmux 단축키 커맨드 팔레트 (fzf 기반)
+
+# 1. 쉘 스크립트 자체 내장 별칭 사전 (Alias) - Notes 설명이 없는 기본 명령어 보완용
+declare -A ALIAS_MAP
+ALIAS_MAP["tmux-theme-picker"]="🎨 테마 피커 실행 (Theme Picker)"
+ALIAS_MAP["tmux-session-launcher --open-sidebar"]="🗂️ 세션 런처 사이드바 토글"
+ALIAS_MAP["next-window"]="➡️ 다음 윈도우로 이동 (Next Window)"
+ALIAS_MAP["previous-window"]="⬅️ 이전 윈도우로 이동 (Prev Window)"
+ALIAS_MAP["tmux-session-launcher --split-horizontal"]="✂️ 작업 영역 가로 분할 (Split Horizontal)"
+ALIAS_MAP["tmux-session-launcher --split-vertical"]="✂️ 작업 영역 세로 분할 (Split Vertical)"
+ALIAS_MAP["copy-mode"]="📝 텍스트 복사 모드 진입 (Copy Mode)"
+
+# 2. tmux 내장 Notes (-N 옵션 정보) 추출 및 적재
+declare -A KEY_NOTES
+while IFS= read -r line; do
+    if [ -n "$line" ]; then
+        # 첫 번째 필드(단축키)와 나머지 필드(설명) 분리
+        key=$(echo "$line" | awk '{print $1}')
+        # C-a C-o 처럼 스페이스가 포함된 키 대응을 위해 첫 두 필드가 단축키인지 판별
+        # C-a 뒤에 다른 키가 오는 형식이 tmux list-keys -N의 기본 형식
+        key_parts_count=$(echo "$line" | awk '{print $2}' | grep -E "^(C-|M-|S-|[a-zA-Z0-9\?\!\"\'\#\$\&\(\)\*\+\,\-\.\/\:\;\<\=\>\@\[\\\]\^\_\`\{\|\}\~])" | wc -l)
+        if [ "$key_parts_count" -gt 0 ]; then
+            key=$(echo "$line" | awk '{print $1 " " $2}')
+            desc=$(echo "$line" | cut -d' ' -f3- | sed 's/^[[:space:]]*//')
+        else
+            desc=$(echo "$line" | cut -d' ' -f2- | sed 's/^[[:space:]]*//')
+        fi
+        
+        if [ -n "$key" ] && [ -n "$desc" ]; then
+            KEY_NOTES["$key"]="$desc"
+        fi
+    fi
+done < <(tmux list-keys -N 2>/dev/null)
+
+# 3. 모든 단축키 목록 추출 및 정규화
+get_hotkeys() {
+    tmux list-keys | grep -E "(-T prefix|-T root)" | grep -vE "(Mouse|MouseDown|MouseDrag|DoubleClick|Wheel)" | while read -r line; do
+        # 라인 포맷: bind-key -T prefix key command...
+        local table=$(echo "$line" | awk '{print $3}')
+        local key=$(echo "$line" | awk '{print $4}')
+        local raw_cmd=$(echo "$line" | cut -d' ' -f5-)
+
+        # 특수 이스케이프 문자 언이스케이프 보정
+        local clean_cmd=$(echo "$raw_cmd" | sed -e 's/\\;/;/g' -e 's/\\"/"/g' -e 's/\\\\/\\/g')
+
+        # 키 매칭용 검색어 조립 (C-a T 또는 M-Left 등)
+        local lookup_key=""
+        if [ "$table" = "prefix" ]; then
+            # prefix 매핑 키 (C-a T)
+            lookup_key="C-a $key"
+        else
+            # root 매핑 키 (M-Left)
+            lookup_key="$key"
+        fi
+
+        # 1순위: tmux 내장 Notes 설명
+        # 2순위: ALIAS_MAP 수동 별칭 매핑
+        # 3순위: 날것의 명령어 그대로 노출 (Fallback)
+        local display_desc=""
+        if [ -n "${KEY_NOTES[$lookup_key]}" ]; then
+            display_desc="${KEY_NOTES[$lookup_key]}"
+        elif [ -n "${KEY_NOTES[$key]}" ]; then
+            display_desc="${KEY_NOTES[$key]}"
+        else
+            # ALIAS_MAP 매칭 확인
+            for pattern in "${!ALIAS_MAP[@]}"; do
+                if [[ "$clean_cmd" =~ $pattern ]]; then
+                    display_desc="${ALIAS_MAP[$pattern]}"
+                    break
+                fi
+            done
+            [ -z "$display_desc" ] && display_desc="$clean_cmd"
+        fi
+
+        # 출력 포맷팅
+        if [ "$table" = "prefix" ]; then
+            printf "[Ctrl+a %s] %s | %s\n" "$key" "$display_desc" "$clean_cmd"
+        else
+            printf "[%s] %s | %s\n" "$key" "$display_desc" "$clean_cmd"
+        fi
+    done | sort -u
+}
+
+# 4. fzf 기반 대화형 실행기 구동
+run_palette() {
+    local list
+    list=$(get_hotkeys)
+    
+    if ! command -v fzf >/dev/null 2>&1; then
+        tmux display-message "Error: fzf is required for command palette."
+        exit 1
+    fi
+
+    # fzf 실행
+    local selected
+    selected=$(echo "$list" | fzf -d '|' --with-nth=1,2 \
+        --prompt="⌨️ 단축키 검색 및 실행> " \
+        --header="Enter: 실행, Esc/q: 취소")
+
+    if [ -n "$selected" ]; then
+        # 선택된 결과에서 실제 명령어(세 번째 필드) 추출 및 공백 제거
+        local cmd
+        cmd=$(echo "$selected" | cut -d'|' -f3- | sed 's/^[[:space:]]*//')
+
+        # 팝업 중첩 방지: 현재 커맨드 팔레트 팝업창 강제 즉시 종료
+        tmux display-popup -C
+
+        # 0.05초의 짧은 딜레이 후 쉘 비동기 실행 (팝업 레이아웃 깨짐 완전 방지)
+        (sleep 0.05 && eval "tmux $cmd") &
+    fi
+}
+
+run_palette

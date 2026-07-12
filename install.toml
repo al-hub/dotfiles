@@ -17,7 +17,7 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip"]
 packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker", "tmux-command-palette"]
 description = "tmux configuration"
 
 [[dotfiles]]
@@ -96,4 +96,15 @@ commands = ["bash", "tmux"]
 packages = []
 depends = []
 description = "tmux theme picker script and settings"
+
+[[dotfiles]]
+name = "tmux-command-palette"
+enabled = false
+hidden = true
+source = "scripts/tmux-command-palette"
+target = "~/.local/bin/tmux-command-palette"
+commands = ["bash", "tmux"]
+packages = []
+depends = []
+description = "tmux command palette script"
 

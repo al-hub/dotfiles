@@ -28,6 +28,26 @@
 ```
 
 
+## 2026-07-12 - tmux 단축키 커맨드 팔레트 (Ctrl+a /) 구현
+
+요약:
+- 사용자가 단축키를 외우지 않고도 퍼지 검색을 통해 즉시 찾고 실행할 수 있는 fzf 기반 대화형 단축키 실행기(커맨드 팔레트)를 구현했습니다.
+- tmux 내장 Notes(-N), 스크립트 내부 매핑(Alias), 원시 명령어 fallback을 유기적으로 파싱하며, 팝업 중첩 충돌 방지 및 이스케이프 문자 복원 처리를 반영했습니다.
+- tmux.conf의 대표적인 주요 단축키들에 `-N` 설명을 부여하여 자동 탐색 가독성을 극대화했습니다.
+
+변경 파일:
+- `scripts/tmux-command-palette`: fzf 단축키 커맨드 팔레트 스크립트 추가
+- `dotfiles/tmux.conf`: split, window 이동, theme picker, session launcher 바인딩에 -N 주석 적용 및 Ctrl+a / 단축키 바인딩 추가
+- `install.toml`: tmux-command-palette 모듈 정의 및 tmux depends 목록 추가
+- `install.sh`: after_install_item에 tmux-command-palette 권한 갱신 추가
+
+검증:
+- `bash -n scripts/tmux-command-palette`: OK
+- `REPO_RAW_URL="file://..." install.sh`를 통한 로컬 설치 검증: OK
+
+후속 주의:
+- 없음
+
 ## 2026-07-12 - fzf supports_focus 판별 조건 버그 수정 (exit 1 오판 해결)
 
 요약:
