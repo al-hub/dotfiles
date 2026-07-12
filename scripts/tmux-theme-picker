@@ -93,12 +93,25 @@ run_picker() {
         list=$(get_themes_list)
         
         if command -v fzf >/dev/null 2>&1; then
+            # fzf focus 지원 여부 테스트
+            local supports_focus=false
+            if echo "" | fzf --bind "focus:accept" -q "test" --filter "test" >/dev/null 2>&1; then
+                supports_focus=true
+            fi
+
             # fzf 사용
-            fzf_out=$(echo "$list" | fzf -d ':' --with-nth=1 \
-                --bind "focus:execute-silent(tmux source-file {2})" \
-                --header "Enter: Apply, Esc/q: Cancel, Ctrl-e: Clone & Edit" \
-                --expect="ctrl-e" \
-                --prompt="Select Theme> ")
+            if [ "$supports_focus" = true ]; then
+                fzf_out=$(echo "$list" | fzf -d ':' --with-nth=1 \
+                    --bind "focus:execute-silent(tmux source-file {2})" \
+                    --header "Enter: Apply, Esc/q: Cancel, Ctrl-e: Clone & Edit" \
+                    --expect="ctrl-e" \
+                    --prompt="Select Theme> ")
+            else
+                fzf_out=$(echo "$list" | fzf -d ':' --with-nth=1 \
+                    --header "Enter: Apply, Esc/q: Cancel, Ctrl-e: Clone & Edit" \
+                    --expect="ctrl-e" \
+                    --prompt="Select Theme (No Preview)> ")
+            fi
                 
             if [ -z "$fzf_out" ]; then
                 # Cancel/Esc
