@@ -155,9 +155,10 @@ execute_cmd() {
         echo "SUCCESS" > "$STATUS_FILE"
     else
         # tmux 내장 명령어 (display-popup, next-window 등)
-        # 현재 팔레트 팝업이 닫힌 뒤에 실행되어야 하므로 짧은 딜레이 후 백그라운드 실행
-        local tmux_socket="$TMUX"
-        (sleep 0.3 && TMUX="$tmux_socket" tmux $cmd 2> "$ERR_LOG"; echo $? > "$EXIT_LOG"; echo "SUCCESS" > "$STATUS_FILE") &
+        # run-shell -b는 tmux 서버가 관리하므로 팝업 PTY 파괴(SIGHUP)와 무관하게 실행 보장
+        TMUX="$TMUX" tmux run-shell -b "sleep 0.3 && tmux $cmd"
+        echo 0 > "$EXIT_LOG"
+        echo "SUCCESS" > "$STATUS_FILE"
     fi
 }
 
