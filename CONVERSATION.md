@@ -28,6 +28,21 @@
 ```
 
 
+## 2026-07-12 - 로컬 설치 가이드 README.md 문서화
+
+사용자 요청:
+- 로컬에서 개발/테스트 중인 dotfiles를 푸시하지 않고 직접 로컬 파일 경로를 통해 설치할 수 있는 예시를 README.md에 포함시킬 것을 요청했습니다.
+
+해석/결정:
+- `install.sh`가 내부적으로 `REPO_RAW_URL` 및 `INSTALL_TOML_URL` 환경 변수를 지원하므로, `file:///` 스킴을 결합하여 로컬 절대 경로를 주입해 설치하는 예시(`REPO_RAW_URL="file:///home/al-hub/workspace/dotfiles" bash install.sh`)를 README.md에 가이드화하기로 결정했습니다.
+
+작업 결과:
+- `README.md`의 버전 설치 섹션 아래에 '로컬 개발 및 테스트 설치' 섹션을 신규 작성하여 추가했습니다.
+- `HISTORY.md`에 변경 이력을 기록했습니다.
+
+남은 질문:
+- 없음
+
 ## 2026-07-12 - tmux 실시간 테마 관리 시스템 고도화 및 시력 보호 테마 구현
 
 사용자 요청:

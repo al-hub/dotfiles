@@ -40,6 +40,16 @@ curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/i
 
 설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 새 버전을 배포할 때는 해당 커밋에 `v0.5` 같은 git tag를 만들고, 사용자가 `--v v0.5`로 설치할 수 있게 합니다.
 
+## 로컬 개발 및 테스트 설치
+
+로컬 저장소의 변경 사항을 GitHub에 푸시하지 않고 로컬 파일 시스템에서 직접 참조하여 테스트 설치하려면 `REPO_RAW_URL` 환경 변수를 사용합니다.
+
+```sh
+REPO_RAW_URL="file:///home/al-hub/workspace/dotfiles" bash install.sh
+```
+
+이렇게 하면 `install.sh`가 로컬 디렉터리의 `install.toml` 및 설정 파일들을 직접 참조하여 설치합니다.
+
 ## 현재 구조
 
 ```text
