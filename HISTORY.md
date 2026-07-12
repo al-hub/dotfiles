@@ -25,7 +25,23 @@
 
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
-```
+```## 2026-07-12 - tmux 커맨드 팔레트 이중 run-shell 껍데기 탈피(Unwrap) 패치
+
+요약:
+- 단축키 오리지널 명령어에 포함된 `run-shell`/`eval-shell`이 팔레트 비동기 구동부의 외곽 `run-shell`과 중첩되어 이중 `run-shell` 구조를 유발하고, TTY 단절에 따른 소켓 에러(`no current client`, Exit 1)로 실행 오동작이 일어나던 버그를 해결했습니다.
+- 원시 명령어 내의 `run-shell`/`eval-shell` 껍데기 따옴표 쌍을 정규식으로 완벽히 벗겨내어 순수한 내부 쉘 명령어 알맹이만 추출해서 비동기로 쏘아주는 `unwrap_command` 파서 엔진을 신규 개발 및 적용했습니다.
+
+변경 파일:
+- `scripts/tmux-command-palette`: `unwrap_command` 정규식 파서 추가, 3군데 실행 모듈 전단에 언랩핑 필터 적용
+
+검증:
+- `bash -n scripts/tmux-command-palette`: OK
+- `./scripts/tmux-popup-detector`: 🟢 All Clean 검증 성공
+- 실제 이중 중첩 `run-shell` 세로 분할 시나리오 재시험: **종료 코드 0 (정상 실행 완료)** 확인 완료
+
+후속 주의:
+- 없음
+
 ## 2026-07-12 - tmux 커맨드 팔레트 지능형 래퍼 오판 방어 패치
 
 요약:

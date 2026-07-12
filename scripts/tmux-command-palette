@@ -121,6 +121,20 @@ get_hotkeys() {
     done < <(tmux list-keys | grep -E "(-T prefix|-T root)" | grep -vE "(Mouse|MouseDown|MouseDrag|DoubleClick|Wheel)") | sort -t$'\t' -k1,1n -k3,3 | sort -u -t$'\t' -k3,3
 }
 
+# 3-1. run-shell/eval-shell 껍데기를 벗겨내고 알맹이 쉘 명령어만 추출해내는 파서 엔진
+unwrap_command() {
+    local raw="$1"
+    # run-shell -b "..." 또는 run-shell "..." 또는 eval-shell "..." 따옴표 쌍 구조 파싱
+    if [[ "$raw" =~ ^(run-shell|eval-shell)[[:space:]]*(-b[[:space:]]*)?[\"\'](.+)[\"\']$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[3]}"
+    elif [[ "$raw" =~ ^(run-shell|eval-shell)[[:space:]]*(-b[[:space:]]*)?([^\"\'[:space:]].*)$ ]]; then
+        # 따옴표가 생략된 단일 토큰 명령어 대응
+        printf '%s\n' "${BASH_REMATCH[3]}"
+    else
+        printf '%s\n' "$raw"
+    fi
+}
+
 # 4. fzf 기반 대화형 실행기 구동
 run_palette() {
     local list
@@ -177,6 +191,7 @@ run_palette() {
     # 단축키 데이터 구조나 윈도우 개수에 1%도 얽매이지 않는 완전 격리된 기능 무결성 보증
     if [ "$1" = "--test-exec-cmd" ] && [ -n "$2" ]; then
         local cmd="$2"
+        cmd=$(unwrap_command "$cmd")
         echo "[Test-Exec-Cmd] Command to run: $cmd"
         rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
         
@@ -197,6 +212,7 @@ run_palette() {
         local test_idx="$2"
         local cmd
         cmd=$(grep -E "^$test_idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+        cmd=$(unwrap_command "$cmd")
         
         if [ -n "$cmd" ]; then
             echo "[Test-Exec] Target index: $test_idx, Command: $cmd"
@@ -243,6 +259,7 @@ run_palette() {
 
         local cmd
         cmd=$(grep -E "^$idx[[:space:]]" "$MAP_FILE" | cut -f2-)
+        cmd=$(unwrap_command "$cmd")
 
         if [ -n "$cmd" ]; then
             rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
