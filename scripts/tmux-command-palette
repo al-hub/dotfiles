@@ -142,6 +142,23 @@ unwrap_command() {
     fi
 }
 
+# 3-2. 명령어 실행 헬퍼: tmux 내장 명령어 vs 쉘 명령어를 분기하여 올바르게 실행
+execute_cmd() {
+    local cmd="$1"
+    local first_word
+    first_word=$(echo "$cmd" | awk '{print $1}')
+
+    if [[ "$first_word" == /* ]] || [[ "$first_word" == "eval" ]] || [[ "$first_word" == "tmux" ]] || command -v "$first_word" >/dev/null 2>&1; then
+        # 쉘 명령어 (절대경로, eval, tmux, PATH에 있는 실행파일) → run-shell로 실행
+        TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
+    else
+        # tmux 내장 명령어 (display-popup, next-window 등) → 직접 호출
+        TMUX="$TMUX" tmux $cmd 2> "$ERR_LOG"
+    fi
+    echo $? > "$EXIT_LOG"
+    echo "SUCCESS" > "$STATUS_FILE"
+}
+
 # 4. fzf 기반 대화형 실행기 구동
 run_palette() {
     local list
@@ -201,18 +218,8 @@ run_palette() {
         cmd=$(unwrap_command "$cmd")
         echo "[Test-Exec-Cmd] Command to run: $cmd"
         rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
-        
         echo "STARTED" > "$STATUS_FILE"
-        
-        local first_word
-        first_word=$(echo "$cmd" | awk '{print $1}')
-        if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
-            cmd="tmux $cmd"
-        fi
-        
-        TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
-        echo $? > "$EXIT_LOG"
-        echo "SUCCESS" > "$STATUS_FILE"
+        execute_cmd "$cmd"
         exit 0
     fi
 
@@ -226,18 +233,8 @@ run_palette() {
         if [ -n "$cmd" ]; then
             echo "[Test-Exec] Target index: $test_idx, Command: $cmd"
             rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
-            
             echo "STARTED" > "$STATUS_FILE"
-            
-            local first_word
-            first_word=$(echo "$cmd" | awk '{print $1}')
-            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
-                cmd="tmux $cmd"
-            fi
-            
-            TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
-            echo $? > "$EXIT_LOG"
-            echo "SUCCESS" > "$STATUS_FILE"
+            execute_cmd "$cmd"
             exit 0
         else
             echo "[Test-Exec] FAIL: Index $test_idx not found in mapping."
@@ -276,16 +273,7 @@ run_palette() {
         if [ -n "$cmd" ]; then
             rm -f "$ERR_LOG" "$STATUS_FILE" "$EXIT_LOG"
             echo "STARTED" > "$STATUS_FILE"
-
-            local first_word
-            first_word=$(echo "$cmd" | awk '{print $1}')
-            if [[ "$first_word" != /* && "$first_word" != "eval" && "$first_word" != "tmux" ]] && ! command -v "$first_word" >/dev/null 2>&1; then
-                cmd="tmux $cmd"
-            fi
-
-            TMUX="$TMUX" tmux run-shell -t "$TARGET_PANE" "$cmd" 2> "$ERR_LOG"
-            echo $? > "$EXIT_LOG"
-            echo "SUCCESS" > "$STATUS_FILE"
+            execute_cmd "$cmd"
             exit 0
         fi
     fi
