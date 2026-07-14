@@ -26,6 +26,62 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-14 - gradient 자동 검증 부재를 최우선 안정성 문제로 기록
+
+요약:
+- fingerprint 오판 개선보다 먼저 gradient 시작, 지속, 정지를 반복 검증할 자동 테스트가 없다는 점을 최상위 문제로 정의했습니다.
+- fake AI command, 가짜 clock, 상태 전이 fixture, ANSI renderer 검증, 격리 tmux E2E를 다음 안정화의 선행 작업으로 기록했습니다.
+
+변경 파일:
+- `docs/tmux-sidebar-stability-issues.md`: gradient 테스트 공백, 최소 테스트 계층, timeline, acceptance criteria와 수정된 구현 우선순위 추가
+- `CONVERSATION.md`: 자동 검증을 먼저 확보해야 한다는 사용자 결정 기록
+
+검증:
+- 저장소 내 독립 test/fixture 부재 확인
+- 기존 HISTORY/CONVERSATION의 gradient 검증 방식과 현재 launcher debug/state 경로 대조
+- `git diff --check`: 통과
+
+후속 주의:
+- 다음 구현은 heuristic 값을 먼저 바꾸지 말고 재현 가능한 baseline과 gradient E2E부터 만들어야 합니다.
+- 실제 AI 서비스나 네트워크를 테스트 의존성으로 사용하지 않아야 합니다.
+
+## 2026-07-14 - 다음 AI 상태 안정화 방향을 fingerprint 우선으로 확정
+
+요약:
+- 다음 sidebar 안정화에서는 provider별 lifecycle/session adapter보다 현재 pane fingerprint 방식을 공통 authoritative source로 우선하기로 했습니다.
+- 단일 무변화 비교를 가장 큰 문제로 정의하고 waiting 유예, 연속 안정 관측, 재현 기반 동적 출력 정규화, pane/process generation identity를 개선 순서로 기록했습니다.
+
+변경 파일:
+- `docs/tmux-sidebar-stability-issues.md`: fingerprint 우선 원칙, 핵심 문제, 효과가 클 개선과 구현 우선순위 추가
+- `CONVERSATION.md`: 사용자의 fingerprint 우선 결정 기록
+
+검증:
+- 현재 `scripts/tmux-session-launcher`의 fingerprint 생성 및 상태 전이 경로와 문서 내용 대조
+- `git diff --check`: 통과
+
+후속 주의:
+- 이번 변경은 다음 작업 방향을 문서화한 것이며 runtime 코드는 변경하지 않았습니다.
+- 유예시간과 정규화 규칙은 추정값으로 고정하지 말고 실제 false running/false waiting 로그를 기준으로 확정해야 합니다.
+
+## 2026-07-14 - AI CLI session 저장소 기반 상태 감지 조사 기록
+
+요약:
+- pane fingerprint 외에 CLI별 session transcript, DB, status API, streaming event를 상태 판정 원천으로 사용할 수 있는지 조사해 문서화했습니다.
+- 공통 `tail` 규칙을 적용하지 않고 CLI adapter가 pane별 sidecar로 신호를 정규화하는 후보 구조와 구현 전 재현 테스트를 기록했습니다.
+
+변경 파일:
+- `docs/tmux-sidebar-stability-issues.md`: CLI별 session 원천, 신뢰도, sidecar 후보 구조, 판정 한계 및 재현 항목 추가
+- `CONVERSATION.md`: session 파일 활용 검토 의도와 현재 결론 기록
+
+검증:
+- 로컬 CLI 저장 경로와 최근 artifact 확인
+- Claude, Gemini, OpenCode, Ollama 공식 문서 및 공개 저장소 자료 대조
+- `git diff --check`: 통과
+
+후속 주의:
+- 이번 변경은 조사 문서만 추가했으며 runtime 코드나 CLI 설정은 변경하지 않았습니다.
+- 파일 무변화를 즉시 waiting으로 해석하지 말고 provider별 append 주기와 pane-session mapping을 먼저 재현해야 합니다.
+
 ## 2026-07-14 - tmux sidebar 안정성 이슈 목록화
 
 요약:

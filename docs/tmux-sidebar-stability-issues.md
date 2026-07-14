@@ -128,3 +128,202 @@
 - prompt/cursor adapter는 특정 화면에서는 동작하지만 TUI redraw와 scrollback에 민감해 일반화하기 어렵다.
 - lifecycle event, process, prompt, session activity를 동시에 섞으면 우선순위와 stale state 관리가 기존 방식보다 복잡해졌다.
 - 다음 시도는 외부 hook 설치 없이 기존 pane fingerprint 방식을 단일 source로 유지하고, 화면 정규화와 명시적 waiting prompt를 제한적인 보조 신호로 검토한다.
+
+## 6. Session 저장소 기반 상태 감지 검토
+
+아래 내용은 2026-07-14 로컬 설치 환경과 각 CLI 문서를 기준으로 조사한 결과다. 구현을 확정한 것이 아니며, vendor별 session 저장소나 상태 인터페이스가 pane fingerprint보다 안정적인 run/wait 신호가 될 수 있는지 검토하기 위한 기록이다.
+
+### 6.1 기본 가설과 판정 한계
+
+- AI CLI process가 살아 있고 해당 session 기록이 계속 append되면 `running`으로 볼 수 있다.
+- 기록 변화는 강한 running 신호지만, 기록 무변화는 즉시 waiting을 의미하지 않는다. API 응답 대기, 내부 reasoning, write buffering 중에는 실제 작업 중이어도 파일이 변하지 않을 수 있다.
+- 따라서 파일 변화가 멈춘 즉시 waiting으로 내리지 않고 유예시간과 연속 관측을 둬야 한다.
+- session 파일 전체를 반복해서 읽거나 CLI마다 `tail -f` process를 유지하기보다 `device:inode:size:mtime_ns`를 비교하는 편이 sidebar polling에 적합하다.
+- file rotation, compaction, resume, 새 session 생성 시 경로와 inode가 바뀔 수 있으므로 pane과 session artifact의 identity를 함께 갱신해야 한다.
+- 여러 pane에서 같은 CLI를 동시에 실행할 수 있으므로 "현재 project의 최신 파일"만 선택해서는 안 된다. pane ID와 정확한 session ID 또는 artifact 경로를 연결하는 절차가 필요하다.
+
+### 6.2 CLI별 관찰 원천
+
+| CLI | 확인된 원천 | 기대 신뢰도 | 검토 방향 |
+|---|---|---:|---|
+| Claude | session transcript JSONL | 높음 | hook 입력의 `session_id`와 `transcript_path`로 pane과 transcript를 연결한 뒤 크기/mtime을 관찰할 수 있다. |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | 높음 | 현재 session rollout의 append를 관찰한다. 로컬 확인에서는 reasoning, tool call, tool output event가 계속 기록됐다. |
+| Gemini | `~/.gemini/tmp/<project>/chats/*.jsonl` | 높음 | project별 auto session transcript를 관찰하거나 `BeforeAgent`/`AfterAgent` hook과 보완한다. |
+| agy | `~/.gemini/antigravity-cli/conversations/<id>.db`, `brain/<id>/.system_generated/logs/transcript*.jsonl` | 중간 이상 | SQLite보다 session별 transcript JSONL을 우선 후보로 삼되 generation 중 append 주기를 실제 측정해야 한다. |
+| OpenCode | `~/.local/share/opencode/opencode.db*`, server `/event`, `/session/status` | 높음 | DB/WAL 변화보다 session ID가 포함된 SSE `session.status` 또는 status API를 우선한다. |
+| Ollama | `~/.ollama/history`, REST streaming response | 기본 파일은 낮음 | history는 사용자 입력 recall용이므로 transcript로 쓰지 않는다. wrapper가 API chunk와 최종 `done=true`를 pane별 sidecar에 기록하는 방식을 별도 검토한다. |
+
+참고 자료:
+
+- Claude Code hooks는 공통 입력으로 `session_id`와 `transcript_path`를 제공한다: <https://code.claude.com/docs/en/hooks>
+- Gemini CLI는 project별 session을 자동 저장하고 resume할 수 있다: <https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/commands.md>
+- OpenCode server는 SSE `/event`와 session status API를 제공한다: <https://opencode.ai/docs/server/>
+- Ollama REST API는 streaming chunk와 최종 `done=true`를 제공한다: <https://docs.ollama.com/capabilities/streaming>, <https://docs.ollama.com/api/chat>
+- Ollama의 `~/.ollama/history`는 assistant transcript가 아니라 readline 입력 history다: <https://github.com/ollama/ollama/issues/1052>
+
+### 6.3 공통 adapter 후보
+
+sidebar가 vendor별 JSONL, SQLite, API 형식을 직접 해석하면 기존 lifecycle 실험처럼 우선순위와 stale state가 복잡해질 수 있다. 검토할 구조는 각 CLI adapter가 원천 신호를 pane별 공통 sidecar로 정규화하고 sidebar는 sidecar만 읽는 방식이다.
+
+```text
+Claude transcript ---+
+Codex rollout -------+
+Gemini transcript ---+
+agy transcript ------+--> CLI adapter --> pane별 sidecar --> sidebar
+OpenCode status SSE -+
+Ollama API wrapper --+
+```
+
+sidecar 후보 위치와 최소 필드는 다음과 같다.
+
+```text
+$XDG_RUNTIME_DIR/tmux-ai-status/<tmux-server-id>/<pane-id>.state
+
+cli=<provider>
+session_id=<provider-session-id>
+source=<artifact-path-or-endpoint>
+generation=<process-or-session-generation>
+state=<running|waiting|idle|unknown>
+activity_ns=<last-observed-activity>
+```
+
+- AI process가 없으면 `idle`로 정리한다.
+- session artifact가 변하거나 status stream에서 busy event가 오면 즉시 `running`으로 올린다.
+- artifact 무변화만으로 waiting을 확정하지 않고 provider별 유예시간 동안 이전 상태를 유지한다.
+- 명시적인 idle/done event가 있으면 `waiting`으로 내릴 수 있다.
+- process identity, session ID, pane ID 중 하나가 바뀌면 이전 sidecar를 stale로 간주하고 새 generation으로 교체한다.
+- adapter 연결에 실패하면 `unknown`을 유지하거나 기존 pane fingerprint로 제한적으로 fallback한다. fallback 결과를 확정 상태와 구분할 수 있어야 한다.
+
+### 6.4 구현 전 필요한 재현 테스트
+
+1. 각 CLI에서 prompt 제출부터 첫 session artifact write까지 걸리는 시간을 측정한다.
+2. streaming 응답, 긴 무출력 reasoning, tool 실행, permission 대기, turn 완료 동안 size/mtime 또는 status event가 어떻게 변하는지 기록한다.
+3. 같은 project에서 동일 CLI 두 개를 동시에 실행해 pane과 artifact가 일대일로 연결되는지 확인한다.
+4. resume, compact, clear, session file rotation 이후 artifact identity가 어떻게 바뀌는지 확인한다.
+5. CLI 강제 종료, tmux pane 재사용, 같은 pane에서 다른 CLI 실행 시 이전 sidecar가 남지 않는지 확인한다.
+6. OpenCode는 SSE/status API가 TUI process와 같은 session ID를 안정적으로 제공하는지 확인한다.
+7. Ollama는 기본 CLI를 유지할 때와 API wrapper를 사용할 때 UX, model option, history, tool 기능 차이를 비교한다.
+8. 파일 감시와 현재 pane fingerprint를 같은 시나리오에서 기록해 false running, false waiting 비율을 비교한다.
+
+현재 단계의 결론은 session 저장소가 기존 pane fingerprint를 대체할 가능성이 있지만, 모든 CLI에 동일한 `tail` 규칙을 적용할 수는 없다는 것이다. Codex, Claude, Gemini, agy는 session transcript 계열, OpenCode는 status API, Ollama는 wrapper sidecar가 각각 우선 후보이며, 실제 채택 여부는 위 재현 테스트 이후 결정한다.
+
+## 7. 다음 안정화의 우선 방향: pane fingerprint 고도화
+
+이전 lifecycle event, process fallback, prompt adapter 실험은 provider별 예외와 stale state를 늘려 기존 방식보다 불안정했다. session 저장소 기반 감지도 유효한 조사 대상이지만 pane과 provider session을 정확히 연결해야 하고 vendor 저장 형식에 의존한다. 따라서 다음 안정화에서는 현재 pane fingerprint 방식을 공통 authoritative source로 우선하고, session 저장소와 lifecycle event는 기본 판정을 대체하지 않는 보조 연구 항목으로 둔다.
+
+### 7.1 가장 큰 선행 문제: gradient 자동 검증 부재
+
+fingerprint 정확도보다 먼저 해결해야 할 가장 큰 문제는 **gradient가 올바른 session에서 시작되고, 실행 중 유지되며, waiting에서 정지하는지를 반복 가능한 자동 테스트로 검증하지 못한다는 점**이다. 현재 저장소에는 독립된 test/fixture가 없고, 기존 검증은 일회성 mock, 격리 tmux 명령, debug log, 사용자 육안 확인에 주로 의존한다.
+
+이 상태에서는 다음 문제가 반복된다.
+
+- 상태 판정 수정 후 gradient가 아예 시작하지 않거나 영원히 멈추지 않는 회귀를 commit 전에 잡기 어렵다.
+- state 계산과 ANSI 부분 렌더 중 어느 쪽이 실패했는지 분리하기 어렵다.
+- 실제 AI CLI 응답 시간과 네트워크에 의존하므로 같은 조건을 반복할 수 없다.
+- animation cadence, 상태 refresh cadence, age refresh가 겹치는 timing 문제를 수동 관찰로만 판단한다.
+- 여러 session, pane 재사용, resize, sidebar reopen 같은 조합을 매 변경마다 동일하게 재현하지 못한다.
+- "자연스럽게 움직인다"는 시각 평가와 "정확한 상태에서만 움직인다"는 lifecycle 평가가 섞인다.
+
+따라서 다음 안정화의 첫 단계는 heuristic 변경이 아니라 gradient 검증 harness를 만드는 것이다. 실제 Claude/Codex/Gemini 등의 네트워크 응답을 테스트에 사용하지 않고, 정해진 시간표대로 pane 출력을 변경하는 fake AI command를 격리 tmux socket에서 실행해야 한다.
+
+최소 자동 테스트 계층은 다음과 같다.
+
+1. **Fingerprint fixture test**: raw pane capture fixture를 입력해 normalized text와 fingerprint가 기대값인지 확인한다.
+2. **State transition test**: 가짜 clock과 fingerprint sequence로 `idle -> running -> waiting -> running -> idle` 전이를 결정적으로 검증한다.
+3. **Renderer test**: 고정 session name, seed, animation frame을 입력해 ANSI color cell과 sweep 위치를 비교한다.
+4. **Isolated tmux E2E**: 전용 tmux socket에서 fake `codex`/`claude` process를 띄우고 sidebar capture 및 debug state를 시간순으로 검증한다.
+5. **Regression scenario test**: 여러 session, 여러 AI pane, CLI 종료/재실행, pane ID 재사용, resize, sidebar close/reopen을 고정 시나리오로 실행한다.
+
+E2E 검증은 화면 screenshot의 픽셀 비교보다 상태 timeline과 ANSI cell 변화를 우선한다.
+
+```text
+t=0   fake AI 시작, 고정 prompt       -> idle 또는 초기 안정 상태
+t=1   scripted output append          -> running, gradient frame 변화
+t=2   scripted output append          -> running, gradient 계속 변화
+t=15  output 무변화 임계값 도달       -> waiting, gradient 정지
+t=16  output append                   -> running, gradient 재시작
+t=20  fake AI process 종료            -> idle, gradient 정지
+```
+
+검증 가능한 acceptance criteria도 명시해야 한다.
+
+- running 구간에서 같은 session name의 ANSI gradient frame이 최소 두 번 이상 달라진다.
+- waiting/idle 구간에서는 gradient frame repaint가 발생하지 않는다.
+- 대상이 아닌 session row는 ANSI gradient가 변하지 않는다.
+- waiting 이후 새 출력이 생기면 설정된 한 번의 state refresh 안에 gradient가 다시 시작한다.
+- process/pane generation이 바뀌면 이전 fingerprint와 animation state가 재사용되지 않는다.
+- 전체 row repaint, cursor 노출, 다른 session name 손상 같은 렌더 회귀가 발생하지 않는다.
+
+테스트를 결정적으로 만들려면 epoch 조회, poll interval, state refresh cadence를 test mode에서 주입할 수 있어야 한다. TUI 전체를 source하는 구조가 어렵다면 fingerprint 정규화, 상태 전이, gradient cell 계산을 side effect 없는 함수로 먼저 분리하고, 실제 tmux 명령은 얇은 adapter와 E2E에서만 사용한다.
+
+이 harness가 통과하기 전에는 waiting 임계값이나 정규화 규칙을 조정하더라도 정확도가 개선됐다고 확정하지 않는다.
+
+### 7.2 현재 fingerprint의 가장 큰 문제
+
+가장 큰 문제는 fingerprint 생성에 `cksum`을 사용한다는 점이 아니라 **한 번의 화면 무변화를 즉시 waiting으로 해석하는 판정 방식**이다.
+
+- AI가 reasoning, API 응답 대기, subprocess 실행 중이어도 화면이 갱신되지 않으면 false waiting이 발생한다.
+- 반대로 spinner, elapsed time, token count, progress indicator, TUI redraw가 계속 바뀌면 실제 입력 대기 중에도 false running이 발생한다.
+- sidebar가 처음 AI pane을 관측했을 때 이전 fingerprint가 없으므로, 이미 입력 대기 중인 CLI도 우선 running으로 보일 수 있다.
+- fingerprint가 session 이름에 연결되어 pane이나 CLI process generation이 바뀌면 이전 값이 새 실행의 비교 기준으로 섞일 수 있다.
+- 최근 12줄과 마지막 한 줄 제외라는 고정 규칙은 CLI별 TUI 구조, terminal resize, line wrapping에 따라 결과가 달라진다.
+
+현재 판정은 사실상 다음과 같다.
+
+```text
+직전 fingerprint와 다름 -> running
+직전 fingerprint와 같음 -> waiting
+```
+
+이 단일 비교를 그대로 두면 fingerprint 입력 일부를 정규화해도 긴 무출력 작업과 새로운 동적 UI에서 오판이 반복된다.
+
+### 7.3 가장 효과가 클 개선
+
+가장 먼저 **마지막 의미 있는 변화 시각과 연속 안정 관측**을 상태 판정에 도입한다.
+
+```text
+정규화 fingerprint 변화
+  -> 즉시 running
+
+무변화 1회
+  -> 이전 running 상태 유지
+
+무변화가 설정 시간 또는 설정 횟수 이상 지속
+  -> waiting
+
+waiting 이후 fingerprint 변화
+  -> 즉시 running
+```
+
+초기 후보값은 상태 갱신 주기에 맞춰 2~3회 연속 무변화 또는 10~15초 안정 구간으로 두되, 실제 CLI별 재현 로그를 보고 확정한다. 이 변경은 짧은 무출력 구간에서 발생하는 false waiting을 가장 적은 복잡도로 줄일 가능성이 크다.
+
+다음으로 fingerprint 입력에서 상태와 무관한 동적 표현을 제한적으로 정규화한다.
+
+- spinner frame과 반복 animation glyph
+- elapsed time과 계속 증가하는 token/progress 숫자
+- prompt 또는 고정 status 영역
+- terminal resize 직후 발생한 reflow snapshot
+- provider별로 명확히 확인된 volatile line만 대상으로 하며 광범위한 숫자 제거처럼 실제 응답을 훼손하는 규칙은 피한다.
+
+### 7.4 구현 우선순위
+
+1. fake AI command, 가짜 clock, 고정 fingerprint sequence를 사용하는 gradient 자동 검증 harness를 만든다.
+2. 현재 동작을 fixture와 E2E baseline으로 고정해 변경 전 실패/성공 조건을 재현한다.
+3. waiting 전환에 유예시간과 연속 무변화 횟수를 적용한다.
+4. raw capture, normalized capture, fingerprint, 상태 전이를 debug log로 동시에 기록한다.
+5. 실제 false running을 만드는 spinner와 동적 숫자만 재현 기반으로 정규화한다.
+6. fingerprint identity를 `tmux server + pane ID + AI process generation`에 연결하고 identity 변경 시 이전 값을 폐기한다.
+7. 한 session의 여러 AI pane을 pane별로 판정한 뒤 `하나라도 running이면 session running`으로 집계한다.
+8. resize, pane 재사용, CLI 교체, resume 시나리오를 회귀 테스트로 고정한다.
+9. fingerprint로 해결되지 않는 확인된 사례에만 session 저장소나 명시적 lifecycle event를 보조 신호로 추가한다.
+
+### 7.5 유지할 설계 원칙
+
+- 화면 fingerprint는 Claude, Codex, Gemini, agy, OpenCode, Ollama에 같은 방식으로 적용 가능한 공통 기준으로 유지한다.
+- provider별 hook, wrapper, DB/API 의존성을 기본 설치에 추가하지 않는다.
+- 보조 신호가 없어도 현재 수준의 동작을 유지하고, 보조 신호 실패가 running/waiting 상태를 고정하지 않게 한다.
+- 정규화 규칙과 상태 전이 정책을 분리해 각각 독립적으로 재현하고 조정할 수 있게 한다.
+- 정확도를 평가할 때 사용자가 실제로 기대하는 gradient 기준인 `AI가 응답 생성 또는 tool 작업 중인가`와 `사용자 입력/승인을 기다리는가`를 구분한다.
+- 자동 테스트로 재현되지 않는 체감 개선은 확정된 안정화 결과로 기록하지 않는다.
+
+다음 안정화 작업은 이 절의 순서를 기본 계획으로 삼는다. session 저장소 방식은 fingerprint 고도화 이후에도 남는 구체적인 오판 사례가 확인될 때 다시 평가한다.

@@ -26,6 +26,61 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-14 - gradient 자동 테스트를 안정화 선행 조건으로 결정
+
+사용자 요청:
+- fingerprint 자체의 문제보다 gradient가 의도한 상태에서 시작하고 정지하는지 제대로 자동 테스트하고 검증할 수 없다는 점이 더 큰 문제라고 판단했습니다.
+
+해석/결정:
+- 다음 안정화의 첫 작업은 heuristic 수정이 아니라 반복 가능한 gradient 검증 harness 구축입니다.
+- 실제 AI 네트워크 응답 대신 scripted output을 내는 fake AI pane과 가짜 clock을 사용해 상태 전이와 animation frame을 결정적으로 검증합니다.
+- 상태 판정, ANSI renderer, 실제 tmux E2E를 분리해 실패 지점을 확인할 수 있게 합니다.
+
+작업 결과:
+- `docs/tmux-sidebar-stability-issues.md`에 테스트 공백을 최상위 선행 문제로 추가했습니다.
+- 최소 자동 테스트 계층, 상태 timeline, acceptance criteria를 문서화하고 fingerprint 개선보다 테스트 harness를 앞에 배치했습니다.
+- runtime 코드는 변경하지 않았습니다.
+
+남은 질문:
+- 테스트를 위해 launcher 내부 함수를 source 가능한 모듈로 분리할지 `--test-*` interface를 둘지 결정해야 합니다.
+- ANSI frame 검증에 `tmux capture-pane -e`와 debug event 중 어느 것을 주 assertion으로 사용할지 실제 fixture에서 확정해야 합니다.
+
+## 2026-07-14 - 다음 sidebar 안정화는 fingerprint 우선
+
+사용자 요청:
+- 현재 heuristic 중에서도 fingerprint를 고도화하는 방식이 가장 정확할 가능성이 높다고 판단하고, 다음 안정화에서 fingerprint를 우선하도록 문서에 남깁니다.
+
+해석/결정:
+- provider별 lifecycle event와 session 저장소는 보조 연구 항목으로 유지하고 pane fingerprint를 공통 authoritative source로 둡니다.
+- 가장 큰 문제는 한 번의 화면 무변화를 즉시 waiting으로 확정하는 것이며, 가장 효과가 클 개선은 waiting 유예와 연속 무변화 관측입니다.
+- 이후 실제로 재현된 spinner, elapsed time 등만 제한적으로 정규화하고 pane/process generation별로 fingerprint identity를 초기화합니다.
+
+작업 결과:
+- `docs/tmux-sidebar-stability-issues.md`에 fingerprint 우선 원칙, 핵심 실패 원인, 상태 전이 후보와 구현 우선순위를 추가했습니다.
+- runtime 코드는 변경하지 않았습니다.
+
+남은 질문:
+- 연속 무변화 횟수와 waiting 유예시간은 CLI별 실제 관측 로그를 통해 확정해야 합니다.
+- 정규화 대상은 false running을 실제로 재현한 volatile line부터 최소 범위로 추가해야 합니다.
+
+## 2026-07-14 - AI CLI session 저장소 기반 상태 감지 검토
+
+사용자 요청:
+- pane 화면 변화 대신 AI CLI의 session 파일을 관찰해 파일 변화가 있으면 running, 변화가 없으면 waiting으로 구분할 수 있는지 검토하고 문서에만 추가합니다.
+
+해석/결정:
+- session artifact 변화는 running의 강한 신호지만 무변화는 API 대기나 buffering일 수 있으므로 즉시 waiting으로 확정하지 않습니다.
+- Codex, Claude, Gemini, agy는 transcript 계열, OpenCode는 status API, Ollama는 wrapper sidecar를 우선 후보로 분리합니다.
+- vendor별 원천은 adapter가 pane별 공통 sidecar로 정규화하고 sidebar는 공통 형식만 읽는 구조를 후보로 기록합니다.
+
+작업 결과:
+- `docs/tmux-sidebar-stability-issues.md`에 CLI별 저장 원천, 한계, sidecar schema 후보와 구현 전 재현 테스트를 추가했습니다.
+- runtime 코드와 사용자 CLI 설정은 변경하지 않았습니다.
+
+남은 질문:
+- 각 CLI의 generation 중 append 주기와 pane-session artifact 일대일 mapping을 실제 동시 실행 환경에서 검증해야 합니다.
+- Ollama wrapper가 기본 `ollama run` UX를 충분히 보존할 수 있는지 비교해야 합니다.
+
 ## 2026-07-14 - tmux sidebar 안정성 문제 정의
 
 사용자 요청:
