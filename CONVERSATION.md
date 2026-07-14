@@ -26,6 +26,22 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-14 - tmux sidebar 안정성 문제 정의
+
+사용자 요청:
+- sidebar의 AI CLI 동작부 계산, 재오픈 시 split 복구, close 시 history 저장 문제를 먼저 정확히 분리해 정리합니다.
+
+해석/결정:
+- 구현 수정 전에 현재 코드의 판정 경로와 archive/restore 경계를 조사합니다.
+- 문제 목록, 영향, 재현 시나리오, 다음 설계에서 결정할 정책을 별도 문서로 남깁니다.
+
+작업 결과:
+- `docs/tmux-sidebar-stability-issues.md`에 AI 상태 오판, stale layout, session 비독립 history, archive/restore 실패 경로를 기록했습니다.
+- 이번 단계에서는 동작 코드를 변경하지 않았습니다.
+
+남은 질문:
+- session snapshot의 보존/복원 정책과 AI CLI별 resume 범위를 다음 단계에서 확정해야 합니다.
+
 ## 2026-07-12 - fzf 선택 필드 파싱 어긋남(근본 원인) 해결
 
 사용자 요청:

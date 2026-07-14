@@ -26,6 +26,23 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-14 - tmux sidebar 안정성 이슈 목록화
+
+요약:
+- sidebar의 AI CLI 상태 판정, sidebar 재오픈/layout 복구, close/archive/history 복원의 현재 문제를 구현 수정 전에 분리해 문서화했습니다.
+- session-wide activity와 pane process 판정 혼합, split 이후 stale layout, 공용 HISTFILE 중복 archive 및 background close 실패 경로를 주요 안정성 이슈로 기록했습니다.
+
+변경 파일:
+- `docs/tmux-sidebar-stability-issues.md`: 문제 원인, 영향, 재현 시나리오 및 다음 정책 결정 항목 추가
+- `CONVERSATION.md`: 작업 의도와 현재 단계 기록
+
+검증:
+- 코드 경로 및 기존 문서 대조
+- 이번 단계에서는 runtime 코드 변경 없음
+
+후속 주의:
+- 다음 단계에서 session snapshot schema, AI process identity, layout source of truth, history 보존 정책을 확정한 뒤 구현해야 합니다.
+
 ## 2026-07-12 - tmux 커맨드 팔레트 fzf 선택 필드 파싱 교정 (근본 원인 해결)
 
 요약:
