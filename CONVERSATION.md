@@ -26,6 +26,27 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-14 - gradient 테스트를 단순 단계부터 종합 E2E까지 구현
+
+사용자 요청:
+- fingerprint 문제 자체는 아직 고치지 않고, 중복을 최소화한 gradient 테스트 코드를 가장 단순한 수준부터 종합적인 수준까지 먼저 준비합니다.
+
+해석/결정:
+- 공통 helper 하나를 사용해 renderer, fingerprint, 상태 전이, session 격리, tmux lifecycle을 별도 테스트로 분리합니다.
+- 실제 AI 서비스 대신 scripted output을 내는 fake `codex`를 사용하고 production launcher는 변경하지 않습니다.
+- 현재 충족하는 동작은 PASS, 합의했지만 아직 구현하지 않은 개선은 XFAIL로 구분합니다.
+
+작업 결과:
+- `tests/tmux-sidebar-gradient/`에 공통 harness, fake AI, 5개 수준의 테스트와 전체 runner를 추가했습니다.
+- 전체 실행 결과는 PASS 13, XFAIL 3, FAIL 0입니다.
+- 격리 tmux E2E에서 출력 시작, 정지, 재시작, process 종료에 따른 gradient 상태 전이를 확인했습니다.
+- XFAIL은 한 번의 무변화로 즉시 waiting 처리, 본문 spinner 미정규화, 새 pane generation의 fingerprint 재사용입니다.
+- runtime 코드는 변경하지 않았습니다.
+
+남은 질문:
+- fingerprint 안정화를 시작할 때 어느 XFAIL부터 PASS로 전환할지 결정해야 합니다.
+- 실제 CLI에서 새 오판이 발견될 때만 최소 fixture를 추가할지 운영하면서 판단합니다.
+
 ## 2026-07-14 - gradient 자동 테스트를 안정화 선행 조건으로 결정
 
 사용자 요청:

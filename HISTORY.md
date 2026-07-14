@@ -26,6 +26,39 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-14 - tmux sidebar gradient 자동 테스트 suite 추가
+
+요약:
+- production launcher를 수정하지 않고 gradient renderer, fingerprint, 상태 전이, 다중 session 격리, 실제 tmux lifecycle을 단계별로 검증하는 Bash 테스트 suite를 추가했습니다.
+- 현재 동작은 PASS로 고정하고, waiting 즉시 전환, spinner 미정규화, 새 pane generation의 stale fingerprint는 XFAIL로 재현했습니다.
+
+변경 파일:
+- `tests/tmux-sidebar-gradient/lib.sh`: 공통 assertion, launcher 함수 loader, tmux snapshot stub 추가
+- `tests/tmux-sidebar-gradient/fake-ai.sh`: 실제 AI와 네트워크 없이 출력을 제어하는 fake process 추가
+- `tests/tmux-sidebar-gradient/test-render.sh`: ANSI gradient renderer 단위 테스트 추가
+- `tests/tmux-sidebar-gradient/test-fingerprint.sh`: 현재 fingerprint 정규화 테스트 추가
+- `tests/tmux-sidebar-gradient/test-state.sh`: 현재 상태 전이 테스트 추가
+- `tests/tmux-sidebar-gradient/test-session-isolation.sh`: 다중 session 상태 독립성 테스트 추가
+- `tests/tmux-sidebar-gradient/test-regressions.sh`: 합의된 개선 대상 XFAIL 추가
+- `tests/tmux-sidebar-gradient/test-lifecycle-e2e.sh`: 격리 tmux lifecycle E2E 추가
+- `tests/tmux-sidebar-gradient/run.sh`, `README.md`: 전체 runner와 사용법 추가
+- `docs/tmux-sidebar-stability-issues.md`: 테스트 부재 항목을 현재 baseline과 결과로 갱신
+- `CONVERSATION.md`: 테스트 우선 구현 결정과 결과 기록
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS 13, XFAIL 3, FAIL 0
+- lifecycle E2E: fake AI `active -> waiting -> active -> idle` 전환 통과
+- `bash -n install.sh`, `bash -n scripts/tmux-session-launcher`, test shell 문법 검사: 통과
+- `perl -c dotfiles/urxvt/ext/resize-font`: 통과
+- `sh -n get_dotfiles.sh`, `sh -n install_dotfiles.sh`: 통과
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: 통과
+- `git diff --check`: 통과
+- production runtime 코드 변경 없음
+
+후속 주의:
+- tmux socket 접근이 제한된 sandbox에서는 lifecycle E2E에 추가 권한이 필요합니다.
+- 향후 fingerprint 문제를 수정할 때 해당 XFAIL을 일반 PASS assertion으로 전환해야 합니다.
+
 ## 2026-07-14 - gradient 자동 검증 부재를 최우선 안정성 문제로 기록
 
 요약:

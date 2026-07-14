@@ -213,7 +213,7 @@ activity_ns=<last-observed-activity>
 
 ### 7.1 가장 큰 선행 문제: gradient 자동 검증 부재
 
-fingerprint 정확도보다 먼저 해결해야 할 가장 큰 문제는 **gradient가 올바른 session에서 시작되고, 실행 중 유지되며, waiting에서 정지하는지를 반복 가능한 자동 테스트로 검증하지 못한다는 점**이다. 현재 저장소에는 독립된 test/fixture가 없고, 기존 검증은 일회성 mock, 격리 tmux 명령, debug log, 사용자 육안 확인에 주로 의존한다.
+fingerprint 정확도보다 먼저 해결해야 할 가장 큰 문제는 **gradient가 올바른 session에서 시작되고, 실행 중 유지되며, waiting에서 정지하는지를 반복 가능한 자동 테스트로 검증하지 못한다는 점**이었다. 문제 정의 당시 저장소에는 독립된 test/fixture가 없었고, 기존 검증은 일회성 mock, 격리 tmux 명령, debug log, 사용자 육안 확인에 주로 의존했다.
 
 이 상태에서는 다음 문제가 반복된다.
 
@@ -257,6 +257,33 @@ t=20  fake AI process 종료            -> idle, gradient 정지
 테스트를 결정적으로 만들려면 epoch 조회, poll interval, state refresh cadence를 test mode에서 주입할 수 있어야 한다. TUI 전체를 source하는 구조가 어렵다면 fingerprint 정규화, 상태 전이, gradient cell 계산을 side effect 없는 함수로 먼저 분리하고, 실제 tmux 명령은 얇은 adapter와 E2E에서만 사용한다.
 
 이 harness가 통과하기 전에는 waiting 임계값이나 정규화 규칙을 조정하더라도 정확도가 개선됐다고 확정하지 않는다.
+
+#### 7.1.1 추가된 자동 검증 baseline
+
+2026-07-14에 production launcher를 변경하지 않고 `tests/tmux-sidebar-gradient/`에 다음 테스트 기반을 추가했다.
+
+| 테스트 | 검증 범위 | 현재 결과 |
+|---|---|---|
+| `test-render.sh` | frame별 ANSI gradient 변화, waiting/plain 출력, global disable | PASS 3 |
+| `test-fingerprint.sh` | 마지막 줄 제외, 본문 변화, 빈 줄 정규화 | PASS 3 |
+| `test-state.sh` | `active -> waiting -> active`, shell-only idle | PASS 2 |
+| `test-session-isolation.sh` | 여러 session의 독립 animation 상태 | PASS 1 |
+| `test-lifecycle-e2e.sh` | 격리 tmux fake `codex`의 시작, 정지, 재시작, 종료 | PASS 4 |
+| `test-regressions.sh` | 아직 수정하지 않은 합의된 개선 대상 | XFAIL 3 |
+
+현재 XFAIL로 고정한 개선 대상은 다음과 같다.
+
+- 한 번의 fingerprint 무변화로 즉시 waiting 전환
+- fingerprint 본문에 포함된 spinner 변화 미정규화
+- 같은 session에서 새 pane generation이 이전 fingerprint를 재사용
+
+전체 suite는 다음 명령으로 실행한다.
+
+```sh
+bash tests/tmux-sidebar-gradient/run.sh
+```
+
+현재 baseline은 실제 AI 서비스나 네트워크를 사용하지 않는다. renderer와 상태 계산은 deterministic fixture로 검증하고, tmux 연결은 임시 실행 파일명이 `codex`인 fake AI와 전용 socket을 사용한다. XFAIL 항목을 수정할 때는 해당 assertion을 PASS로 전환한 뒤 전체 suite를 회귀 검증한다.
 
 ### 7.2 현재 fingerprint의 가장 큰 문제
 
