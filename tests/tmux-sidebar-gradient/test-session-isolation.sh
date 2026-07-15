@@ -14,6 +14,7 @@ session_ai_fingerprint_for_pane()
 test_sessions_animate_independently()
 {
     TEST_CURRENT_SESSION='first'
+    current_session='first'
     TEST_SESSIONS_SNAPSHOT=$'first\t100\nsecond\t200'
     TEST_PANES_SNAPSHOT=$'first\t%1\twork\tcodex\nsecond\t%2\twork\tclaude'
     TEST_FINGERPRINT_BY_PANE['%1']='first-a'
@@ -26,6 +27,10 @@ test_sessions_animate_independently()
     TEST_FINGERPRINT_BY_PANE['%1']='first-b'
     collect_sessions
     assert_eq true "${session_animate[0]}" 'first changed animation'
+    assert_eq true "${session_animate[1]}" 'second single stable animation'
+
+    collect_sessions
+    assert_eq true "${session_animate[0]}" 'first single stable animation'
     assert_eq false "${session_animate[1]}" 'second stable animation'
     assert_eq active "${session_cli_state[0]}" 'first changed state'
     assert_eq waiting "${session_cli_state[1]}" 'second stable state'

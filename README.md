@@ -164,7 +164,7 @@ tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session
 - `c`: 새 session 생성
 - `d`: 선택한 session 삭제
 - `r`: 선택한 session 이름 변경
-- `h`: 삭제한 session history 표시/숨김
+- `o`: 삭제한 session history 표시/숨김
 - `q`: 닫기
 - `Esc`: prompt 취소, history 창 닫기
 
@@ -174,9 +174,11 @@ session 목록은 선택 표시, session 이름, session 생성 후 경과 시�
 mouse 기본 동작은 유지하며, sidebar의 session name 위치를 클릭한 경우에만 해당 session으로 이동합니다.
 
 `d`로 session을 삭제할 때 `y`를 입력하면 `~/.cache/dotfiles/tmux-session-history` 아래에 복원용 metadata를 남기고 삭제합니다. 그냥 `Enter`를 누르면 history 없이 삭제하고, `Esc`는 삭제 prompt만 취소합니다. 현재 session도 삭제할 수 있으며, 다른 session이 남아 있으면 그쪽으로 이동한 뒤 삭제하고 남은 session이 없으면 tmux server를 종료합니다. 삭제 확인 prompt에서 `All`을 입력하면 모든 session 삭제를 진행하며, 이어서 history 저장 여부를 한 번 더 묻습니다.
-`h`를 누르면 sidebar 하단 절반에 history 목록이 열립니다. history 목록에서는 `Space`로 여러 항목을 표시하고, `Enter`로 복원하며, `d` 후 `y`로 history 파일을 완전히 삭제합니다. history 창에서 `Esc`를 누르면 history 창만 닫고 기존 sidebar로 돌아갑니다.
+`o`를 누르면 sidebar 하단 절반에 history 목록이 열립니다. history 목록에서는 `Space`로 여러 항목을 표시하고, `Enter`로 복원하며, `d` 후 `y`로 history 파일을 완전히 삭제합니다. history 창에서 `Esc`를 누르면 history 창만 닫고 기존 sidebar로 돌아갑니다.
 복원은 session/window 이름, sidebar를 제외한 pane current path, sidebar-free window layout metadata, 저장된 shell history를 사용해 원래 session 이름으로 새 session을 만듭니다. 저장된 tmux layout은 새 pane id에 맞게 다시 계산해 vertical-only, horizontal-only, mixed split 배치를 유지합니다. 같은 이름의 session이 이미 있으면 복원하지 않습니다. 실행 중이던 process 자체를 되살리지는 않습니다.
 이 sidebar는 별도 selector 의존성 없이 tmux와 bash만으로 동작합니다. 각 session의 busy/idle 상태는 내부 snapshot 구조에 포함하지만, 현재 UI에는 표시하지 않습니다.
+
+session 전환 직후에는 target sidebar가 force-refresh되어 최종적으로 `>*`로 정렬됩니다. 다만 빠른 전환에서는 이전 `>`가 한두 frame 동안 남는 transient cursor 표시가 현재 알려진 제한사항입니다.
 
 ## 로컬 검증
 

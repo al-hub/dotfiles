@@ -108,6 +108,9 @@ TEST_CURRENT_PATH="$REPO_ROOT"
 TEST_SESSIONS_SNAPSHOT=""
 TEST_PANES_SNAPSHOT=""
 TEST_CAPTURE=""
+TEST_PANE_WIDTH=80
+TEST_PANE_HEIGHT=24
+TEST_CLIENT_SESSIONS_SNAPSHOT="test"
 
 # Unit tests replace tmux with deterministic snapshots before loading launcher functions.
 tmux()
@@ -123,11 +126,16 @@ tmux()
                 '#{pane_current_path}') printf '%s\n' "$TEST_CURRENT_PATH" ;;
                 '#{session_activity}') printf '%s\n' "${EPOCHSECONDS:-0}" ;;
                 '#{pane_pid}') return 1 ;;
+                '#{pane_width}') printf '%s\n' "${TEST_PANE_WIDTH:-80}" ;;
+                '#{pane_height}') printf '%s\n' "${TEST_PANE_HEIGHT:-24}" ;;
                 *) return 1 ;;
             esac
             ;;
         list-sessions)
             printf '%s\n' "$TEST_SESSIONS_SNAPSHOT"
+            ;;
+        list-clients)
+            printf '%s\n' "$TEST_CLIENT_SESSIONS_SNAPSHOT"
             ;;
         list-panes)
             printf '%s\n' "$TEST_PANES_SNAPSHOT"
@@ -158,6 +166,7 @@ load_launcher_functions()
     declare -gA session_has_busy_command=()
     declare -gA session_ai_probe_pane_ids=()
     declare -gA session_ai_direct_pane_id=()
+    declare -gA session_ai_stable_count=()
     declare -gA previous_session_animate=()
     declare -ga session_animate=()
     declare -ga session_animation_seed=()

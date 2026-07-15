@@ -21,6 +21,10 @@ test_active_waiting_active_transition()
     assert_eq true "${session_animate[0]}" 'initial animation state'
 
     collect_sessions
+    assert_eq active "${session_cli_state[0]}" 'single stable sample CLI state'
+    assert_eq true "${session_animate[0]}" 'single stable sample animation state'
+
+    collect_sessions
     assert_eq waiting "${session_cli_state[0]}" 'stable fingerprint CLI state'
     assert_eq false "${session_animate[0]}" 'stable fingerprint animation state'
 
