@@ -26,6 +26,28 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-16 - 사이드바 성능 검증 계획 수립 및 Baseline 측정 (격리 E2E 및 자동 대조 비교 완료)
+
+요약:
+- 사이드바 TUI 성능 및 안정성을 검증하기 위한 시나리오를 구성하고, 실제 활성 attached 터미널 세션 상에서 baseline 지표를 실측하여 문서화했습니다.
+- 사용자 세션 간섭 없이 X11 urxvt 및 격리 소켓을 활용해 가상 터미널 환경을 구동하고, 테스트 후 tmux 서버를 자동 정리하는 완전 자동화 E2E 스크립트를 구현했습니다.
+- **[테스트 고도화]** 프로파일러 표에 Peak CPU 점유율을 추가(샘플 10회 확대)하고, 사이드바 연타(Stress) 및 리사이즈 예외 시나리오, 복원된 패널/윈도우 구조적 메타데이터 무결성 검증, ANSI 코드 누출 및 커서 유일성(Visual Snapshot) 무결성 검증 로직을 구현했습니다.
+- **[E2E 비교 자동화]** 실시간 세션과 격리 샌드박스의 실측 지표를 사이드-바이-사이드로 자동 구동 및 비교하는 `tests/compare-profiles.sh`를 개발하고, 터미널이 없을 시 X11 클라이언트를 자동 스폰해 테스트한 뒤 비교 보고서 `tests/profile-comparison-report.md` 파일 로그로 영구 기록하는 루틴을 완성했습니다.
+
+변경 파일:
+- `~/.gemini/antigravity-cli/brain/8060cccd-0a08-4945-b72d-38ee197a6f5f/sidebar_stability_test_plan.md`: 고도화된 7대 시나리오 실측 Baseline 및 재현 가이드 추가
+- `tests/profile-active-sidebar.sh`: 실시간 세션 대상 7대 시나리오 프로파일링 스크립트 (가상 세션 자동 생성 및 종료 클린업 포함)
+- `tests/profile-isolated-sidebar.sh`: X11 urxvt 격리 가상 터미널 기반 7대 시나리오 E2E 프로파일링 스크립트
+- `tests/compare-profiles.sh`: 액티브 및 격리 세션 지표 자동 수집/파싱 및 사이드-바이-사이드 비교 자동화 스크립트
+- `tests/profile-comparison-report.md`: 자동 생성되는 비교 분석 마크다운 보고서
+
+검증:
+- `bash tests/compare-profiles.sh` E2E 정상 작동 확인 및 `tests/profile-comparison-report.md` 생성 완료
+
+후속 주의:
+- 세션 전환 Latency가 격리 환경에서 40초, 액티브 환경에서 14초 이상 발생하는 병목 현상이 있으며, 이는 XWayland/WSLg 렌더링 및 클라이언트 스위칭 대기 지연에 의한 것으로 추후 코드 수준의 최적화가 필요합니다.
+- 복원 정확도(Scenario 6) 및 레이아웃 복원(Scenario 5), 그리드 범위(Scenario 7)에 한계 오작동 수치가 확인되었습니다.
+
 ## 2026-07-15 - 코드와 문서의 현재 동작 정합성 보정
 
 요약:
