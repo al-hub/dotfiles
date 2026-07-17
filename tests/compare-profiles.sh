@@ -163,13 +163,13 @@ all_equal cursor_count 1 && grid_result=PASS
     echo
     echo "## Method"
     echo
-    echo "Each run creates a unique tmux socket, an attached urxvt client, and a temporary history directory. It executes the launcher from the checked-out repository, never the installed copy. CPU is interval CPU time from \`/proc/PID/stat\` (including reaped children), and RSS is peak launcher RSS sampled during the same interval. Timed operations have bounded completion checks; a timeout or invariant mismatch fails the suite instead of becoming a numeric baseline."
+    echo "Each run creates a unique tmux socket, an attached urxvt client, and a temporary history directory. It executes the launcher from the checked-out repository, never the installed copy. CPU is interval CPU time from \`/proc/PID/stat\` (including reaped children), and RSS is peak launcher RSS sampled during the same interval. Key-to-render checks poll capture-pane at a 10ms interval; other timed operations have bounded completion checks. A timeout or invariant mismatch fails the suite instead of becoming a numeric baseline."
     echo
     echo "The former active-vs-isolated comparison was removed because it changed the user's live tmux server and compared uncontrolled workloads. Use this report for before/after measurements under the same geometry and run count."
     echo
     echo "## Performance targets"
     echo
-    echo "Targets are reported independently from functional invariants. v0.6.2 remains untagged until all absolute targets pass: idle <=3%, active <=5%, key <=40ms, switch <=1200ms, archive <=350ms, restore <=2200ms."
+    echo "Targets are reported independently from functional invariants. The current version must not be promoted until all absolute targets pass: idle <=3%, active <=5%, key <=40ms, switch <=1200ms, archive <=350ms, restore <=2200ms."
 } | tee "$REPORT_FILE"
 
 [ "$restore_result" = PASS ] && [ "$layout_result" = PASS ] && [ "$grid_result" = PASS ]

@@ -22,9 +22,10 @@ wait_for_log_after()
     start_line="$1"
     pattern="$2"
     attempts=0
+    [ "$start_line" -lt 1 ] && start_line=1
 
     while [ "$attempts" -lt 80 ]; do
-        if [ -f "$DEBUG_FILE" ] && tail -n "+$((start_line + 1))" "$DEBUG_FILE" | grep -Eq "$pattern"; then
+        if [ -f "$DEBUG_FILE" ] && tail -n "+$start_line" "$DEBUG_FILE" | grep -Eq "$pattern"; then
             return 0
         fi
         sleep 0.1

@@ -38,7 +38,8 @@ test_collect_uses_one_client_snapshot()
     assert_eq 1 "$(call_count list-clients)" 'client snapshot calls'
     # The snapshot still samples current session and geometry; it no longer
     # performs one display-message activity query per session.
-    assert_eq 5 "$(call_count display-message)" 'activity display calls'
+    assert_eq 4 "$(call_count display-message)" 'activity display calls'
+    assert_eq 0 "$(call_count pgrep)" 'passive pane process probes'
 }
 
 run_test 'render hot path does not call external probes' test_render_is_tmux_free

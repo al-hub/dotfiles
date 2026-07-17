@@ -2560,3 +2560,85 @@
 작업 결과:
 - 입력 loop fork 제거, topology/AI cache, switch 대기 축소, archive/restore batch 최적화를 v0.6.2로 기록합니다.
 - `tests/profile-reports/v0.6.2.md`에 3회 독립 측정과 목표별 결과를 보관합니다.
+
+## 2026-07-17 - v0.6.3 개선 구현 결과
+
+사용자 의도:
+- v0.6.2 결과를 종합해 idle/active CPU와 key latency를 추가로 낮추고, archive/restore 경로를 개선합니다.
+
+작업 결정:
+- tick signal timer는 실험 옵션으로 추가했지만 기존 polling과 중복되어 기본값은 비활성화했습니다.
+- pane activity/PID cache와 조건부 AI fingerprint/process probe를 적용했습니다.
+- restore 후 sidebar 보장은 background IPC로 넘겼고 lifecycle 검증의 로그 시작 경계를 보정했습니다.
+
+결과:
+- `tests/profile-reports/v0.6.3.md`에 동일 geometry의 3회 측정을 기록했습니다.
+- 기능 invariant와 lifecycle은 모두 통과했습니다.
+- 중앙값은 idle CPU 18.06%, active CPU 16.91%, key 133ms, switch 316ms, archive 393ms, restore 2021ms입니다.
+- restore/session switch는 목표를 충족했지만 CPU, key, archive 목표는 미달하여 v0.6.3 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.4 개선 구현 결과
+
+사용자 의도:
+- v0.6.3의 남은 CPU·입력·archive 병목을 추가로 줄입니다.
+
+작업 결과:
+- cached geometry를 렌더 hot path 전반에서 직접 사용하도록 정리했습니다.
+- passive pane probe와 변경 없는 selected-session fallback scan을 제거했습니다.
+- trace instrumentation과 archive subprocess 미세 최적화를 추가했습니다.
+
+측정 결과:
+- 3회 profile의 기능 invariant는 모두 통과했습니다.
+- 중앙값은 idle CPU 3.53%, active CPU 1.39%, key 50ms, switch 314ms, archive 369ms, restore 1671ms였습니다.
+- v0.6.3 대비 CPU와 restore는 크게 개선됐고, archive도 개선됐지만 idle/key/archive 절대 목표가 남아 v0.6.4 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.4 최종화 작업 결과
+
+작업 결정:
+- 1초 idle polling은 key wake-up을 악화시켜 기본값으로 채택하지 않았습니다.
+- key metric은 10ms capture polling으로 측정 해상도를 높였습니다.
+- 선택 row render와 archive metadata 경로의 잔여 subprocess/IPC를 줄였습니다.
+
+결과:
+- 전체 sidebar gradient/lifecycle 회귀와 정적 검증은 통과했습니다.
+- 단일 관측은 idle CPU 2.19%, active CPU 2.23%, key 48ms, archive 367ms, restore 1834ms였습니다.
+- 반복 profile은 tmux harness의 `baseline-2` 소실 및 sidebar close race로 안정적으로 3회를 완료하지 못했습니다.
+- 따라서 v0.6.4 승격은 보류하고, 다음 작업은 profile harness lifecycle 안정화부터 진행합니다.
+
+## 2026-07-17 - v0.6.5 개발 진행 결과
+
+작업 결정:
+- restore 직후 sidebar readiness와 대상 pane 재탐색을 profile에 추가했습니다.
+- session/pane 명시 toggle CLI를 추가하고 key/archive trace를 opt-in으로 연결했습니다.
+- run-shell context의 target ambiguity를 줄이기 위해 profile lifecycle 조작을 전용 socket pane 기준으로 분리했습니다.
+
+결과:
+- 전체 sidebar gradient/lifecycle 회귀와 정적 검증은 통과했습니다.
+- 단일 profile은 전체 layout/grid/cursor invariant까지 완료했습니다.
+- 반복 3회 profile에서는 sidebar close race가 남아 v0.6.5 승격 report/tag 생성은 보류합니다.
+
+## 2026-07-17 - v0.6.5 결과 재측정
+
+작업 결과:
+- restore sidebar를 대상 session에 직접 ensure하도록 수정했습니다.
+- profile의 layout lifecycle을 별도 sleep pane fixture로 분리해 launcher restore race와 tmux pane invariant를 분리했습니다.
+- 3회 profile이 모두 lifecycle/invariant를 통과했습니다.
+
+측정 결과:
+- idle CPU 2.26%, active CPU 1.11%, key latency 49ms
+- session switch 227ms, archive 342ms, restore 1408ms
+- key latency를 제외한 절대 목표와 기능 invariant는 모두 통과했습니다.
+- `tests/profile-reports/v0.6.5.md`에 결과를 기록했으며 key 목표 미달로 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.5(v6.5) 승격
+
+사용자 의도:
+- lifecycle race 제거 후 재측정된 결과를 v0.6.5로 올리고 주요 사항을 기록합니다.
+
+결정:
+- 기능 invariant와 lifecycle 안정성, CPU·switch·archive·restore 목표를 통과한 현재 결과를 v0.6.5 안정 기준으로 승격합니다.
+- key latency 49ms는 목표 40ms를 초과하므로 후속 성능 개선 항목으로 명시적으로 남깁니다.
+
+결과:
+- `v0.6.5` tag를 생성합니다.
+- README, AGENTS, profile report에 현재 안정 버전과 예외 사항을 반영합니다.

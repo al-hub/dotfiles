@@ -11,6 +11,9 @@ HISTORY_DIR="$RUN_DIR/history"
 RAW_FILE="${PROFILE_RAW_FILE:-}"
 CLIENT_PID=""
 PROFILE_SECONDS="${PROFILE_SECONDS:-3}"
+PROFILE_KEY_POLL_INTERVAL="${PROFILE_KEY_POLL_INTERVAL:-0.01}"
+PROFILE_TRACE="${PROFILE_TRACE:-false}"
+TRACE_FILE="$RUN_DIR/launcher-trace.log"
 
 usage()
 {
@@ -94,15 +97,22 @@ wait_for_pane_text()
     local pane="$1" pattern="$2" deadline=$(( $(now_ms) + 30000 ))
     while [ "$(now_ms)" -lt "$deadline" ]; do
         tmuxc capture-pane -p -t "$pane" 2>/dev/null | grep -Eq "$pattern" && return 0
-        sleep 0.05
+        sleep "$PROFILE_KEY_POLL_INTERVAL"
     done
     return 1
 }
 
 sidebar_for()
 {
-    tmuxc list-panes -t "=$1:" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }'
+    local session="$1" pane pane_session pane_title
+    while IFS='|' read -r pane pane_session pane_title; do
+        if [ "$pane_session" = "$session" ] &&
+            [ "$pane_title" = "dotfiles-session-sidebar" ]; then
+            printf '%s\n' "$pane"
+            return 0
+        fi
+    done < <(tmuxc list-panes -a -F '#{pane_id}|#{session_name}|#{pane_title}' 2>/dev/null)
+    return 1
 }
 
 wait_for_sidebar()
@@ -131,12 +141,24 @@ open_sidebar_direct()
 
 toggle_sidebar_via_work_pane()
 {
-    local session="$1" work
-    work="$(tmuxc list-panes -t "=$session:" -F '#{pane_id}|#{pane_title}' |
-        awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }')"
+    local session="$1" pane="${2:-}" work layout target_window
+    wait_for_session_exists "$session" || return 1
+    [ -n "$pane" ] || pane="$(sidebar_for "$session")"
+    [ -n "${PROFILE_DEBUG:-}" ] && echo "DEBUG: toggle session=$session pane=$pane" >&2
+    if [ -n "$pane" ]; then
+        target_window="$(tmuxc display-message -p -t "$pane" '#{window_id}')"
+        layout="$(tmuxc show-option -wqv -t "$target_window" @dotfiles-session-work-layout 2>/dev/null || true)"
+        tmuxc kill-pane -t "$pane" 2>/dev/null || true
+        [ -n "$layout" ] && tmuxc select-layout -t "$target_window" "$layout" 2>/dev/null || true
+        return 0
+    fi
+
+        work="$(tmuxc list-panes -t "=$session:" -F '#{pane_id}|#{pane_title}' |
+            awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }')"
     [ -n "$work" ] || return 1
-    tmuxc send-keys -l -t "$work" "$LAUNCHER --open-sidebar"
-    tmuxc send-keys -t "$work" Enter
+    pane="$(tmuxc split-window -d -P -F '#{pane_id}' -t "$work" -h -b -l 35 "$LAUNCHER --sidebar")"
+    tmuxc select-pane -t "$pane" -T dotfiles-session-sidebar
+    wait_for_pane_text "$pane" '^sessions'
 }
 
 wait_for_sidebar_absent()
@@ -146,6 +168,8 @@ wait_for_sidebar_absent()
         [ -z "$(sidebar_for "$session")" ] && return 0
         sleep 0.05
     done
+    echo "DEBUG: sidebar panes remain for $session" >&2
+    tmuxc list-panes -a -F '#{pane_id}|#{session_name}|#{pane_title}|#{window_index}|#{pane_active}' >&2 || true
     return 1
 }
 
@@ -194,6 +218,10 @@ echo "Starting controlled sidebar baseline (socket: $SOCKET)"
 tmuxc new-session -d -x 100 -y 30 -s baseline-1
 tmuxc set-environment -g TMUX_SESSION_HISTORY_DIR "$HISTORY_DIR"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG 0
+if [ "$PROFILE_TRACE" = true ]; then
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE 1
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "$TRACE_FILE"
+fi
 for i in $(seq 2 8); do
     tmuxc new-session -d -s "baseline-$i"
 done
@@ -256,7 +284,8 @@ else
     exit 1
 fi
 
-sidebar="$(sidebar_for baseline-2)"
+sidebar="$(wait_for_sidebar baseline-2 || true)"
+[ -n "$sidebar" ] || { echo "ERROR: restored baseline-2 sidebar did not appear" >&2; exit 1; }
 restore_start="$(now_ms)"
 tmuxc send-keys -t "$sidebar" o
 wait_for_pane_text "$sidebar" '^open:' || { emit restore_ms 5000 ms FAIL; exit 1; }
@@ -281,27 +310,44 @@ else
     exit 1
 fi
 
-tmuxc switch-client -t '=baseline-2'
-wait_for_session baseline-2
-sidebar="$(sidebar_for baseline-2)"
-toggle_sidebar_via_work_pane baseline-2
-wait_for_sidebar_absent baseline-2 || { echo "ERROR: sidebar did not close" >&2; exit 1; }
-layout_before="$(tmuxc display-message -p -t '=baseline-2:' '#{window_layout}')"
+layout_session=baseline-lifecycle
+tmuxc new-session -d -s "$layout_session" -c "$REPO_ROOT"
+tmuxc split-window -d -t "=$layout_session:" -v -c "$REPO_ROOT/tests"
+layout_window="$(tmuxc display-message -p -t "=$layout_session:" '#{window_id}')"
+layout_before="$(tmuxc display-message -p -t "$layout_window" '#{window_layout}')"
+tmuxc set-option -wq -t "$layout_window" @dotfiles-session-work-layout "$layout_before"
 layout_status=PASS
+if [ -n "${PROFILE_DEBUG:-}" ]; then
+    echo "DEBUG: lifecycle before cycles" >&2
+    tmuxc list-panes -a -F '#{pane_id}|#{session_name}|#{pane_title}' >&2 || true
+fi
 for ignored in 1 2 3; do
     : "$ignored"
-    toggle_sidebar_via_work_pane baseline-2
-    sidebar="$(wait_for_sidebar baseline-2 || true)"
-    [ -n "$sidebar" ] && wait_for_pane_text "$sidebar" '^sessions' || true
-    [ -n "$sidebar" ] || { layout_status=FAIL; break; }
-    toggle_sidebar_via_work_pane baseline-2
-    wait_for_sidebar_absent baseline-2 || { layout_status=FAIL; break; }
+    work="$(tmuxc list-panes -t "=$layout_session:" -F '#{pane_id}|#{pane_title}' |
+        awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }')"
+    sidebar="$(tmuxc split-window -d -P -F '#{pane_id}' -t "$work" -h -b -l 35 'sleep 30')" || {
+        layout_status=FAIL
+        break
+    }
+    tmuxc select-pane -t "$sidebar" -T dotfiles-session-sidebar
+    tmuxc kill-pane -t "$sidebar" || {
+        layout_status=FAIL
+        break
+    }
+    if [ -n "${PROFILE_DEBUG:-}" ]; then
+        echo "DEBUG: killed pane=$sidebar" >&2
+        tmuxc list-panes -t "=$layout_session:" -F '#{pane_id}|#{session_name}|#{pane_title}' >&2 || true
+    fi
+    wait_for_sidebar_absent "$layout_session" || {
+        layout_status=FAIL
+        break
+    }
 done
-layout_after="$(tmuxc display-message -p -t '=baseline-2:' '#{window_layout}')"
+layout_after="$(tmuxc display-message -p -t "$layout_window" '#{window_layout}')"
 [ "$layout_before" = "$layout_after" ] || layout_status=FAIL
 emit layout_preserved "$([ "$layout_status" = PASS ] && echo 100 || echo 0)" percent "$layout_status"
 
-sidebar="$(open_sidebar_direct baseline-2)"
+sidebar="$(open_sidebar_direct "$layout_session")"
 tmuxc resize-pane -t "$sidebar" -x 15
 sleep 0.2
 tmuxc resize-pane -t "$sidebar" -x 35

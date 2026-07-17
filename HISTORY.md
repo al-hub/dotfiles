@@ -2919,3 +2919,102 @@
 
 후속 주의:
 - idle/active CPU, key latency, archive, restore 절대 목표는 아직 미달이며 다음 성능 개선에서 계속 추적합니다.
+
+## 2026-07-17 - v0.6.3 sidebar 성능개선 후보
+
+요약:
+- 입력·tick 처리 경계를 정리하고 선택 session 중심의 상태 갱신을 유지하도록 했습니다.
+- pane activity와 PID를 snapshot cache에 보관해 변경이 없는 active pane의 fingerprint/process probe를 조건부로 생략합니다.
+- restore 직후 sidebar 보장을 background `run-shell`로 넘겨 session 전환 경로를 비동기화했습니다.
+- lifecycle race를 보정하고 v0.6.3 profile report를 추가했습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검사 및 `git diff --check`: PASS
+- 독립 3회 profile 기능 invariant: PASS
+- 중앙값: idle CPU 18.06%, active CPU 16.91%, key 133ms, switch 316ms, archive 393ms, restore 2021ms
+
+판정:
+- restore와 session switch는 목표를 통과하고 archive는 v0.6.2 대비 개선됐지만, idle/active CPU·key latency·archive 절대 목표는 아직 미달입니다.
+- 현재 checkout은 v0.6.2 안정 버전을 유지하고 v0.6.3 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.4 sidebar 성능개선 후보
+
+요약:
+- 렌더 함수의 잔여 geometry command substitution을 제거했습니다.
+- passive shell pane에는 process-tree/AI probe를 수행하지 않고, 선택 session의 pane command signature가 변할 때만 fallback scan을 실행합니다.
+- 입력·렌더 구간 trace instrumentation을 추가했습니다(`TMUX_SESSION_LAUNCHER_TRACE=1`).
+- archive 경로의 안전한 session명 처리와 timestamp subprocess를 줄였습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검사 및 `git diff --check`: PASS
+- 독립 3회 profile 기능 invariant: PASS
+- 중앙값: idle CPU 3.53%, active CPU 1.39%, key 50ms, switch 314ms, archive 369ms, restore 1671ms
+
+판정:
+- active CPU, session switch, restore 및 모든 기능 invariant는 목표를 통과했습니다.
+- idle CPU, key latency, archive는 목표에 근접했지만 아직 미달하여 v0.6.4 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.4 최종화 후속 작업
+
+요약:
+- key profile의 capture-pane polling 간격을 10ms로 낮춰 측정 해상도를 높였습니다.
+- 선택 행 갱신에서 row line/mark/age command substitution을 제거했습니다.
+- archive window snapshot에 session creation time을 포함해 별도 metadata IPC를 제거했습니다.
+- 1초 idle interval 실험은 PTY wake-up 지연으로 인해 rollback하고 기존 150ms 기본값을 유지했습니다.
+
+검증:
+- 정적 검사 및 `git diff --check`: PASS
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 단일 profile 관측: idle CPU 2.19%, active CPU 2.23%, key 48ms, archive 367ms, restore 1834ms
+
+판정:
+- 최종 3회 profile은 `baseline-2` 소실과 sidebar close race로 완료되지 않아 새 수치를 승격 기준으로 사용하지 않았습니다.
+- v0.6.4 report는 마지막으로 완료된 독립 3회 결과를 유지하며 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.5 개발 진행
+
+요약:
+- profile lifecycle에서 restore 직후 sidebar 준비를 기다리고, toggle 대상 pane을 매번 재탐색하도록 보강했습니다.
+- launcher에 `--toggle-sidebar-session`과 `--toggle-sidebar-pane` 명시 대상 경로를 추가했습니다.
+- key selection과 archive phase trace를 opt-in으로 추가했습니다.
+- profile key polling은 10ms로 유지하고, archive/session lifecycle 관측을 분리했습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검사 및 `git diff --check`: PASS
+- 단일 profile은 layout/grid/cursor invariant까지 완료한 run이 확인됐습니다.
+
+판정:
+- 반복 profile에서 sidebar close race가 계속 재현되어 안정적인 3회 결과는 아직 생성하지 않았습니다.
+- v0.6.5 report/tag 승격은 profile lifecycle 안정화 후 진행합니다.
+
+## 2026-07-17 - v0.6.5 profile lifecycle 안정화 및 결과
+
+요약:
+- restore 대상 session ensure를 current-client 의존 경로에서 session 명시 경로로 분리했습니다.
+- profile lifecycle fixture를 launcher pane과 분리된 순수 tmux sleep pane으로 구성해 split/kill/layout invariant를 deterministic하게 측정했습니다.
+- key trace와 archive trace는 opt-in instrumentation으로 유지하고 기본 profile overhead는 배제했습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검사 및 `git diff --check`: PASS
+- 독립 3회 profile lifecycle/invariant: PASS
+- 중앙값: idle CPU 2.26%, active CPU 1.11%, key 49ms, switch 227ms, archive 342ms, restore 1408ms
+
+판정:
+- idle/active CPU, switch, archive, restore 및 모든 기능 invariant는 목표를 통과했습니다.
+- key latency만 49ms로 목표 40ms에 미달하여 v0.6.5 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.5(v6.5) 승격
+
+요약:
+- lifecycle race를 제거하고 restore 대상 session ensure를 명시적으로 수행하도록 안정화했습니다.
+- 전용 sleep pane fixture로 split/kill/layout invariant를 분리 검증해 profile의 pane lifecycle 재등장 문제를 제거했습니다.
+- 3회 profile 중앙값 기준 idle CPU 2.26%, active CPU 1.11%, session switch 227ms, archive 342ms, restore 1408ms를 기록했습니다.
+
+판정:
+- sidebar gradient/lifecycle 회귀, layout/grid/cursor invariant 및 위 성능 항목은 PASS입니다.
+- key latency는 49ms로 40ms 목표를 소폭 초과하지만, 결과와 후속 과제를 명시한 상태로 v0.6.5를 안정 기준으로 승격합니다.
+- `v0.6.5` tag를 생성하고 v0.6.5 profile report를 기준 문서로 보관합니다.

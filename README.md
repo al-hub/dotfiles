@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.2`이며, 사용자는 `--v v0.6.2`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.5`이며, 사용자는 `--v v0.6.5`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.5는 lifecycle/invariant와 대부분의 성능 목표를 통과했으며, key latency 49ms(목표 40ms)는 후속 개선 과제로 추적합니다.
 
 ## 로컬 개발 및 테스트 설치
 
