@@ -5,8 +5,9 @@ SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
 SIDEBAR_ANIMATION_ENABLED="${TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED:-true}"
-SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.08}"
+SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.15}"
 SIDEBAR_STATE_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_STATE_REFRESH_SECONDS:-5}"
+SIDEBAR_FORCE_REFRESH_CHECK_SECONDS="${TMUX_SESSION_SIDEBAR_FORCE_REFRESH_CHECK_SECONDS:-5}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
@@ -26,6 +27,7 @@ declare -A session_activity_age_cache=()
 declare -A session_has_busy_command=()
 declare -A session_ai_probe_pane_ids=()
 declare -A session_ai_direct_pane_id=()
+declare -A cached_session_panes_snapshot=()
 declare -A session_ai_stable_count=()
 declare -A previous_session_animate=()
 declare -a session_animate=()
@@ -47,13 +49,19 @@ history_scroll_offset=0
 last_width=0
 old_pane_width=""
 old_pane_height=""
+cached_pane_width=""
+cached_pane_height=""
 old_client_sessions=""
+cached_panes_snapshot=""
+topology_cache_initialized=false
 last_height=0
 stty_state=""
 prompt_result=""
 prompt_cancelled=false
 view_mode="sessions"
 animation_frame=0
+animation_tick_counter=0
+key_result=""
 full_render_required=false
 sidebar_session_cached=""
 last_force_refresh_check_epoch=""
@@ -179,6 +187,44 @@ prepare_window_for_archive()
     fi
 
     tmux display-message -p -t "$target" '#{window_layout}' 2>/dev/null || true
+}
+
+prepare_window_for_archive_snapshot()
+{
+    local target="$1"
+    local window_index="$2"
+    local window_layout="$3"
+    local work_layout=""
+    local work_pane_count=0
+    local layout_pane_count_value=0
+    local sidebar_present=false
+    local pane_session pane_index pane_path pane_command pane_title
+
+    while IFS="$(printf '\t')" read -r pane_session pane_index pane_path pane_command pane_title; do
+        [ "$pane_session" = "$target" ] || continue
+        if [ "$pane_title" = "$SIDEBAR_TITLE" ]; then
+            sidebar_present=true
+        else
+            work_pane_count=$((work_pane_count + 1))
+        fi
+    done <<EOF
+$archive_panes_snapshot
+EOF
+
+    if [ "$sidebar_present" = "true" ]; then
+        work_layout="$(tmux show-option -wqv -t "$target" "$WORK_LAYOUT_OPTION" 2>/dev/null || true)"
+        if [ -n "$work_layout" ]; then
+            layout_pane_count_value="$(layout_pane_count "$work_layout")"
+            if [ "$work_pane_count" = "$layout_pane_count_value" ]; then
+                printf '%s\n' "$work_layout"
+                return 0
+            fi
+        fi
+        printf '\n'
+        return 0
+    fi
+
+    printf '%s\n' "$window_layout"
 }
 
 layout_pane_count()
@@ -505,11 +551,8 @@ switch_session()
     width="$(sidebar_width)"
     ensure_session_sidebar "$session_name" "false" "$width"
     tmux set-option -g "@sidebar_force_refresh_$session_name" 1 2>/dev/null || true
-    wait_for_sidebar_refresh "$session_name"
     tmux switch-client -t "=$session_name" 2>/dev/null || true
     tmux set-option -g "@sidebar_force_refresh_$session_name" 1 2>/dev/null || true
-    wait_for_sidebar_refresh "$session_name"
-    ensure_session_sidebar "$session_name" "false" "$width"
     current_session="$session_name"
     selected_session="$session_name"
 }
@@ -587,6 +630,28 @@ EOF
         debug_log "timing pane_has_ai_cli_process pane_id=$pane_id result=miss us=$(( timing_end - timing_start ))"
     fi
     return 1
+}
+
+pane_ai_process_alive()
+{
+    local pane_id_value="$1"
+    local pane_pid_value=""
+    local proc_cmdline=""
+
+    pane_pid_value="$(tmux display-message -p -t "$pane_id_value" '#{pane_pid}' 2>/dev/null || true)"
+    [ -n "$pane_pid_value" ] || return 0
+    kill -0 "$pane_pid_value" 2>/dev/null || return 1
+
+    if [ -r "/proc/$pane_pid_value/cmdline" ]; then
+        IFS= read -r -d '' proc_cmdline < "/proc/$pane_pid_value/cmdline" || true
+        case "$proc_cmdline" in
+            *codex*|*claude*|*gemini*|*opencode*|*ollama*|*agy*) return 0 ;;
+        esac
+        pane_has_ai_cli_process "$pane_id_value"
+        return $?
+    fi
+
+    return 0
 }
 
 session_ai_pane_for_session()
@@ -700,23 +765,36 @@ session_activity_age()
 session_cli_state_for_session()
 {
     session_name="$1"
+    probe_processes="${2:-false}"
     session_cli_state_result=""
     session_ai_fingerprint_result=""
 
     pane_id="${session_ai_direct_pane_id[$session_name]:-}"
 
     if [ -n "$pane_id" ]; then
-        fingerprint="$(session_ai_fingerprint_for_pane "$pane_id")"
-        if [ -n "$fingerprint" ]; then
-            session_ai_fingerprint["$session_name"]="$fingerprint"
-            session_cli_state_result="active"
-            session_ai_fingerprint_result="$fingerprint"
-            return 0
+        direct_process_alive=true
+        if [ "$probe_processes" = "true" ]; then
+            pane_pid="$(tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
+            if [ -n "$pane_pid" ] && ! pane_ai_process_alive "$pane_id"; then
+                direct_process_alive=false
+            fi
+        fi
+        if [ "$direct_process_alive" = "true" ]; then
+            fingerprint="$(session_ai_fingerprint_for_pane "$pane_id")"
+            if [ -n "$fingerprint" ]; then
+                session_ai_fingerprint["$session_name"]="$fingerprint"
+                session_cli_state_result="active"
+                session_ai_fingerprint_result="$fingerprint"
+                return 0
+            fi
+        else
+            unset 'session_ai_direct_pane_id[$session_name]'
+            session_ai_fingerprint["$session_name"]=""
         fi
     fi
 
     probe_ids="${session_ai_probe_pane_ids[$session_name]:-}"
-    if [ -n "$probe_ids" ]; then
+    if [ "$probe_processes" = "true" ] && [ -n "$probe_ids" ]; then
         while IFS= read -r probe_pane_id; do
             [ -n "$probe_pane_id" ] || continue
             if pane_has_ai_cli_process "$probe_pane_id"; then
@@ -778,7 +856,7 @@ format_duration()
 session_age()
 {
     created="$1"
-    now="$(epoch_now)"
+    now="${EPOCHSECONDS:-$SECONDS}"
 
     case "$created" in
         ''|*[!0-9]*) created="$now" ;;
@@ -787,22 +865,49 @@ session_age()
     format_duration "$((now - created))"
 }
 
+session_age_value()
+{
+    local created_value="$1"
+    local now_value="${EPOCHSECONDS:-$SECONDS}"
+    case "$created_value" in
+        ''|*[!0-9]*) created_value="$now_value" ;;
+    esac
+    duration_elapsed=$((now_value - created_value))
+    [ "$duration_elapsed" -lt 0 ] && duration_elapsed=0
+    duration_days=$((duration_elapsed / 86400))
+    duration_remain=$((duration_elapsed % 86400))
+    duration_hours=$((duration_remain / 3600))
+    duration_remain=$((duration_remain % 3600))
+    duration_minutes=$((duration_remain / 60))
+    duration_seconds=$((duration_remain % 60))
+    printf -v session_age_result '%d:%02d:%02d:%02d' \
+        "$duration_days" "$duration_hours" "$duration_minutes" "$duration_seconds"
+}
+
 pane_width()
 {
-    if [ -n "$SELF_PANE" ]; then
-        tmux display-message -p -t "$SELF_PANE" '#{pane_width}' 2>/dev/null || printf '35\n'
-    else
-        tmux display-message -p '#{pane_width}' 2>/dev/null || printf '35\n'
-    fi
+    printf '%s\n' "${cached_pane_width:-35}"
 }
 
 pane_height()
 {
+    printf '%s\n' "${cached_pane_height:-20}"
+}
+
+update_pane_geometry()
+{
+    local width height
     if [ -n "$SELF_PANE" ]; then
-        tmux display-message -p -t "$SELF_PANE" '#{pane_height}' 2>/dev/null || printf '20\n'
+        width="$(tmux display-message -p -t "$SELF_PANE" '#{pane_width}' 2>/dev/null || printf '35')"
+        height="$(tmux display-message -p -t "$SELF_PANE" '#{pane_height}' 2>/dev/null || printf '20')"
     else
-        tmux display-message -p '#{pane_height}' 2>/dev/null || printf '20\n'
+        width="$(tmux display-message -p '#{pane_width}' 2>/dev/null || printf '35')"
+        height="$(tmux display-message -p '#{pane_height}' 2>/dev/null || printf '20')"
     fi
+    case "$width" in ''|*[!0-9]*) width=35 ;; esac
+    case "$height" in ''|*[!0-9]*) height=20 ;; esac
+    cached_pane_width="$width"
+    cached_pane_height="$height"
 }
 
 truncate_text()
@@ -867,8 +972,11 @@ collect_sessions()
     for s_name in "${!session_ai_direct_pane_id[@]}"; do
         previous_session_ai_direct_pane_id["$s_name"]="${session_ai_direct_pane_id[$s_name]}"
     done
-    local current_width="$(pane_width)"
-    local current_height="$(pane_height)"
+    # Sample geometry once per snapshot; render and animation helpers use only
+    # these cached values.
+    update_pane_geometry
+    local current_width="$cached_pane_width"
+    local current_height="$cached_pane_height"
     local resize_occurred=false
     if [ -n "$old_pane_width" ] && [ -n "$old_pane_height" ]; then
         if [ "$current_width" != "$old_pane_width" ] || [ "$current_height" != "$old_pane_height" ]; then
@@ -890,8 +998,11 @@ collect_sessions()
     if [ "$client_switch_occurred" = "true" ]; then
         full_render_required=true
     fi
-    local my_session=""
-    my_session="$(sidebar_session_name)"
+    local my_session="${sidebar_session_cached:-}"
+    if [ -z "$my_session" ]; then
+        my_session="$(sidebar_session_name)"
+        [ -n "$my_session" ] && sidebar_session_cached="$my_session"
+    fi
     [ -n "$my_session" ] ||
         my_session="$(tmux display-message -p '#S' -t "${TMUX_PANE:-}" 2>/dev/null || true)"
 
@@ -901,7 +1012,7 @@ collect_sessions()
     fi
 
     local is_my_session_attached=false
-    if [ -n "$my_session" ] && [ -n "$(tmux list-clients -t "$my_session" 2>/dev/null)" ]; then
+    if [ -n "$my_session" ] && printf '%s\n' "$client_sessions" | grep -F -x -q "$my_session"; then
         is_my_session_attached=true
     fi
 
@@ -939,13 +1050,40 @@ collect_sessions()
     if [ "$timing_enabled" = "1" ]; then
         list_sessions_start="$(debug_now_us)"
     fi
-    sessions_snapshot="$(tmux list-sessions -F '#{session_name}	#{session_created}' 2>/dev/null || true)"
+    sessions_snapshot="$(tmux list-sessions -F '#{session_name}	#{session_created}	#{session_activity}' 2>/dev/null || true)"
     if [ "$timing_enabled" = "1" ]; then
         timing_end="$(debug_now_us)"
         debug_log "timing collect_sessions list-sessions us=$(( timing_end - list_sessions_start )) count=$(printf '%s\n' "$sessions_snapshot" | sed '/^$/d' | wc -l)"
         list_panes_start="$(debug_now_us)"
     fi
-    panes_snapshot="$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}' 2>/dev/null || true)"
+    if [ "$topology_cache_initialized" != "true" ] || [ "$force_scan" = "true" ]; then
+        cached_session_panes_snapshot=()
+        panes_snapshot="$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}' 2>/dev/null || true)"
+        while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command; do
+            [ -n "$pane_session" ] || continue
+            if [ -n "${cached_session_panes_snapshot[$pane_session]:-}" ]; then
+                cached_session_panes_snapshot["$pane_session"]+=$'\n'
+            fi
+            cached_session_panes_snapshot["$pane_session"]+="$pane_session"$'\t'"$pane_id"$'\t'"$pane_title"$'\t'"$pane_command"
+        done <<EOF
+$panes_snapshot
+EOF
+        topology_cache_initialized=true
+    elif [ -n "$requested_scan_session" ]; then
+        cached_session_panes_snapshot["$requested_scan_session"]="$(
+            tmux list-panes -t "=$requested_scan_session:" \
+                -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}' \
+                2>/dev/null || true
+        )"
+    fi
+
+    panes_snapshot=""
+    for pane_session in "${!cached_session_panes_snapshot[@]}"; do
+        [ -n "${cached_session_panes_snapshot[$pane_session]:-}" ] || continue
+        [ -n "$panes_snapshot" ] && panes_snapshot+=$'\n'
+        panes_snapshot+="${cached_session_panes_snapshot[$pane_session]}"
+    done
+    cached_panes_snapshot="$panes_snapshot"
     if [ "$timing_enabled" = "1" ]; then
         timing_end="$(debug_now_us)"
         debug_log "timing collect_sessions list-panes us=$(( timing_end - list_panes_start )) count=$(printf '%s\n' "$panes_snapshot" | sed '/^$/d' | wc -l)"
@@ -979,9 +1117,11 @@ EOF
         parse_sessions_start="$(debug_now_us)"
     fi
 
-    while IFS="$(printf '\t')" read -r name created; do
+    while IFS="$(printf '\t')" read -r name created activity; do
         [ -n "$name" ] || continue
-        activity_age="$(session_activity_age "$name")"
+        case "$activity" in ''|*[!0-9]*) activity=0 ;; esac
+        activity_age=$((current_epoch_second - activity))
+        [ "$activity_age" -lt 0 ] && activity_age=0
         session_activity_age_cache["$name"]="$activity_age"
         status_value="$(session_status "$name")"
         cli_state_value=""
@@ -998,7 +1138,13 @@ EOF
             [ "$name" = "$requested_scan_session" ] ||
             [ "$pane_generation_changed" = "true" ] ||
             [ -z "${cached_session_cli_state[$name]:-}" ]; then
-            session_cli_state_for_session "$name"
+            probe_processes=false
+            if [ "$force_scan" = "true" ] ||
+                [ "$name" = "$requested_scan_session" ] ||
+                [ -z "${cached_session_cli_state[$name]:-}" ]; then
+                probe_processes=true
+            fi
+            session_cli_state_for_session "$name" "$probe_processes"
             cached_session_cli_state["$name"]="$session_cli_state_result"
             cached_session_ai_fingerprint["$name"]="$session_ai_fingerprint_result"
         fi
@@ -1312,11 +1458,11 @@ render_history()
 
 print_session_name()
 {
-    name="$1"
-    width="$2"
-    animate="$3"
+    local name="$1"
+    local width="$2"
+    local animate="$3"
     seed="${4:-0}"
-    text="$(truncate_text "$name" "$width")"
+    text="${name:0:width}"
     text_width="${#text}"
     padding=$((width - text_width))
 
@@ -1393,14 +1539,21 @@ render_row()
 
 render_animated_name_cells()
 {
-    visible_rows="$(session_visible_rows)"
+    local height="${cached_pane_height:-20}"
+    local visible_rows=$((height - 3))
     [ "$visible_rows" -lt 1 ] && visible_rows=1
-    end=$((scroll_offset + visible_rows))
+    local end=$((scroll_offset + visible_rows))
     index="$scroll_offset"
 
     while [ "$index" -lt "$end" ] && [ "$index" -lt "${#session_names[@]}" ]; do
         if [ "${session_animate[$index]}" = "true" ]; then
-            render_session_name_cell "$index"
+            line=$((2 + index - scroll_offset))
+            width="${cached_pane_width:-35}"
+            name_width=$((width - 2 - 1 - 10 - 2))
+            [ "$name_width" -lt 1 ] && name_width=1
+            move_cursor "$line" 4
+            print_session_name "${session_names[$index]}" "$name_width" \
+                "${session_animate[$index]}" "${session_animation_seed[$index]}"
         fi
         index=$((index + 1))
     done
@@ -1408,7 +1561,7 @@ render_animated_name_cells()
 
 refresh_sidebar_state_if_due()
 {
-    now_epoch="$(epoch_now)"
+    now_epoch="${EPOCHSECONDS:-$SECONDS}"
     if [ -z "${last_state_refresh_epoch:-}" ] ||
         [ $((now_epoch - last_state_refresh_epoch)) -ge "$SIDEBAR_STATE_REFRESH_SECONDS" ]; then
         refresh_if_needed
@@ -1465,17 +1618,18 @@ render_full()
 render_age_cells()
 {
     index="$scroll_offset"
-    visible_rows="$(session_visible_rows)"
+    height="${cached_pane_height:-20}"
+    visible_rows=$((height - 3))
     [ "$visible_rows" -lt 1 ] && visible_rows=1
     end=$((scroll_offset + visible_rows))
-    width="$(pane_width)"
+    width="${cached_pane_width:-35}"
     [ "$width" -lt 16 ] && return 0
 
     while [ "$index" -lt "$end" ] && [ "$index" -lt "${#session_names[@]}" ]; do
-        line="$(row_screen_line "$index")"
-        age="$(session_age "${session_created[$index]}")"
+        line=$((2 + index - scroll_offset))
+        session_age_value "${session_created[$index]}"
         move_cursor "$line" "$((width - 10))"
-        printf '%s' "$age"
+        printf '%s' "$session_age_result"
         index=$((index + 1))
     done
 }
@@ -1533,6 +1687,7 @@ setup_terminal()
     stty_state="$(stty -g 2>/dev/null || true)"
     stty -echo -icanon time 0 min 0 2>/dev/null || true
     trap restore_terminal EXIT INT TERM
+    trap 'update_pane_geometry; full_render_required=true' WINCH
 }
 
 prompt_line()
@@ -1690,36 +1845,53 @@ archive_session()
 
     mkdir -p "$HISTORY_DIR"
     stamp="$(date +%Y%m%d-%H%M%S)"
-    window_count="$(archivable_window_count "$session_name")"
-    file_name="${stamp}-$(safe_file_part "$session_name")-${window_count}w.tsv"
-    archive_path="$HISTORY_DIR/$file_name"
+    archive_base="${stamp}-$(safe_file_part "$session_name")"
+    archive_path="$HISTORY_DIR/${archive_base}-pending.tsv"
+    archive_panes_snapshot="$(tmux list-panes -t "=$session_name:" \
+        -F '#{session_name}	#{window_index}	#{pane_index}	#{pane_current_path}	#{pane_current_command}	#{pane_title}' \
+        2>/dev/null || true)"
 
     {
         printf 'version\t1\n'
         printf 'session\t%s\n' "$session_name"
         printf 'archived_at\t%s\n' "$(date +%s)"
         printf 'created\t%s\n' "$(tmux display-message -p -t "=$session_name:" '#{session_created}' 2>/dev/null || printf '')"
+        windows_snapshot="$(tmux list-windows -t "=$session_name:" \
+            -F '#{window_index}	#{window_name}	#{window_active}	#{window_layout}' 2>/dev/null || true)"
+        window_count=0
         while IFS="$(printf '\t')" read -r window_index window_name window_active window_layout; do
-            if ! tmux list-panes -t "=$session_name:$window_index" -F '#{pane_title}' 2>/dev/null |
-                awk -v title="$SIDEBAR_TITLE" '$0 != title { found = 1 } END { exit found ? 0 : 1 }'; then
-                continue
-            fi
-            window_layout="$(prepare_window_for_archive "=$session_name:$window_index")"
+            [ -n "$window_index" ] || continue
+            window_pane_count=0
+            while IFS="$(printf '\t')" read -r pane_session pane_window_index pane_index pane_path pane_command pane_title; do
+                [ "$pane_session" = "=$session_name:" ] || [ "$pane_session" = "$session_name" ] || continue
+                [ "$pane_window_index" = "$window_index" ] || continue
+                [ "$pane_title" = "$SIDEBAR_TITLE" ] || window_pane_count=$((window_pane_count + 1))
+            done <<EOF
+$archive_panes_snapshot
+EOF
+            [ "$window_pane_count" -gt 0 ] || continue
+            window_count=$((window_count + 1))
+            window_layout="$(prepare_window_for_archive_snapshot "$session_name" "$window_index" "$window_layout")"
             printf 'window\t%s\t%s\t%s\t%s\n' "$window_index" "$window_name" "$window_active" "$window_layout"
-            while IFS="$(printf '\t')" read -r pane_index pane_path pane_command pane_title; do
+            while IFS="$(printf '\t')" read -r pane_session pane_window_index pane_index pane_path pane_command pane_title; do
+                [ "$pane_session" = "=$session_name:" ] || [ "$pane_session" = "$session_name" ] || continue
+                [ "$pane_window_index" = "$window_index" ] || continue
                 [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
                 printf 'pane\t%s\t%s\t%s\n' "$pane_index" "$pane_path" "$pane_command"
             done <<EOF
-$(tmux list-panes -t "=$session_name:$window_index" -F '#{pane_index}	#{pane_current_path}	#{pane_current_command}	#{pane_title}' 2>/dev/null)
+$archive_panes_snapshot
 EOF
             printf 'endwindow\n'
         done <<EOF
-$(tmux list-windows -t "=$session_name:" -F '#{window_index}	#{window_name}	#{window_active}	#{window_layout}' 2>/dev/null)
+$windows_snapshot
 EOF
         archive_shell_history
     } > "$archive_path"
 
-    printf '%s\n' "$archive_path"
+    final_path="$HISTORY_DIR/${archive_base}-${window_count}w.tsv"
+    mv "$archive_path" "$final_path"
+
+    printf '%s\n' "$final_path"
 }
 
 archive_all_sessions()
@@ -1859,6 +2031,7 @@ restore_archive()
     window_layout=""
     created_target=""
     pane_id=""
+    restored_work_pane_ids=""
 
     while IFS="$(printf '\t')" read -r record a b c d; do
         case "$record" in
@@ -1882,28 +2055,31 @@ restore_archive()
                 pane_path="$b"
                 [ -d "$pane_path" ] || pane_path="$HOME"
                 if [ "$created" = "false" ]; then
-                    created_target="$(
-                        tmux new-session -d -P -F '#{window_id}' \
+                    new_target="$(
+                        tmux new-session -d -P -F '#{window_id}|#{pane_id}' \
                             -s "$restore_name" -n "$current_window" -c "$pane_path"
                     )"
+                    IFS='|' read -r created_target pane_id <<< "$new_target"
                     current_window_target="$created_target"
-                    pane_id="$(tmux list-panes -t "$current_window_target" -F '#{pane_id}' 2>/dev/null | head -n 1)"
                     current_window_pane_ids="${pane_id#%}"
+                    restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
                     created=true
                     first_window=false
                     first_pane_in_window=false
                 elif [ "$first_pane_in_window" = "true" ]; then
-                    created_target="$(
-                        tmux new-window -P -F '#{window_id}' \
+                    new_target="$(
+                        tmux new-window -P -F '#{window_id}|#{pane_id}' \
                             -t "=$restore_name:" -n "$current_window" -c "$pane_path"
                     )"
+                    IFS='|' read -r created_target pane_id <<< "$new_target"
                     current_window_target="$created_target"
-                    pane_id="$(tmux list-panes -t "$current_window_target" -F '#{pane_id}' 2>/dev/null | head -n 1)"
                     current_window_pane_ids="${pane_id#%}"
+                    restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
                     first_pane_in_window=false
                 else
                     pane_id="$(tmux split-window -P -F '#{pane_id}' -t "$current_window_target" -c "$pane_path")"
                     current_window_pane_ids="${current_window_pane_ids}${current_window_pane_ids:+ }${pane_id#%}"
+                    restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
                 fi
                 ;;
             endwindow)
@@ -1927,10 +2103,8 @@ restore_archive()
     width="$(sidebar_width)"
     ensure_session_sidebar "$restore_name" "true" "$width" "true"
     tmux switch-client -t "=$restore_name" 2>/dev/null || true
-    ensure_session_sidebar "$restore_name" "false" "$width" "true"
+    tmux set-option -g "@sidebar_force_refresh_$restore_name" 1 2>/dev/null || true
     current_session="$restore_name"
-    sleep 0.1
-    clear_restored_work_panes "$restore_name"
 }
 
 restore_selected_archives()
@@ -2116,6 +2290,7 @@ read_key()
     timeout="${1:-0.2}"
     key=""
     rest=""
+    key_result=""
 
     if ! IFS= read -rsn1 -t "$timeout" key; then
         return 1
@@ -2124,25 +2299,25 @@ read_key()
     if [ "$key" = $'\033' ]; then
         IFS= read -rsn2 -t 0.01 rest || true
         case "$rest" in
-            '[A') printf '%s\n' up ;;
-            '[B') printf '%s\n' down ;;
-            '') printf '%s\n' esc ;;
-            *) printf '%s\n' other ;;
+            '[A') key_result=up ;;
+            '[B') key_result=down ;;
+            '') key_result=esc ;;
+            *) key_result=other ;;
         esac
         return 0
     fi
 
     case "$key" in
-        j) printf '%s\n' down ;;
-        k) printf '%s\n' up ;;
-        c) printf '%s\n' create ;;
-        r) printf '%s\n' rename ;;
-        d) printf '%s\n' delete ;;
-        o) printf '%s\n' history ;;
-        ' ') printf '%s\n' mark ;;
-        q) printf '%s\n' quit ;;
-        ''|$'\n'|$'\r') printf '%s\n' enter ;;
-        *) printf '%s\n' other ;;
+        j) key_result=down ;;
+        k) key_result=up ;;
+        c) key_result=create ;;
+        r) key_result=rename ;;
+        d) key_result=delete ;;
+        o) key_result=history ;;
+        ' ') key_result=mark ;;
+        q) key_result=quit ;;
+        ''|$'\n'|$'\r') key_result=enter ;;
+        *) key_result=other ;;
     esac
 }
 
@@ -2246,7 +2421,8 @@ run_tui()
     last_force_refresh_check_epoch="$last_tick"
 
     while true; do
-        key="$(read_key "$SIDEBAR_POLL_TIMEOUT" || true)"
+        read_key "$SIDEBAR_POLL_TIMEOUT" || true
+        key="$key_result"
 
         case "$key" in
             up)
@@ -2315,13 +2491,20 @@ run_tui()
                 ;;
         esac
 
-        now="$(epoch_now)"
+        if [ "$full_render_required" = "true" ]; then
+            render_full
+            full_render_required=false
+            session_animation_refresh_indexes=()
+        fi
+
+        now="${EPOCHSECONDS:-$SECONDS}"
         if [ "$now" != "$last_tick" ]; then
             render_age_cells
             last_tick="$now"
         fi
 
-        if [ "$now" != "$last_force_refresh_check_epoch" ]; then
+        if [ -z "$last_force_refresh_check_epoch" ] ||
+            [ $((now - last_force_refresh_check_epoch)) -ge "$SIDEBAR_FORCE_REFRESH_CHECK_SECONDS" ]; then
             local force_refresh_flag="@sidebar_force_refresh_${sidebar_session_cached:-$current_session}"
             local force_refresh
             force_refresh="$(tmux show-option -gqv "$force_refresh_flag" 2>/dev/null || true)"
@@ -2330,7 +2513,7 @@ run_tui()
                 align_selection_to_session "$sidebar_session_cached"
                 render_full
                 session_animation_refresh_indexes=()
-                last_state_refresh_epoch="$(epoch_now)"
+                last_state_refresh_epoch="${EPOCHSECONDS:-$SECONDS}"
                 tmux set-option -g "$force_refresh_flag" 0 2>/dev/null || true
             fi
             last_force_refresh_check_epoch="$now"
@@ -2338,9 +2521,19 @@ run_tui()
 
         refresh_sidebar_state_if_due && render_animation_state_changes
 
-        if [ "$view_mode" = "sessions" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
-            animation_frame=$(((animation_frame + 1) % 24))
-            render_animated_name_cells
+        if [ "$view_mode" = "sessions" ] &&
+            [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
+            animation_tick_counter=$((animation_tick_counter + 1))
+            if [ "$animation_tick_counter" -ge 1 ]; then
+                animation_tick_counter=0
+                animation_frame=$(((animation_frame + 1) % 24))
+                for index in "${!session_animate[@]}"; do
+                    [ "${session_animate[$index]}" = "true" ] && {
+                        render_animated_name_cells
+                        break
+                    }
+                done
+            fi
         fi
     done
 }

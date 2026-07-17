@@ -2522,3 +2522,41 @@
 
 남은 질문:
 - 사용자가 실제로 사용하는 터미널 에뮬레이터가 무엇인지 아직 확인되지 않았습니다.
+## 2026-07-17 - v0.6.2 sidebar 성능 최적화
+
+사용자 의도:
+- v0.6.1의 sidebar 동작을 유지하면서 render hot path fork와 전체 snapshot 비용을 줄이고, 정해진 성능 목표를 통과할 때만 v0.6.2로 승격합니다.
+
+작업 결정:
+- pane width/height는 startup·snapshot·resize 신호에서만 읽고 렌더/animation tick에서는 캐시를 사용했습니다.
+- list-sessions의 activity 필드와 단일 list-clients 결과를 사용했습니다.
+- AI process probe와 fingerprint는 startup, 명시적 대상 갱신, pane generation 변화 등 조건부로 제한했습니다.
+- session 전환의 불필요한 대기 두 번을 제거했지만 force-refresh IPC는 유지했습니다.
+
+결과:
+- 기능 회귀와 lifecycle invariant는 통과했습니다.
+- controlled profile의 CPU와 key/archive/restore 지연이 목표보다 높아 v0.6.2 승격은 보류했습니다.
+## 2026-07-17 - v0.6.2 성능개선 구현 결과
+
+작업 결과:
+- Bash 입력 loop의 fork를 줄이고 animation/age 렌더를 메모리 기반으로 변경했습니다.
+- topology는 startup 전체 cache와 선택 session fallback으로 분리했습니다.
+- archive/restore의 중복 tmux 조회와 restore 후 정리 pass를 제거했습니다.
+- session switch는 target sidebar force-refresh를 유지하면서 대기 단계를 줄였습니다.
+
+측정 결과:
+- 독립 3회 profile의 기능 invariant는 모두 통과했습니다.
+- 중앙값은 idle CPU 16.86%, active CPU 14.65%, key 126ms, switch 316ms, archive 400ms, restore 3019ms였습니다.
+- 성능 목표별 결과는 `tests/profile-reports/v0.6.2.md`에 기록했으며, 절대 목표 미달로 tag 승격은 보류했습니다.
+## 2026-07-17 - v0.6.2(v6.2) 승격
+
+사용자 요청:
+- 현재 구현 결과를 v0.6.2로 버전업하고 주요 사항을 기록합니다.
+
+해석/결정:
+- 기능 invariant와 유의미한 성능 개선을 기준으로 v0.6.2를 승격하고, 절대 성능 목표 미달 항목은 후속 과제로 남깁니다.
+- 저장소 버전 규칙에 따라 변경을 커밋하고 `v0.6.2` tag를 생성합니다.
+
+작업 결과:
+- 입력 loop fork 제거, topology/AI cache, switch 대기 축소, archive/restore batch 최적화를 v0.6.2로 기록합니다.
+- `tests/profile-reports/v0.6.2.md`에 3회 독립 측정과 목표별 결과를 보관합니다.

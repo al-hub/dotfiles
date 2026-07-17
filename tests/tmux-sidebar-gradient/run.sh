@@ -5,6 +5,7 @@ TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 test_files=(
     test-render.sh
     test-fingerprint.sh
+    test-hot-path.sh
     test-state.sh
     test-session-isolation.sh
     test-regressions.sh

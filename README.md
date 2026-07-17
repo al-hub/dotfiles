@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 새 버전을 배포할 때는 해당 커밋에 `v0.6.1` 같은 git tag를 만들고, 사용자가 `--v v0.6.1`로 설치할 수 있게 합니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.2`이며, 사용자는 `--v v0.6.2`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다.
 
 ## 로컬 개발 및 테스트 설치
 

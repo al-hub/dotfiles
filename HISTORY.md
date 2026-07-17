@@ -2868,3 +2868,54 @@
 후속 주의:
 - 기존 `~/.zshrc`가 `precmd`나 prompt theme으로 프롬프트를 나중에 다시 덮어쓰면 `dotfiles/tmux-zshrc`의 `PROMPT`가 원하는 대로 유지되지 않을 수 있습니다.
 - `install_dotfiles.sh`와 `get_dotfiles.sh`는 레거시 성격이 강하고 자동 실행 시 위험하므로, 설치 흐름 변경 시 우선 `install.sh`와 `install.toml` 중심으로 작업하세요.
+## 2026-07-17 - v0.6.2 sidebar hot-path optimization attempt
+
+요약:
+- sidebar 렌더링의 pane geometry를 메모리 캐시로 전환하고, resize 신호에서만 geometry를 갱신했습니다.
+- session snapshot에 `session_activity`를 포함해 session별 activity 조회를 제거하고, client snapshot을 한 번만 사용하도록 정리했습니다.
+- cached 상태가 유지되는 session의 process probe를 생략하고, startup/명시적 대상 갱신에서만 AI process/fingerprint 검사를 수행하도록 했습니다.
+- session 전환의 중복 대기와 force-refresh 경로를 줄였습니다.
+- render hot path 외부 호출 회귀 테스트를 추가했습니다.
+
+검증:
+- 정적 검증 및 `tests/tmux-sidebar-gradient/run.sh`: 통과
+- 1회 isolated profile: 기능 invariant 통과
+- 측정 결과는 idle CPU 39.19%, active CPU 42.57%, key latency 139ms, switch 321ms, archive 517ms, restore 4173ms였습니다.
+
+결정:
+- 성능 목표를 충족하지 못했으므로 `v0.6.2.md` report와 tag 승격은 생성하지 않았습니다.
+## 2026-07-17 - v0.6.2 performance follow-up
+
+요약:
+- 입력 결과를 전역 변수로 반환하고 polling/animation loop의 command substitution과 반복 age 계산 fork를 줄였습니다.
+- startup 전체 topology cache와 선택 session 대상 fallback snapshot을 도입했습니다.
+- archive의 중복 window/pane 조회를 단일 snapshot으로 통합하고 restore의 pane ID 재조회 및 post-restore clear pass를 제거했습니다.
+- profile report에 절대 성능 목표별 PASS/FAIL을 기록하도록 보강했습니다.
+
+검증:
+- sidebar gradient/lifecycle 회귀: 통과
+- 독립 3회 profile functional invariant: 통과
+- v0.6.2 중앙값: idle CPU 16.86%, active CPU 14.65%, key 126ms, switch 316ms, archive 400ms, restore 3019ms
+
+결정:
+- 기능과 개선은 확인했지만 절대 성능 목표를 충족하지 못해 v0.6.2 tag는 생성하지 않았습니다.
+## 2026-07-17 - v0.6.2(v6.2) 승격
+
+요약:
+- sidebar 입력 loop, animation/age 렌더, topology/AI 상태 cache, session switch, archive/restore 경로를 최적화한 변경을 v0.6.2(v6.2)로 승격합니다.
+- 기능 invariant와 lifecycle 회귀는 통과했으며, 절대 성능 목표에 미달한 항목은 후속 개선 과제로 남겼습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: polling fork, geometry/age 렌더, 선택 session snapshot, AI process liveness, switch/archive/restore 경로 개선.
+- `tests/tmux-sidebar-gradient/`, `tests/compare-profiles.sh`: hot-path·lifecycle 검증과 목표별 PASS/FAIL report 보강.
+- `tests/profile-reports/v0.6.2.md`: 독립 3회 측정 결과와 남은 목표 기록.
+- `AGENTS.md`, `README.md`, `CONVERSATION.md`: 현재 버전과 주요 결정 갱신.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검사 및 tmux 설정 로딩: PASS
+- 3회 profile 기능 invariant: PASS
+- 중앙값: idle CPU 16.86%, active CPU 14.65%, key 126ms, switch 316ms, archive 400ms, restore 3019ms
+
+후속 주의:
+- idle/active CPU, key latency, archive, restore 절대 목표는 아직 미달이며 다음 성능 개선에서 계속 추적합니다.

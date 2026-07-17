@@ -41,7 +41,7 @@ desired_new_pane_generation_starts_active()
     TEST_FINGERPRINT_BY_PANE['%1']='same-output'
     TEST_FINGERPRINT_BY_PANE['%2']='same-output'
 
-    collect_sessions
+    collect_sessions false test
     set_single_ai_session test %2 codex
     collect_sessions
 

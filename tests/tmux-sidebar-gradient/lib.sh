@@ -111,11 +111,16 @@ TEST_CAPTURE=""
 TEST_PANE_WIDTH=80
 TEST_PANE_HEIGHT=24
 TEST_CLIENT_SESSIONS_SNAPSHOT="test"
+declare -A TEST_TMUX_CALL_COUNT=()
+TEST_TMUX_CALL_LOG="${TMPDIR:-/tmp}/dotfiles-sidebar-test-$$.log"
+rm -f "$TEST_TMUX_CALL_LOG"
 
 # Unit tests replace tmux with deterministic snapshots before loading launcher functions.
 tmux()
 {
     command_name="${1:-}"
+    printf '%s\n' "$command_name" >> "$TEST_TMUX_CALL_LOG"
+    TEST_TMUX_CALL_COUNT["$command_name"]=$(( ${TEST_TMUX_CALL_COUNT[$command_name]:-0} + 1 ))
     shift || true
 
     case "$command_name" in
@@ -168,6 +173,7 @@ load_launcher_functions()
     declare -gA session_has_busy_command=()
     declare -gA session_ai_probe_pane_ids=()
     declare -gA session_ai_direct_pane_id=()
+    declare -gA cached_session_panes_snapshot=()
     declare -gA session_ai_stable_count=()
     declare -gA previous_session_animate=()
     declare -ga session_animate=()
