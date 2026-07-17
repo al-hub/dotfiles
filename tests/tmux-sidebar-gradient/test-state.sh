@@ -29,7 +29,7 @@ test_active_waiting_active_transition()
     assert_eq false "${session_animate[0]}" 'stable fingerprint animation state'
 
     TEST_FINGERPRINT_BY_PANE['%1']='fp-b'
-    collect_sessions
+    collect_sessions false test
     assert_eq active "${session_cli_state[0]}" 'changed fingerprint CLI state'
     assert_eq true "${session_animate[0]}" 'changed fingerprint animation state'
 }

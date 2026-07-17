@@ -26,6 +26,44 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-17 - v0.6.1(v6.1) 기준 고정 및 버전별 profile report 보관
+
+요약:
+- 현재 캐시/스로틀링 개선 상태를 v0.6.1(v6.1) 기준으로 고정하고, 다음 개선 완료 버전은 v0.6.2(v6.2)로 관리하도록 정리했습니다.
+- v0.6과 v0.6.1의 동일 형식 성능 리포트를 `tests/profile-reports/`에 보관해 이후 버전과 계속 비교할 수 있게 했습니다.
+
+변경 파일:
+- `AGENTS.md`, `README.md`: 현재 개발 기준 버전과 리포트 보관 규칙 갱신.
+- `tests/profile-reports/v0.6.md`, `tests/profile-reports/v0.6.1.md`: 버전별 baseline 보관.
+- `tests/profile-reports/README.md`: 리포트 형식 및 다음 v0.6.2 보관 규칙.
+
+검증:
+- v0.6.1 통제 측정: idle CPU 48.25%, active CPU 56.32%, key latency 226ms.
+- sidebar 전체 테스트 및 구문검사: PASS.
+
+후속 주의:
+- v0.6.2는 추가 성능 개선이 검증된 뒤 별도 리포트와 함께 생성합니다.
+
+## 2026-07-17 - sidebar hot path 상태 캐시 및 외부 호출 스로틀링
+
+요약:
+- 80ms TUI tick에서 선택 session까지 매번 `pgrep`/`capture-pane`을 수행하던 경로를 제거하고, 상태 스캔을 캐시·주기 갱신·명시적 이벤트로 분리했습니다.
+- 메인 루프의 `list-panes`와 `show-option` 폴링도 1초 이벤트 확인으로 제한해 불필요한 fork를 줄였습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: session 상태 캐시, pane generation 무효화, 선택 session 주기/이벤트 갱신, force-refresh 폴링 스로틀링.
+- `tests/tmux-sidebar-gradient/lib.sh`: 캐시 배열 모킹 초기화.
+- `tests/tmux-sidebar-gradient/test-state.sh`, `test-session-isolation.sh`: 명시적 대상 갱신 동작에 맞춘 회귀 검증.
+- `tests/profile-comparison-report.md`: 최적화 후 통제 측정 결과.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: 전체 PASS.
+- `bash -n scripts/tmux-session-launcher`, 기본 구문검사, `git diff --check`: PASS.
+- 1회 통제 측정: idle CPU 48.25%, active CPU 56.32%, key latency 226ms.
+
+후속 주의:
+- v0.6 목표(Idle CPU 3%, Active CPU 5%, key latency 40ms)에는 아직 도달하지 못했습니다. 다음 병목은 5초 갱신 시 `tmux list-sessions/list-panes`와 전체 세션 파싱·렌더 비용입니다.
+
 ## 2026-07-17 - v0.6 버전업 및 TUI 역사(History) 목록 렌더링 서브쉘 병목 제거
 
 요약:

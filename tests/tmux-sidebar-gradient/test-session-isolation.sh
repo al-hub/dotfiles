@@ -25,7 +25,7 @@ test_sessions_animate_independently()
     assert_eq true "${session_animate[1]}" 'second initial animation'
 
     TEST_FINGERPRINT_BY_PANE['%1']='first-b'
-    collect_sessions
+    collect_sessions false first
     assert_eq true "${session_animate[0]}" 'first changed animation'
     assert_eq true "${session_animate[1]}" 'second single stable animation'
 
@@ -36,7 +36,7 @@ test_sessions_animate_independently()
     assert_eq waiting "${session_cli_state[1]}" 'second stable state'
 
     TEST_FINGERPRINT_BY_PANE['%2']='second-b'
-    collect_sessions
+    collect_sessions false second
     assert_eq false "${session_animate[0]}" 'first stable animation'
     assert_eq true "${session_animate[1]}" 'second changed animation'
 }

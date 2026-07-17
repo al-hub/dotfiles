@@ -20,6 +20,8 @@ declare -a session_created=()
 declare -a session_status=()
 declare -a session_cli_state=()
 declare -A session_ai_fingerprint=()
+declare -A cached_session_cli_state=()
+declare -A cached_session_ai_fingerprint=()
 declare -A session_activity_age_cache=()
 declare -A session_has_busy_command=()
 declare -A session_ai_probe_pane_ids=()
@@ -53,6 +55,8 @@ prompt_cancelled=false
 view_mode="sessions"
 animation_frame=0
 full_render_required=false
+sidebar_session_cached=""
+last_force_refresh_check_epoch=""
 
 epoch_now()
 {
@@ -835,6 +839,8 @@ show_cursor()
 
 collect_sessions()
 {
+    local force_scan="${1:-false}"
+    local requested_scan_session="${2:-}"
     timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
     timing_start=""
     timing_end=""
@@ -851,13 +857,13 @@ collect_sessions()
     old_current_session="$current_session"
     current_session="$(tmux display-message -p '#S')"
     old_selected="$selected_session"
-    debug_log "collect_sessions start current_session=$current_session old_selected=$old_selected"
+    debug_log "collect_sessions start force_scan=$force_scan current_session=$current_session old_selected=$old_selected"
     previous_session_animate=()
     for index in "${!session_names[@]}"; do
         previous_session_animate["${session_names[$index]}"]="${session_animate[$index]}"
     done
     declare -A previous_session_ai_direct_pane_id=()
-    local s_name prev_pane_id curr_pane_id stable_count session_switch_occurred resize_occurred client_switch_occurred
+    local s_name prev_pane_id curr_pane_id stable_count session_switch_occurred resize_occurred client_switch_occurred pane_generation_changed
     for s_name in "${!session_ai_direct_pane_id[@]}"; do
         previous_session_ai_direct_pane_id["$s_name"]="${session_ai_direct_pane_id[$s_name]}"
     done
@@ -981,9 +987,25 @@ EOF
         cli_state_value=""
         ai_fingerprint_value=""
         previous_ai_fingerprint_value="${session_ai_fingerprint[$name]:-}"
-        session_cli_state_for_session "$name"
-        cli_state_value="$session_cli_state_result"
-        ai_fingerprint_value="${session_ai_fingerprint_result%-focused}"
+
+        # Hot path에서는 캐시만 사용한다. 전체 강제 스캔은 명시적 이벤트에서만,
+        # 특정 session 갱신은 입력 직후 해당 session에 대해서만 수행한다.
+        pane_generation_changed=false
+        if [ "${previous_session_ai_direct_pane_id[$name]:-}" != "${session_ai_direct_pane_id[$name]:-}" ]; then
+            pane_generation_changed=true
+        fi
+        if [ "$force_scan" = "true" ] ||
+            [ "$name" = "$requested_scan_session" ] ||
+            [ "$pane_generation_changed" = "true" ] ||
+            [ -z "${cached_session_cli_state[$name]:-}" ]; then
+            session_cli_state_for_session "$name"
+            cached_session_cli_state["$name"]="$session_cli_state_result"
+            cached_session_ai_fingerprint["$name"]="$session_ai_fingerprint_result"
+        fi
+
+        cli_state_value="${cached_session_cli_state[$name]}"
+        ai_fingerprint_value="${cached_session_ai_fingerprint[$name]:-}"
+        ai_fingerprint_value="${ai_fingerprint_value%-focused}"
         ai_fingerprint_value="${ai_fingerprint_value%-focus}"
 
         local actual_fingerprint="$ai_fingerprint_value"
@@ -1482,7 +1504,9 @@ refresh_if_needed()
     old_height="$last_height"
 
     debug_log "refresh_if_needed start old_signature=$old_signature old_width=$old_width old_height=$old_height"
-    collect_sessions
+    # The periodic refresh is the only idle-time state probe.  It refreshes the
+    # selected session while all other sessions remain on their cached values.
+    collect_sessions false "$selected_session"
     if [ "$full_render_required" = "true" ] ||
         [ "$old_signature" != "$snapshot_signature" ] ||
         [ "$old_width" != "$(pane_width)" ] ||
@@ -2217,6 +2241,9 @@ run_tui()
     collect_sessions
     render_full
     last_tick="$(epoch_now)"
+    sidebar_session_cached="$(sidebar_session_name || true)"
+    [ -n "$sidebar_session_cached" ] || sidebar_session_cached="$current_session"
+    last_force_refresh_check_epoch="$last_tick"
 
     while true; do
         key="$(read_key "$SIDEBAR_POLL_TIMEOUT" || true)"
@@ -2243,17 +2270,17 @@ run_tui()
                 else
                     switch_session "$selected_session"
                 fi
-                collect_sessions
+                collect_sessions false "$selected_session"
                 render_full
                 ;;
             create)
                 tui_new_session
-                collect_sessions
+                collect_sessions true
                 render_full
                 ;;
             rename)
                 tui_rename_session
-                collect_sessions
+                collect_sessions true
                 render_full
                 ;;
             delete)
@@ -2265,7 +2292,7 @@ run_tui()
                     tui_delete_session
                     debug_log "main delete after tui_delete_session current_session=$current_session selected_session=$selected_session"
                 fi
-                collect_sessions
+                collect_sessions true
                 debug_log "main delete after collect_sessions current_session=$current_session selected_session=$selected_session"
                 render_full
                 ;;
@@ -2294,20 +2321,19 @@ run_tui()
             last_tick="$now"
         fi
 
-        local sidebar_session
-        sidebar_session="$(sidebar_session_name)"
-        [ -n "$sidebar_session" ] ||
-            sidebar_session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#S' 2>/dev/null || true)"
-        local force_refresh_flag="@sidebar_force_refresh_${sidebar_session:-$current_session}"
-        local force_refresh
-        force_refresh="$(tmux show-option -gqv "$force_refresh_flag" 2>/dev/null || true)"
-        if [ "$force_refresh" = "1" ]; then
-            collect_sessions
-            align_selection_to_session "$sidebar_session"
-            render_full
-            session_animation_refresh_indexes=()
-            last_state_refresh_epoch="$(epoch_now)"
-            tmux set-option -g "$force_refresh_flag" 0 2>/dev/null || true
+        if [ "$now" != "$last_force_refresh_check_epoch" ]; then
+            local force_refresh_flag="@sidebar_force_refresh_${sidebar_session_cached:-$current_session}"
+            local force_refresh
+            force_refresh="$(tmux show-option -gqv "$force_refresh_flag" 2>/dev/null || true)"
+            if [ "$force_refresh" = "1" ]; then
+                collect_sessions false "$sidebar_session_cached"
+                align_selection_to_session "$sidebar_session_cached"
+                render_full
+                session_animation_refresh_indexes=()
+                last_state_refresh_epoch="$(epoch_now)"
+                tmux set-option -g "$force_refresh_flag" 0 2>/dev/null || true
+            fi
+            last_force_refresh_check_epoch="$now"
         fi
 
         refresh_sidebar_state_if_due && render_animation_state_changes
