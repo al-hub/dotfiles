@@ -3080,6 +3080,28 @@
 - 외부 key latency 48ms는 40ms 목표를 초과하지만 tmux/PTY 관측 경로의 후속 과제로 명시합니다.
 - `v0.6.7` tag를 생성하고 v0.6.7 profile report를 기준 문서로 보관합니다.
 
+## 2026-07-17 - v0.6.7 10-session navigation scenario
+
+변경:
+- 전용 tmux socket과 attached urxvt에서 `nav-01`~`nav-10` session을 만들고, sidebar에서 `j`를 9회 보내는 재현 시나리오를 추가했습니다.
+- 단계별 key-to-render, 누적 시간, 최종 cursor invariant를 측정하도록 했습니다.
+- 10-session fallback refresh에서 호출되던 누락 함수 `session_command_signature_from_tmux`를 복구했습니다.
+
+결과:
+- 일반 단계 중앙값은 52~69ms입니다.
+- 매 실행마다 한 단계에서 573~584ms outlier가 발생했습니다.
+- 3회 최종 누적 중앙값은 1133ms이며, `nav-10` cursor invariant는 모두 PASS입니다.
+- 결과는 `tests/profile-reports/v0.6.7-navigation-10.md`에 기록했습니다.
+
+## 2026-07-18 - v0.6.7 automatic scenario suite
+
+추가:
+- 기존 profile을 수정하지 않고 `tests/profile-isolated-sidebar-auto.sh`를 신규 추가했습니다.
+- 10-session 하향/상향 이동, 5-key burst, 5초 periodic refresh 충돌, resize, sidebar kill/recreate, cursor invariant를 한 번에 검증합니다.
+- 샘플 실행에서 모든 시나리오가 PASS했으며, 일반 이동은 56~73ms, 한 단계 outlier는 567ms였습니다.
+- 결과는 `tests/profile-reports/v0.6.7-auto.md`에 기록했습니다.
+- auto profile은 기존 baseline 기능을 직접 포함하며, 통합 실행도 전체 status PASS를 반환했습니다.
+
 ## 2026-07-17 - v0.6.5(v6.5) 승격
 
 요약:

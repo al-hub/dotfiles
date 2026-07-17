@@ -2709,3 +2709,45 @@
 적용:
 - `AGENTS.md`, `README.md`, profile report에 v0.6.7 안정 기준을 반영합니다.
 - `v0.6.7` tag를 생성합니다.
+
+## 2026-07-17 - v0.6.7 10-session navigation evaluation
+
+사용자 시나리오:
+- 재현 가이드에 맞춰 isolated tmux와 attached urxvt를 실행하고, sidebar 생성 후 10개 session을 위에서 아래로 순차 선택합니다.
+
+측정:
+- `tests/profile-sidebar-navigation.sh`가 9회 `j` 입력의 단계별·누적 시간을 기록합니다.
+- 3회 실행에서 일반 단계는 52~72ms였습니다.
+- 특정 한 단계가 매 run마다 573~584ms로 튀었고, 위치는 step 2 또는 step 4로 변했습니다.
+- 최종 `nav-10` cursor는 3회 모두 정확히 하나였습니다.
+
+결정:
+- 이 outlier는 session 개수 자체보다 periodic state fallback refresh와 key render scheduler contention을 우선 조사해야 하는 근거로 기록합니다.
+- 10-session 시나리오 실행 중 발견된 누락 `session_command_signature_from_tmux` helper를 복구했습니다.
+
+## 2026-07-18 - v0.6.7 automatic scenario suite 추가
+
+사용자 결정:
+- 기존 profile과 navigation test를 보관하고, 추가 시나리오를 신규 standalone 파일로 구성합니다.
+
+신규 파일:
+- `tests/profile-isolated-sidebar-auto.sh`
+
+포함 시나리오:
+- nav-01→nav-10 하향 이동
+- nav-10→nav-01 상향 이동
+- 5-key burst
+- periodic refresh 경계 입력
+- resize 20→35
+- sidebar kill/recreate
+- 최종 cursor 단일성
+
+샘플 결과:
+- 전체 시나리오 PASS
+- 일반 이동 56~73ms
+- 한 단계 567ms outlier 관측
+
+후속 결정:
+- `profile-isolated-sidebar-auto.sh`를 기존 `profile-isolated-sidebar.sh`의 standalone 복사본으로 재구성했습니다.
+- 기존 idle/active/key/switch/archive/restore/lifecycle/grid phase를 직접 포함하고, 그 뒤에 navigation·burst·refresh·resize 시나리오를 실행합니다.
+- 통합 실행 결과 전체 status는 PASS였고 기존 profile 파일은 수정하지 않았습니다.

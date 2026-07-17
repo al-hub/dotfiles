@@ -13,4 +13,8 @@
 
 `PROFILE_PIPE_OBSERVER=true`는 표준 metric을 바꾸지 않는 persistent raw-stream 진단 모드입니다.
 
+10개 session 순차 이동 시나리오는 `tests/profile-sidebar-navigation.sh`와 `v0.6.7-navigation-10.md`에 기록합니다.
+
+확장 자동 시나리오는 `tests/profile-isolated-sidebar-auto.sh`와 `v0.6.7-auto.md`에 기록합니다.
+
 각 파일의 geometry, 실행 횟수, metric 이름을 변경하지 않아 버전 간 직접 비교할 수 있도록 유지합니다.

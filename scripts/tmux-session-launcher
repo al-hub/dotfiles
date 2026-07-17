@@ -134,6 +134,21 @@ find_sidebar_pane()
         awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
 }
 
+session_command_signature_from_tmux()
+{
+    local session_name_value="$1"
+    local pane_id_value pane_command_value
+    session_command_signature_result=""
+
+    while IFS='|' read -r pane_id_value pane_command_value; do
+        [ -n "$pane_id_value" ] || continue
+        session_command_signature_result+="$pane_id_value:$pane_command_value|"
+    done < <(
+        tmux list-panes -t "=$session_name_value:" \
+            -F '#{pane_id}|#{pane_current_command}' 2>/dev/null || true
+    )
+}
+
 window_target()
 {
     target="${1:-}"
