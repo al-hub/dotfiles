@@ -26,6 +26,23 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-17 - v0.6 버전업 및 TUI 역사(History) 목록 렌더링 서브쉘 병목 제거
+
+요약:
+- 역사(History) 모드 진입 시 수십 개의 아카이브 파일마다 `basename`과 `sed` 서브쉘을 기동해 1초에 가까운 렌더링 타임아웃을 유발하던 병목을 순수 Bash 내부 파라미터 확장 기법(Forks: 72회 -> 0회)으로 변환해 로딩 성능을 ms 수준으로 단축했습니다.
+- 통제형 Baseline 측정 스크립트에서 레이아웃 불일치(Mismatch) 및 복원 실패(Restore Failed) 버그를 디버깅하여 7대 시나리오 모두 `PASS`를 획득하고, 안정 버전 기준을 `v0.6`으로 승격시켰습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `collect_history` 내 서브쉘을 Bash Parameter Expansion 기법으로 최적화
+- `AGENTS.md`, `README.md`: 안정 버전을 `v0.6`으로 갱신
+
+검증:
+- `tests/compare-profiles.sh`: 3회 반복 측정 시 전체 시나리오 복원 구조 무결성, 레이아웃, 그리드/커서 100% 정상 `PASS` 확인.
+- `git diff --check`, `bash -n install.sh`: PASS
+
+후속 주의:
+- TUI의 기본 유휴/스위칭 CPU가 여전히 높아 루프 주기 제어 및 렌더 틱 최적화 실험이 이어져야 합니다.
+
 ## 2026-07-17 - 재현 가능한 sidebar baseline 측정 체계 교체
 
 요약:
