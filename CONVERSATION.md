@@ -26,6 +26,23 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-17 - sidebar baseline 실험 준비 완료
+
+사용자 요청:
+- 남은 Codex CLI turn을 아끼면서 신뢰할 수 있는 baseline 실험 결과가 나오도록 저장소 작업을 완료합니다.
+
+해석/결정:
+- 기존 결과는 설치본 측정, 사용자 live server와 HOME 변경, 비동기 시간 오측정, 종료 PID 비교, 빈 grid 성공 처리 때문에 baseline으로 사용할 수 없다고 판단했습니다.
+- 동일 checkout과 통제된 attached terminal workload를 반복 측정하고, 모든 기능 invariant 통과 시에만 보고서를 생성하도록 결정했습니다.
+
+작업 결과:
+- 안전한 isolated profiler와 3회 중앙값/범위 집계기로 교체했습니다.
+- 실제 3회 측정에서 restore pane/window integrity, layout preservation, grid/cursor 검사가 모두 PASS했습니다.
+- 중앙값은 idle CPU 53.41%, key render 4,187ms, client switch 10,221ms, archive 1,061ms, restore 18,979ms입니다.
+
+남은 질문:
+- baseline 체계는 완료됐습니다. 다음 작업은 높은 launcher CPU와 key/client-switch latency 최적화입니다.
+
 ## 2026-07-16 - 사이드바 성능 검증 및 지표 Baseline 수립 (격리 E2E 및 정밀 테스트 추가)
 
 사용자 요청:

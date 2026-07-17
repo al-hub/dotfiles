@@ -26,6 +26,28 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-17 - 재현 가능한 sidebar baseline 측정 체계 교체
+
+요약:
+- 설치본과 사용자 live tmux server를 변경하던 profiler를 폐기하고, 현재 checkout을 통제된 attached terminal에서 반복 측정하도록 교체했습니다.
+- timeout이나 기능 불일치를 성능 숫자로 기록하지 않고 전체 run을 실패시키도록 측정 계약을 강화했습니다.
+
+변경 파일:
+- `tests/profile-isolated-sidebar.sh`: 전용 socket/history, interval CPU와 peak RSS, 완료 조건 및 기능 invariant 측정을 구현했습니다.
+- `tests/compare-profiles.sh`: 기본 3회 반복의 중앙값과 전체 범위를 집계합니다.
+- `tests/profile-active-sidebar.sh`: 사용자 live server 대신 안전한 격리 측정을 호출하는 호환 entry point로 변경했습니다.
+- `docs/profile-baseline-report.md`, `tests/profile-comparison-report.md`: 새 방법과 실제 결과를 기록했습니다.
+
+검증:
+- controlled profile 3회: restore 구조, layout, grid/cursor invariant 모두 PASS.
+- 중앙값: idle CPU 53.41%, key render 4,187ms, client switch 10,221ms, archive 1,061ms, restore 18,979ms.
+- 기본 구문검사, profile ShellCheck, `git diff --check`: PASS.
+- `tests/tmux-sidebar-gradient/run.sh`: 전체 20개 PASS, XFAIL/FAIL 없음.
+- 전용 socket의 `dotfiles/tmux.conf` 로딩 및 정리: PASS.
+
+후속 주의:
+- 높은 launcher CPU와 key/client-switch latency는 다음 최적화가 비교해야 할 실제 병목 baseline입니다.
+
 ## 2026-07-16 - 사이드바 성능 검증 계획 수립 및 Baseline 측정 (격리 E2E 및 자동 대조 비교 완료)
 
 요약:

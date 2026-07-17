@@ -1,19 +1,29 @@
-# TUI Sidebar Profile Comparison Report
-Generated At: Fri Jul 17 09:33:00 KST 2026
+# TUI Sidebar Controlled Baseline
 
-## Side-by-Side Comparison Table
+Generated: 2026-07-17T11:02:13+09:00
 
-| Metric                       | Active Session (Pts/2)    | Isolated Session (WSLg)   | Difference / Notes                  |
-| :--- | :--- | :--- | :--- |
-| 1. Idle CPU (Peak) / RSS     | 4.2% (7.5%) / 3859 KB     | 5.3% (9.0%) / 5141 KB     | 격리 환경이 데몬 오버헤드가 적어 비교적 낮은 RSS 점유 |
-| 2. Active CPU (Peak) / RSS   | 3.2% (3.7%) / 3918 KB     | 3.0% (3.5%) / 5144 KB     | 그라디언트 렌더 루프 부하 수준은 두 환경 모두 유사함 |
-| 3. Switch Latency            | 11954 ms (Reactivity: 1835 ms) | 35856 ms (Reactivity: 5015 ms) | 격리가 약 23902ms 느림 (입력반응차: 3180ms) |
-| 4. Archive Metadata Size     | 8.50 KB / Time: 818 ms    | 8.41 KB / Time: 781 ms    | 백업 속도 비교 (격리: Time: 781 ms / 액티브: Time: 818 ms) |
-| 5. Layout Preservation Ratio | 100% (Matched) / Leak: +0 KB | Mismatched / Leak: +0 KB  | 연타 스트레스 검증 (격리 누수: Leak: +0 KB / 액티브 누수: Leak: +0 KB) |
-| 6. Restore Accuracy          | Restore Failed / Time: 4977 ms | Restore Failed / Time: 4940 ms | 복원 속도 비교 (격리: Time: 4940 ms / 액티브: Time: 4977 ms) |
-| 7. Grid Boundary check       | Overflow by -35 cols / Visual: Cursor Count Error (0) | Overflow by -35 cols / Visual: Cursor Count Error (0) | 임계 리사이즈(15cols) 후 원래 크기(35cols) 복원 및 그리드 정상 회복 여부 검증 |
+Revision: `361bf74` (dirty: `true`)
 
-## AI Auto-Analysis & Optimization Targets
-* **Resource Usage**: 격리 환경이 데몬 오버헤드가 적어 비교적 낮은 RSS 점유. 그라디언트 렌더 루프 부하 수준은 두 환경 모두 유사함.
-* **Latency Gap**: 격리가 약 23902ms 느림 (입력반응차: 3180ms)
-* **Restore & Layout Bugs**: 연타 스트레스 검증 (격리 누수: Leak: +0 KB / 액티브 누수: Leak: +0 KB). 복원 속도 비교 (격리: Time: 4940 ms / 액티브: Time: 4977 ms).
+Environment: `tmux 3.6`, attached urxvt client, 100x30 geometry
+Runs: 3
+
+| Metric | Median and observed range | Result |
+| :--- | :--- | :---: |
+| Idle launcher CPU | 53.41 % (range 53.23-57.19) | PASS |
+| Idle launcher peak RSS | 5968.00 KiB (range 5660.00-6024.00) | PASS |
+| Active launcher CPU | 51.14 % (range 50.91-55.14) | PASS |
+| Active launcher peak RSS | 5972.00 KiB (range 5660.00-6024.00) | PASS |
+| Key-to-render latency | 4187.00 ms (range 1766.00-7816.00) | PASS |
+| Enter-to-client-switch latency | 10221.00 ms (range 9691.00-14232.00) | PASS |
+| Archive completion | 1061.00 ms (range 939.00-1069.00) | PASS |
+| Archive metadata size | 10068.00 bytes (range 9902.00-10615.00) | PASS |
+| Restore completion | 18979.00 ms (range 18922.00-20466.00) | PASS |
+| Restore pane/window integrity | 100% required on every run | PASS |
+| Layout preserved after 3 open/close cycles | 100% required on every run | PASS |
+| Grid bounded and exactly one cursor | required on every run | PASS |
+
+## Method
+
+Each run creates a unique tmux socket, an attached urxvt client, and a temporary history directory. It executes the launcher from the checked-out repository, never the installed copy. CPU is interval CPU time from `/proc/PID/stat` (including reaped children), and RSS is peak launcher RSS sampled during the same interval. Timed operations have bounded completion checks; a timeout or invariant mismatch fails the suite instead of becoming a numeric baseline.
+
+The former active-vs-isolated comparison was removed because it changed the user's live tmux server and compared uncontrolled workloads. Use this report for before/after measurements under the same geometry and run count.

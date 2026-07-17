@@ -1210,7 +1210,8 @@ collect_history()
     while IFS= read -r file_path; do
         [ -n "$file_path" ] || continue
         history_files+=("$file_path")
-        history_titles+=("$(history_title_from_file "$file_path")")
+        local fname="${file_path##*/}"
+        history_titles+=("${fname%.tsv}")
         history_checked+=("false")
         history_signature="${history_signature}${file_path}|"
     done <<EOF
