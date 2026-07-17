@@ -2642,3 +2642,70 @@
 결과:
 - `v0.6.5` tag를 생성합니다.
 - README, AGENTS, profile report에 현재 안정 버전과 예외 사항을 반영합니다.
+
+## 2026-07-17 - v0.6.6 개선 구현 및 profile 결과
+
+사용자 의도:
+- v0.6.5의 남은 key-to-render latency 병목을 줄이고 lifecycle 검증을 실제 launcher pane까지 확장합니다.
+
+작업 결과:
+- 선택 행 출력 경로를 ANSI buffer 기반으로 최적화했습니다.
+- launcher-owned sidebar kill/recreate 및 layout 보존 회귀 테스트를 추가했습니다.
+- 전체 sidebar 회귀와 정적 검증은 통과했습니다.
+
+측정 결과:
+- idle CPU 1.65%, active CPU 2.20%, key latency 49ms
+- session switch 234ms, archive 341ms, restore 1405ms
+- key latency는 v0.6.5와 동일해 목표 40ms를 달성하지 못했습니다.
+- restore 한 run의 최대값 2348ms도 확인되어 추가 원인 분석 대상으로 남겼습니다.
+
+결정:
+- v0.6.6 report는 보관하지만 v0.6.5 안정 기준과 tag를 유지합니다.
+- 다음 작업은 renderer가 아닌 PTY/tmux 출력 반영 지연과 profile 관측 지연을 분리하는 trace 개선부터 진행합니다.
+
+## 2026-07-17 - v0.6.7 내부 latency trace 확정
+
+작업 결과:
+- 선택 행 두 개를 단일 ANSI buffer로 출력하고, key 처리 loop에서 animation을 생략했습니다.
+- launcher-owned lifecycle 회귀와 전체 sidebar 회귀는 PASS입니다.
+- 3회 profile 중앙값은 idle CPU 1.92%, active CPU 1.65%, key 48ms, switch 245ms, archive 349ms, restore 1341ms입니다.
+
+핵심 분석:
+- trace 1회에서 `key-to-render` 외부 지표는 50ms였지만 launcher 내부 selection render는 1297us였습니다.
+- 따라서 renderer 추가 최적화보다 tmux/PTY 반영과 `capture-pane` 관측 지연을 분리·개선하는 것이 다음 과제입니다.
+- key 목표 미달로 v0.6.5 안정 tag를 유지하고 v0.6.7 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.7 observer phase 측정
+
+측정부 변경:
+- 기존 key latency metric은 유지했습니다.
+- trace-enabled profile에 `capture-pane` 호출 시간과 render 완료 후 관측 시간을 추가했습니다.
+
+관측 결과:
+- 내부 render 1062us
+- `capture-pane` 호출 20ms
+- render 완료 후 관측 44ms
+- trace overhead를 포함한 전체 값은 68ms였으므로 표준 3회 중앙값 48ms와 분리해 해석합니다.
+
+판단:
+- production renderer는 이미 충분히 빠릅니다.
+- 다음 단계는 tmux/PTY 반영 지연과 `capture-pane` 측정 비용을 개선·분리하는 작업입니다.
+- `pipe-pane` observer도 실험했지만 raw ANSI buffering으로 58~89ms가 측정되어 표준 경로로 채택하지 않았습니다.
+
+추가 실험:
+- persistent Perl raw-stream reader를 `pipe-pane`에 연결해 buffering 없는 observer를 측정했습니다.
+- 결과는 52ms로 기존 pipe/file 방식보다 개선됐지만 40ms를 넘었으므로, tmux/PTY propagation 자체가 남은 병목일 가능성이 높습니다.
+- 이 observer는 `PROFILE_PIPE_OBSERVER=true` 진단 모드에서만 사용합니다.
+
+## 2026-07-17 - v0.6.7(v6.7) 승격
+
+사용자 의도:
+- v0.6.7의 기록을 남기고 안정 기준으로 적용합니다.
+
+승격 결정:
+- launcher 내부 render 약 1ms, CPU·switch·archive·restore 목표, lifecycle/invariant를 통과한 결과를 v0.6.7로 승격합니다.
+- 외부 key latency 48ms는 40ms 목표를 초과하지만 tmux/PTY 관측 경로의 명시적 후속 과제로 남깁니다.
+
+적용:
+- `AGENTS.md`, `README.md`, profile report에 v0.6.7 안정 기준을 반영합니다.
+- `v0.6.7` tag를 생성합니다.

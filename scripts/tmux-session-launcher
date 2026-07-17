@@ -1601,13 +1601,20 @@ render_history()
 
 print_session_name()
 {
+    format_session_name "$@"
+    printf '%s' "$session_name_result"
+}
+
+format_session_name()
+{
     local name="$1"
     local width="$2"
     local animate="$3"
-    seed="${4:-0}"
-    text="${name:0:width}"
-    text_width="${#text}"
-    padding=$((width - text_width))
+    local seed="${4:-0}"
+    local text="${name:0:width}"
+    local text_width="${#text}"
+    local padding=$((width - text_width))
+    local result='' char phase color colored
 
     if [ "$animate" = "true" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
         for ((i = 0; i < text_width; i++)); do
@@ -1622,16 +1629,20 @@ print_session_name()
                 5) color=246 ;;
                 *) color=241 ;;
             esac
-            printf '\033[38;5;%sm%s' "$color" "$char"
+            printf -v colored '\033[38;5;%sm%s' "$color" "$char"
+            result+="$colored"
         done
-        printf '\033[0m'
+        result+=$'\033[0m'
     else
-        printf '%s' "$text"
+        result="$text"
     fi
 
     if [ "$padding" -gt 0 ]; then
-        printf '%*s' "$padding" ''
+        printf -v padding_text '%*s' "$padding" ''
+        result+="$padding_text"
     fi
+
+    session_name_result="$result"
 }
 
 row_name_width()
@@ -1650,14 +1661,25 @@ render_session_name_cell()
     index="$1"
     line=$((2 + index - scroll_offset))
     width="${cached_pane_width:-35}"
-    name_width="$(row_name_width "$width")"
+    if [ "$width" -lt 16 ]; then
+        name_width=$((width - 3))
+    else
+        name_width=$((width - 2 - 1 - 10 - 2))
+    fi
 
     [ "$name_width" -lt 1 ] && name_width=1
-    move_cursor "$line" 4
-    print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}" "${session_animation_seed[$index]}"
+    format_session_name "${session_names[$index]}" "$name_width" \
+        "${session_animate[$index]}" "${session_animation_seed[$index]}"
+    printf '\033[%s;4H%s' "$line" "$session_name_result"
 }
 
 render_row()
+{
+    format_row "$1"
+    printf '%s' "$row_render_result"
+}
+
+format_row()
 {
     index="$1"
     line=$((2 + index - scroll_offset))
@@ -1670,16 +1692,30 @@ render_row()
     name_width=$((width - 2 - 1 - age_width - 2))
 
     [ "$name_width" -lt 1 ] && name_width=1
-    move_cursor "$line" 1
-    clear_line
     if [ "$width" -lt 16 ]; then
-        printf '%s ' "$mark"
-        print_session_name "${session_names[$index]}" "$((width - 3))" "${session_animate[$index]}" "${session_animation_seed[$index]}"
+        format_session_name "${session_names[$index]}" "$((width - 3))" \
+            "${session_animate[$index]}" "${session_animation_seed[$index]}"
+        printf -v row_render_result '\033[%s;1H\033[2K%s %s' \
+            "$line" "$mark" "$session_name_result"
     else
-        printf '%s ' "$mark"
-        print_session_name "${session_names[$index]}" "$name_width" "${session_animate[$index]}" "${session_animation_seed[$index]}"
-        printf ' %s ' "$age"
+        format_session_name "${session_names[$index]}" "$name_width" \
+            "${session_animate[$index]}" "${session_animation_seed[$index]}"
+        printf -v row_render_result '\033[%s;1H\033[2K%s %s %s ' \
+            "$line" "$mark" "$session_name_result" "$age"
     fi
+}
+
+render_selection_pair()
+{
+    local old_index="$1"
+    local new_index="$2"
+    local selection_render_buffer
+
+    format_row "$old_index"
+    selection_render_buffer="$row_render_result"
+    format_row "$new_index"
+    selection_render_buffer+="$row_render_result"
+    printf '%s' "$selection_render_buffer"
 }
 
 render_animated_name_cells()
@@ -1696,9 +1732,9 @@ render_animated_name_cells()
             width="${cached_pane_width:-35}"
             name_width=$((width - 2 - 1 - 10 - 2))
             [ "$name_width" -lt 1 ] && name_width=1
-            move_cursor "$line" 4
-            print_session_name "${session_names[$index]}" "$name_width" \
+            format_session_name "${session_names[$index]}" "$name_width" \
                 "${session_animate[$index]}" "${session_animation_seed[$index]}"
+            printf '\033[%s;4H%s' "$line" "$session_name_result"
         fi
         index=$((index + 1))
     done
@@ -2488,12 +2524,13 @@ move_selection()
     selected_session="${session_names[$selected_index]}"
     ensure_selection_visible
 
+    trace_event "selection.render.begin old_index=$old_index new_index=$selected_index"
     if row_is_visible "$old_index" && row_is_visible "$selected_index"; then
-        render_row "$old_index"
-        render_row "$selected_index"
+        render_selection_pair "$old_index" "$selected_index"
     else
         render_visible_rows
     fi
+    trace_event "selection.render.end old_index=$old_index new_index=$selected_index"
     trace_event "selection.update.end index=$selected_index session=$selected_session"
 }
 
@@ -2759,7 +2796,7 @@ run_tui()
             refresh_sidebar_state_if_due && render_animation_state_changes
         fi
 
-        if [ "$view_mode" = "sessions" ] &&
+        if [ -z "$key" ] && [ "$view_mode" = "sessions" ] &&
             [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
             animation_tick_counter=$((animation_tick_counter + 1))
             if [ "$animation_tick_counter" -ge 1 ]; then

@@ -13,7 +13,10 @@ CLIENT_PID=""
 PROFILE_SECONDS="${PROFILE_SECONDS:-3}"
 PROFILE_KEY_POLL_INTERVAL="${PROFILE_KEY_POLL_INTERVAL:-0.01}"
 PROFILE_TRACE="${PROFILE_TRACE:-false}"
+PROFILE_PIPE_OBSERVER="${PROFILE_PIPE_OBSERVER:-false}"
 TRACE_FILE="$RUN_DIR/launcher-trace.log"
+PIPE_MARKER="$RUN_DIR/pipe-marker"
+PIPE_OBSERVER="$REPO_ROOT/tests/profile-pipe-observer.pl"
 
 usage()
 {
@@ -97,6 +100,40 @@ wait_for_pane_text()
     local pane="$1" pattern="$2" deadline=$(( $(now_ms) + 30000 ))
     while [ "$(now_ms)" -lt "$deadline" ]; do
         tmuxc capture-pane -p -t "$pane" 2>/dev/null | grep -Eq "$pattern" && return 0
+        sleep "$PROFILE_KEY_POLL_INTERVAL"
+    done
+    return 1
+}
+
+wait_for_key_render()
+{
+    local pane="$1" pattern="$2" deadline=$(( $(now_ms) + 30000 ))
+    local capture_started capture_finished capture_output
+    key_observed_ms=""
+    key_capture_call_ms=""
+    while [ "$(now_ms)" -lt "$deadline" ]; do
+        capture_started="$(now_ms)"
+        capture_output="$(tmuxc capture-pane -p -t "$pane" 2>/dev/null || true)"
+        capture_finished="$(now_ms)"
+        key_capture_call_ms=$((capture_finished - capture_started))
+        if printf '%s\n' "$capture_output" | grep -Eq "$pattern"; then
+            key_observed_ms="$capture_finished"
+            return 0
+        fi
+        sleep "$PROFILE_KEY_POLL_INTERVAL"
+    done
+    return 1
+}
+
+wait_for_pipe_marker()
+{
+    local deadline=$(( $(now_ms) + 30000 ))
+    key_observed_ms=""
+    while [ "$(now_ms)" -lt "$deadline" ]; do
+        if [ -s "$PIPE_MARKER" ]; then
+            key_observed_ms="$(awk '{ printf "%.0f\n", $1 * 1000 }' "$PIPE_MARKER")"
+            return 0
+        fi
         sleep "$PROFILE_KEY_POLL_INTERVAL"
     done
     return 1
@@ -214,6 +251,29 @@ emit()
     printf 'METRIC\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"
 }
 
+trace_selection_render_us()
+{
+    [ "$PROFILE_TRACE" = true ] || return 0
+    [ -f "$TRACE_FILE" ] || return 0
+    awk '
+        /selection.render.begin/ { start=$1 }
+        /selection.render.end/ && start != "" { end=$1 }
+        END {
+            if (start != "" && end != "") {
+                printf "%.0f\n", (end - start) * 1000000
+            }
+        }
+    ' "$TRACE_FILE"
+}
+
+trace_last_render_end_ms()
+{
+    [ "$PROFILE_TRACE" = true ] || return 0
+    [ -f "$TRACE_FILE" ] || return 0
+    awk '/selection.render.end/ { value=$1 } END { if (value != "") printf "%.0f\n", value * 1000 }' \
+        "$TRACE_FILE"
+}
+
 echo "Starting controlled sidebar baseline (socket: $SOCKET)"
 tmuxc new-session -d -x 100 -y 30 -s baseline-1
 tmuxc set-environment -g TMUX_SESSION_HISTORY_DIR "$HISTORY_DIR"
@@ -248,10 +308,28 @@ emit active_peak_rss_kb "${active#*,}" KiB PASS
 tmuxc send-keys -t "$work_pane" C-c
 
 react_start="$(now_ms)"
+if [ "$PROFILE_PIPE_OBSERVER" = true ]; then
+    : > "$PIPE_MARKER"
+    tmuxc pipe-pane -o -t "$sidebar" \
+        "perl '$PIPE_OBSERVER' '$PIPE_MARKER' baseline-2"
+fi
 tmuxc send-keys -t "$sidebar" j
-if wait_for_pane_text "$sidebar" '^>  baseline-2'; then
+if [ "$PROFILE_PIPE_OBSERVER" = true ]; then
+    key_waiter=wait_for_pipe_marker
+else
+    key_waiter=wait_for_key_render
+fi
+if "$key_waiter" "$sidebar" '^>  baseline-2' 2>/dev/null; then
     reactivity_ms=$(( $(now_ms) - react_start ))
     emit key_reactivity_ms "$reactivity_ms" ms PASS
+    [ "$PROFILE_PIPE_OBSERVER" = true ] && tmuxc pipe-pane -t "$sidebar"
+    internal_render_us="$(trace_selection_render_us || true)"
+    [ -n "$internal_render_us" ] && emit key_internal_render_us "$internal_render_us" us PASS
+    render_end_ms="$(trace_last_render_end_ms || true)"
+    if [ -n "$render_end_ms" ] && [ -n "$key_observed_ms" ]; then
+        emit key_observer_after_render_ms "$((key_observed_ms - render_end_ms))" ms PASS
+        emit key_capture_call_ms "$key_capture_call_ms" ms PASS
+    fi
 else
     emit key_reactivity_ms 5000 ms FAIL
     exit 1

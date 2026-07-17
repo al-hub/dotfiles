@@ -10,6 +10,7 @@ test_files=(
     test-session-isolation.sh
     test-regressions.sh
     test-lifecycle-e2e.sh
+    test-launcher-lifecycle.sh
 )
 
 for test_file in "${test_files[@]}"; do

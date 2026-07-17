@@ -3007,6 +3007,79 @@
 - idle/active CPU, switch, archive, restore 및 모든 기능 invariant는 목표를 통과했습니다.
 - key latency만 49ms로 목표 40ms에 미달하여 v0.6.5 tag 승격은 보류합니다.
 
+## 2026-07-17 - v0.6.6 sidebar 성능개선 후보 결과
+
+요약:
+- 선택 행 renderer의 이름·색상·cursor·clear 출력을 메모리 buffer로 조립해 행당 단일 ANSI 출력으로 줄였습니다.
+- 선택 행 경로의 `row_name_width` command substitution을 제거했습니다.
+- 실제 launcher-owned sidebar를 kill/recreate하고 pane residue 및 work layout을 확인하는 lifecycle 회귀 테스트를 추가했습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검증 및 `git diff --check`: PASS
+- 독립 3회 profile lifecycle/invariant: PASS
+- 중앙값: idle CPU 1.65%, active CPU 2.20%, key 49ms, switch 234ms, archive 341ms, restore 1405ms
+
+판정:
+- idle CPU와 archive는 v0.6.5보다 개선됐고 기능 및 launcher lifecycle invariant는 통과했습니다.
+- key latency는 49ms로 개선되지 않아 40ms 목표를 미달했습니다.
+- restore 중앙값은 통과했지만 한 run의 최대값이 2348ms로 관측되어 분산도 후속 확인이 필요합니다.
+- v0.6.5를 안정 기준으로 유지하며 v0.6.6 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.7 key latency trace 결과
+
+요약:
+- selection render의 두 행 출력을 하나의 ANSI buffer로 합쳤습니다.
+- key 입력이 처리된 loop에서는 animation frame을 건너뛰어 입력 렌더를 우선했습니다.
+- trace-enabled profile에서 launcher 내부 selection render 시간을 별도 metric으로 기록했습니다.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- 정적 검증 및 `git diff --check`: PASS
+- 독립 3회 profile lifecycle/invariant: PASS
+- 중앙값: idle CPU 1.92%, active CPU 1.65%, key 48ms, switch 245ms, archive 349ms, restore 1341ms
+- trace 1회: 외부 key latency 50ms, 내부 selection render 1297us
+
+판정:
+- 내부 render는 1.3ms 수준으로 충분히 짧아 renderer는 주 병목이 아닌 것으로 확인했습니다.
+- 외부 key latency는 48ms로 개선됐지만 40ms 목표는 미달했습니다.
+- 남은 병목은 tmux/PTY 출력 반영과 `capture-pane` 관측 경로로 분류하고, v0.6.7 tag 승격은 보류합니다.
+
+## 2026-07-17 - v0.6.7 capture-pane 관측 지연 분리
+
+추가 측정:
+- launcher 내부 selection render: 1062us
+- `capture-pane` 호출: 20ms
+- render 완료 후 화면 관측까지: 44ms
+- trace-enabled 전체 측정은 trace overhead로 68ms였으며, 표준 3회 측정 중앙값 48ms와 분리했습니다.
+
+결론:
+- key latency의 주 병목은 renderer가 아니라 tmux/PTY와 `capture-pane` 관측 경로입니다.
+- 다음 수정은 production renderer가 아닌 profile 관측 방식과 terminal 반영 구간을 대상으로 진행합니다.
+- `pipe-pane` 기반 persistent observer는 raw ANSI buffering과 polling 영향으로 58~89ms가 관측되어 표준 측정기로 채택하지 않고 제거했습니다.
+
+추가 확인:
+- buffering 없는 persistent raw-stream reader를 별도 진단 모드로 추가했습니다.
+- `pipe-pane` persistent reader는 52ms를 기록해 기존 58~89ms 실험보다 개선됐지만 40ms 목표는 넘었습니다.
+- 표준 3회 metric은 변경하지 않고 `PROFILE_PIPE_OBSERVER=true`에서만 진단 reader를 사용합니다.
+
+## 2026-07-17 - v0.6.7(v6.7) 승격
+
+요약:
+- 선택 행 단일 buffer 출력과 key 우선 animation 처리를 적용했습니다.
+- 내부 render, `capture-pane`, persistent raw-stream observer의 phase를 분리 기록했습니다.
+- launcher-owned sidebar lifecycle과 전체 회귀 invariant를 유지했습니다.
+
+검증:
+- 표준 3회 profile 중앙값: idle CPU 1.92%, active CPU 1.65%, key 48ms, switch 245ms, archive 349ms, restore 1341ms
+- launcher 내부 selection render: 약 1ms
+- 전체 sidebar 회귀, lifecycle, 정적 검증: PASS
+
+판정:
+- 기능 안정성과 launcher 내부 latency 목표를 통과한 결과를 v0.6.7 안정 기준으로 승격합니다.
+- 외부 key latency 48ms는 40ms 목표를 초과하지만 tmux/PTY 관측 경로의 후속 과제로 명시합니다.
+- `v0.6.7` tag를 생성하고 v0.6.7 profile report를 기준 문서로 보관합니다.
+
 ## 2026-07-17 - v0.6.5(v6.5) 승격
 
 요약:
