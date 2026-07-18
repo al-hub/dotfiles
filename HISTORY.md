@@ -3113,3 +3113,78 @@
 - sidebar gradient/lifecycle 회귀, layout/grid/cursor invariant 및 위 성능 항목은 PASS입니다.
 - key latency는 49ms로 40ms 목표를 소폭 초과하지만, 결과와 후속 과제를 명시한 상태로 v0.6.5를 안정 기준으로 승격합니다.
 - `v0.6.5` tag를 생성하고 v0.6.5 profile report를 기준 문서로 보관합니다.
+
+## 2026-07-18 - v0.6.7 reproduction profile
+
+추가:
+- `docs/profile-isolated-sidebar-reproduction-plan.md`에 상세 개발·검증·리뷰 계획을 기록했습니다.
+- `tests/profile-isolated-sidebar-reproduction.sh`를 추가해 `docs/reproduction.md`의 attached-client 절차를 자동화했습니다.
+- 실제 client tty 조회, `switch-client -c`, source 7초 안정화, Enter 후 target 2초 안정화, target sidebar 재검색, `capture-pane -e`, ESC count와 cursor invariant를 추가했습니다.
+- auto profile과 동일한 공통 metric 및 10-session navigation·burst·periodic·resize·lifecycle 시나리오를 출력합니다.
+
+결과:
+- auto와 reproduction 각각 3회 실행했고 두 profile 모두 전체 status PASS입니다.
+- reproduction 중앙값은 idle CPU 15.76%, active CPU 16.90%, key 51ms, switch 323ms, archive 283ms, restore 933ms입니다.
+- reproduction의 target cursor와 final cursor는 모두 3/3 PASS이며, ESC count는 0으로 기록됐습니다.
+- auto의 `down nav-03` 반복 outlier는 reproduction 3회에서는 재현되지 않았습니다.
+- navigation pane resize race는 resize를 독립 pane phase로 분리해 비교 가능성을 유지했으며, 결합 시나리오는 후속 조사 항목으로 남겼습니다.
+- 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - reproduction setup 경로 및 archive 측정 보완
+
+변경:
+- reproduction profile의 standard/common 초기 sidebar 생성을 `tmux-session-launcher --open-sidebar` 토글 경로로 변경했습니다.
+- 전용 임시 HOME에 launcher를 연결하고 저장소 `dotfiles/tmux.conf`를 명시 로드하도록 했습니다.
+- 물리적 prefix parser 주입 제약은 보고서에 남기고, sidebar pane 내부 `j`/`Enter` 입력은 `send-keys`로 유지했습니다.
+- archive 측정이 `-pending.tsv`를 읽는 race를 피하도록 최종 window archive 파일의 생성·크기 안정성을 기다립니다.
+
+검증:
+- 수정 후 reproduction 3회 모두 PASS.
+- 중앙값: idle CPU 15.96%, active CPU 15.11%, key 54ms, session switch 301ms, archive 345ms, restore 491ms.
+- sidebar count/client alignment/cursor/lifecycle/layout/archive restore invariant 모두 PASS.
+- navigation 1.2초대 outlier 일부를 다음 단계 trace 분석 대상으로 기록했습니다.
+- 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - clean standard reproduction phase 분리
+
+변경:
+- standard reproduction을 별도 tmux socket/server에서 실행하도록 분리했습니다.
+- background session 전환 직후 7초를 기다린 뒤 standard phase 내부에서 `j`와 `Enter`를 실행합니다.
+- Enter 직후 target session 확인, 2초 안정화, target sidebar capture를 standard phase에서 수행합니다.
+- standard phase 종료 후 server/client를 정리하고 공통 baseline·navigation phase를 새 server에서 실행합니다.
+
+결과:
+- clean standard phase 3회 모두 background stabilization, `j`, `Enter`, target alignment PASS입니다.
+- background 안정화 중앙값은 약 7027ms, standard switch 중앙값은 391ms입니다.
+- before/after/settled cursor frame은 3회 모두 expected transient와 최종 정렬을 확인했습니다.
+- 최종 reproduction 공통 metric 중앙값은 idle CPU 16.91%, active CPU 17.26%, key 52ms, switch 417ms, archive 314ms, restore 1082ms입니다.
+- 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - reproduction frame/lifecycle metadata 보완
+
+추가:
+- before-enter, immediate-after-enter, settled cursor frame을 각각 capture합니다.
+- source/target sidebar pane ID와 PID, sidebar count, client session alignment를 기록합니다.
+- TERM/SHELL/locale/DISPLAY/tmux config metadata와 실제 source/target 안정화 시간을 기록합니다.
+- `PROFILE_KEEP_RUN_DIR=true`로 raw ANSI/plain capture artifact를 보존할 수 있게 했습니다.
+
+결과:
+- 최종 reproduction 3회 모두 source/target sidebar count 1, client alignment PASS입니다.
+- immediate frame은 target cursor 0/1, settled frame은 1/1로 3회 모두 안정화되었으며 transient stale frame을 정량 확인했습니다.
+- 최종 중앙값은 idle CPU 15.55%, active CPU 15.81%, key 48ms, switch 292ms, archive 255ms, restore 925ms입니다.
+- 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - reproduction profile 보완 및 재측정
+
+변경:
+- source/background/target client session을 전환 전후와 capture 직전에 검증하도록 보완했습니다.
+- source/target sidebar count가 정확히 1인지 검증하고, target 안정화 시간을 고정값이 아닌 실제 elapsed 값으로 기록합니다.
+- launcher `mark_sidebar_pane()`이 active pane 대신 `TMUX_PANE`을 대상으로 title을 설정하도록 수정해 duplicate sidebar title 문제를 제거했습니다.
+- launcher의 TUI Enter 전환이 attached client를 찾으면 `switch-client -c`를 사용하도록 수정했습니다.
+
+결과:
+- auto와 reproduction 최종 3회 실행이 모두 PASS입니다.
+- reproduction 중앙값은 idle CPU 15.17%, active CPU 16.14%, key 69ms, switch 330ms, archive 273ms, restore 945ms입니다.
+- source/target sidebar count와 client session alignment는 모두 3/3 PASS입니다.
+- 실제 source 안정화는 약 7054~7065ms, target 안정화는 약 2018~2038ms였습니다.
+- 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.

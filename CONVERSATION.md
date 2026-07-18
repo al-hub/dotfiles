@@ -2751,3 +2751,96 @@
 - `profile-isolated-sidebar-auto.sh`를 기존 `profile-isolated-sidebar.sh`의 standalone 복사본으로 재구성했습니다.
 - 기존 idle/active/key/switch/archive/restore/lifecycle/grid phase를 직접 포함하고, 그 뒤에 navigation·burst·refresh·resize 시나리오를 실행합니다.
 - 통합 실행 결과 전체 status는 PASS였고 기존 profile 파일은 수정하지 않았습니다.
+
+## 2026-07-18 - v0.6.7 reproduction profile 개발 및 비교
+
+사용자 요청:
+- `docs/reproduction.md`를 준수하는 `profile-isolated-sidebar-reproduction.sh`를 만들고 auto profile과 정량 비교합니다.
+- 상세 계획, 구현, 오류 보완, 최종 표, 시사점과 다음 단계를 리뷰 전까지 commit 없이 준비합니다.
+
+구현:
+- `docs/profile-isolated-sidebar-reproduction-plan.md`를 작성했습니다.
+- attached URxvt와 실제 client tty를 확인하고 모든 외부 switch에 `switch-client -c`를 적용했습니다.
+- source 전환 후 7초, Enter target 전환 후 2초를 기다리고 target sidebar를 재검색합니다.
+- target grid를 `capture-pane -e`로 캡처하고 ESC count와 `>* target` cursor invariant를 기록합니다.
+- auto와 비교할 공통 metric을 유지하고 reproduction 전용 client/stability/ANSI 결과를 추가했습니다.
+
+검증:
+- 최종 reproduction 3회와 기존 auto 3회를 실행했습니다.
+- 두 profile 모두 전체 status PASS입니다.
+- reproduction 중앙값: idle CPU 15.76%, active CPU 16.90%, key 51ms, switch 323ms, archive 283ms, restore 933ms.
+- target/final cursor는 모두 3/3 PASS이며 ESC count는 0입니다.
+- auto의 `down nav-03` outlier는 reproduction에서 재현되지 않았습니다.
+- navigation 중 resize에서 pane/cursor 안정화 문제가 관찰되어 resize를 독립 pane으로 분리했습니다. 결합 resize race는 후속 제품 조사 대상으로 보존했습니다.
+
+리뷰 전 결정:
+- 신규 plan/profile/report와 문서 변경은 아직 commit하지 않습니다.
+- 사용자가 파일명, resize phase 분리, ESC 0 처리, 추가 측정 횟수를 리뷰한 후 commit 여부를 결정합니다.
+
+## 2026-07-18 - reproduction profile 개선 진행 결과
+
+추가 개선:
+- background→source 명시적 client 전환과 source/target client session 재검증을 추가했습니다.
+- sidebar pane count를 검사해 duplicate sidebar를 발견했습니다.
+- 원인은 launcher `mark_sidebar_pane()`이 `TMUX_PANE`가 아닌 active pane에 title을 설정하는 것이었고, 이를 수정했습니다.
+- launcher TUI Enter 경로도 attached client를 조회해 `switch-client -c`로 전환하도록 수정했습니다.
+- target 안정화 시간을 실제 elapsed 값으로 출력하도록 수정했습니다.
+
+최종 검증:
+- auto 3회, reproduction 3회 모두 PASS입니다.
+- reproduction 중앙값: idle CPU 15.17%, active CPU 16.14%, key 69ms, switch 330ms, archive 273ms, restore 945ms.
+- source/target sidebar count = 1, client session alignment = 3/3 PASS.
+- source 안정화 약 7054~7065ms, target 안정화 약 2018~2038ms.
+
+남은 리뷰 사항:
+- 직접 `split-window` sidebar 생성과 실제 toggle 경로의 차이를 별도 검증할지 결정합니다.
+- navigation 중 resize race를 표준 reproduction에 포함할지 diagnostic으로 유지할지 결정합니다.
+- ESC count 0을 정상 진단값으로 유지할지 결정합니다.
+- 현재 변경은 commit하지 않은 상태입니다.
+
+## 2026-07-18 - reproduction frame 및 artifact 검증 추가
+
+추가 구현:
+- before-enter, immediate-after-enter, settled cursor frame을 각각 기록합니다.
+- source/target pane ID·PID, sidebar count, client session alignment를 기록합니다.
+- 실행 환경 metadata와 실제 안정화 시간을 기록합니다.
+- `PROFILE_KEEP_RUN_DIR=true`로 raw ANSI/plain capture를 보존할 수 있습니다.
+
+결과:
+- 최종 reproduction 3회 모두 PASS.
+- immediate frame target cursor 0/1, settled frame target cursor 1/1이 3회 반복되어 transient stale frame의 회복을 정량 확인했습니다.
+- 중앙값: idle CPU 15.55%, active CPU 15.81%, key 48ms, switch 292ms, archive 255ms, restore 925ms.
+
+남은 차이:
+- 초기 sidebar는 아직 직접 split fixture입니다.
+- 표준 reproduction이 common baseline phase와 같은 server에서 실행됩니다.
+- tmux config는 `default`로 기록되며 명시적 config 격리는 다음 단계입니다.
+
+## 2026-07-18 - clean standard phase 분리 결과
+
+추가 구현:
+- 별도 standard tmux socket/server에서 `repro-anchor`, `repro-background`, `repro-target`을 실행합니다.
+- background 전환 직후 7초 안정화 후 standard phase 안에서 `j`와 `Enter`를 수행합니다.
+- standard target alignment 후 server/client를 정리하고 공통 baseline phase를 새 server에서 실행합니다.
+
+검증:
+- clean standard phase 3회 모두 PASS.
+- background 안정화 7018~7036ms.
+- standard switch 중앙값 391ms.
+- before-j target cursor 0/1, after-j 1/1, immediate-after-enter 0/1, settled target 1/1이 3회 동일하게 관찰되었습니다.
+- 최종 reproduction 중앙값: idle CPU 16.91%, active CPU 17.26%, key 52ms, switch 417ms, archive 314ms, restore 1082ms.
+
+남은 차이:
+- standard sidebar 생성은 아직 direct split fixture입니다.
+- tmux config는 여전히 default이며 명시적 repository config 격리는 남은 과제입니다.
+
+## 2026-07-18 - reproduction profile 개선 구현 및 리뷰 대기
+
+- 초기 sidebar 생성은 direct split이 아니라 `Ctrl+a s` binding과 동일한 launcher toggle 명령을 사용하도록 변경했습니다.
+- repository tmux config와 temporary HOME을 사용해 profile 설정을 격리했습니다.
+- archive pending/final 파일 식별 race를 측정부에서 제거했습니다.
+- 3회 최종 측정은 모두 PASS했으며 reproduction 중앙값은 idle 15.96%, active 15.11%, key 54ms, switch 301ms, archive 345ms, restore 491ms입니다.
+- archive bytes/restore 차이는 auto와 shell/configuration fixture가 달라 setup-sensitive로 판정했습니다.
+- navigation 일부 1.2초대 outlier는 다음 단계 trace 분석 대상입니다.
+- 물리적 URxvt prefix 입력, mouse/focus, 실제 terminal resize는 현재 환경의 미지원 편차로 명시했습니다.
+- 사용자 리뷰 전에는 commit/tag/push를 하지 않습니다.

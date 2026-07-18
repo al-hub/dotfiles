@@ -361,7 +361,12 @@ target_pane_path()
 
 mark_sidebar_pane()
 {
-    tmux select-pane -T "$SIDEBAR_TITLE" 2>/dev/null || true
+    local pane_id="${TMUX_PANE:-}"
+    if [ -n "$pane_id" ]; then
+        tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE" 2>/dev/null || true
+    else
+        tmux select-pane -T "$SIDEBAR_TITLE" 2>/dev/null || true
+    fi
 }
 
 sidebar_session_name()
@@ -641,13 +646,20 @@ wait_for_sidebar_refresh()
 
 switch_session()
 {
-    session_name="$1"
+    local session_name="$1"
+    local client_tty
     [ -n "$session_name" ] || return 0
     remember_sidebar_width
     width="$(sidebar_width)"
     ensure_session_sidebar "$session_name" "false" "$width"
     tmux set-option -g "@sidebar_force_refresh_$session_name" 1 2>/dev/null || true
-    tmux switch-client -t "=$session_name" 2>/dev/null || true
+    client_tty="$(tmux list-clients -F '#{client_tty}|#{session_name}' 2>/dev/null |
+        awk -F '|' -v current="${current_session:-}" '$2 == current { print $1; exit }')"
+    if [ -n "$client_tty" ]; then
+        tmux switch-client -c "$client_tty" -t "=$session_name" 2>/dev/null || true
+    else
+        tmux switch-client -t "=$session_name" 2>/dev/null || true
+    fi
     tmux set-option -g "@sidebar_force_refresh_$session_name" 1 2>/dev/null || true
     current_session="$session_name"
     selected_session="$session_name"

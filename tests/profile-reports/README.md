@@ -17,4 +17,8 @@
 
 확장 자동 시나리오는 `tests/profile-isolated-sidebar-auto.sh`와 `v0.6.7-auto.md`에 기록합니다.
 
+`docs/reproduction.md` attached-client 절차를 따르는 비교 profile은 `tests/profile-isolated-sidebar-reproduction.sh`와 `v0.6.7-reproduction.md`에 기록합니다.
+
+reproduction profile은 source/target client session, sidebar 단일성, 실제 안정화 시간을 별도 `REPRO_*` metric으로 기록합니다.
+
 각 파일의 geometry, 실행 횟수, metric 이름을 변경하지 않아 버전 간 직접 비교할 수 있도록 유지합니다.
