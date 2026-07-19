@@ -3130,6 +3130,120 @@
 - navigation pane resize race는 resize를 독립 pane phase로 분리해 비교 가능성을 유지했으며, 결합 시나리오는 후속 조사 항목으로 남겼습니다.
 - 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
 
+## 2026-07-18 - v0.6.10 archive snapshot 단일 파싱 반복
+
+- archive pane snapshot을 window별로 반복 순회하던 경로를 session당 한 번 집계하도록 변경했습니다.
+- archive 파일 포맷, tmux snapshot 명령, restore parser는 유지했습니다.
+- animation/poll 500ms 조정 실험은 CPU 목표를 달성하지 못하고 reproduction 후반 안정성도 확보하지 못해 원복했습니다.
+- 단일 파싱 변경 후 regression 10/10과 정적 검사는 PASS했습니다.
+- CPU와 archive/restore 도전 목표는 아직 미달이며, reproduction lifecycle 안정화 후 3회 재측정을 진행합니다.
+
+## 2026-07-18 - v0.6.10 history append 및 polling 실험 결과
+
+- idle read timeout 500ms 실험은 idle/active CPU 25.19/24.63%로 악화되어 원복했습니다.
+- archive history append를 외부 `sed` 호출 없이 Bash builtin loop로 처리하도록 변경했습니다.
+- regression 10/10과 정적 검사는 PASS했습니다.
+- reproduction은 CPU 15.98/15.46%, key 48ms까지 기록했으나 후반 attached-client 단계가 조기 종료되어 archive/restore 새 수치는 승격에 사용하지 않습니다.
+- 유효한 이전 결과는 archive 370ms, restore 436ms이며 v0.6.10 목표는 계속 미달입니다.
+
+## 2026-07-18 - v0.6.8 trace 및 output latency 측정 개발
+
+변경:
+- v0.6.8 상세 개발계획과 reproduction 결과 보고서를 추가했습니다.
+- launcher selection에 trace id와 update/render trace event를 추가했습니다.
+- reproduction profile에 optional internal trace와 pipe-observer latency 측정을 추가했습니다.
+- animation, age-cell, animation-state row 출력을 batching했습니다.
+
+검증:
+- auto/reproduction 각각 3회 실행과 reproduction pipe 57 step 측정을 완료했습니다.
+- reproduction pipe p50 32ms, p95 1188ms, max 1214ms, 500ms 초과 3회입니다.
+- 내부 selection render는 약 1~7ms로 측정되어 tmux/PTY output delivery가 다음 조사 대상입니다.
+- 전체 sidebar 회귀 및 lifecycle/layout/archive/restore invariant는 PASS입니다.
+- CPU·navigation p95 최종 목표는 아직 달성하지 못해 v0.6.8 승격은 보류합니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.10 archive/restore phase 계측 및 history append 최적화
+
+- v0.6.10 계획을 작성하고 archive/restore phase metric을 추가했습니다.
+- history append를 조건부 mkdir과 `sed` 기반 처리로 변경했습니다.
+- archive dispatch/file-ready/total은 218/336/345ms였습니다.
+- restore history/dispatch/session-settlement/total은 94/159/385/437ms였습니다.
+- 전체 regression/lifecycle은 PASS했지만 archive 250ms, restore 300ms 목표는 미달입니다.
+- 다음 대상은 archive/delete 사전 tmux 호출과 restore session settlement입니다.
+
+추가:
+- delete wrapper의 tmux snapshot 통합은 lifecycle-e2e AI exit state 회귀로 원복했습니다.
+- history append 최적화와 restore direct-open은 유지합니다.
+
+추가 검증:
+- stable busy session은 command signature가 같을 때 full snapshot을 생략하는 regression을 통과했습니다.
+- `sleep → codex` pane command transition은 state scan을 재개하는 regression을 통과했습니다.
+- 전체 regression suite는 9/9 PASS이며, shell child AI process fixture는 후속 과제입니다.
+
+## 2026-07-18 - v0.6.8 30회 final sample 결과
+
+검증:
+- reproduction 30회 run과 570 navigation step을 완료했습니다.
+- 기능 시나리오는 30/30 PASS했습니다.
+- pipe navigation p50/p95/max는 14/22/1765ms였습니다.
+- periodic refresh collision outlier가 4회(run 1, 6, 28, 30) 재발했습니다.
+- idle/active CPU p50 16.08/15.99%, key 51ms, switch 298ms, archive 350ms, restore 509ms로 최종 성능 목표는 미달입니다.
+- cursor/lifecycle/layout/archive/restore integrity는 PASS입니다.
+- v0.6.8 승격/tag는 보류하며 리뷰 전 commit하지 않습니다.
+
+## 2026-07-18 - v0.6.8 send/output latency 분리
+
+추가:
+- navigation profile에서 `send-keys` dispatch와 pipe observation 시간을 별도 기록합니다.
+
+결과:
+- 최신 3회 send p50/p95/max: 20/28/33ms.
+- 최신 3회 pipe p50/p95/max: 14/22/25ms.
+- 최신 3회 500ms 초과: 0회.
+- 10회 smoke에서 발생한 periodic outlier는 send dispatch가 아닌 pane output observation 구간으로 분리됐습니다.
+- 30회 최종 검증 전이므로 v0.6.8 승격은 보류합니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.8 10회 smoke 및 periodic outlier 확인
+
+검증:
+- maintenance defer 상태에서 reproduction 10회 smoke를 수행했습니다.
+- 190 navigation step 중 189개는 500ms 미만이었고, 1개가 run 8의 periodic refresh collision에서 재발했습니다.
+- 전체 pipe navigation p50 27ms, p95 41ms, max 1128ms입니다.
+- 전체 capture navigation p50 66ms, p95 87ms, max 1159ms입니다.
+- 10회 functional/lifecycle/archive/restore 시나리오는 모두 PASS했습니다.
+
+추가:
+- `PROFILE_PERIODIC_REFRESH_DELAY`로 periodic collision 재현 시점을 조정할 수 있게 했습니다.
+- CPU 및 archive/restore 최종 목표는 아직 미달이며 승격하지 않습니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.8 animation A/B 검증
+
+추가:
+- `PROFILE_ANIMATION_ENABLED=false` controlled A/B 측정 모드를 추가했습니다.
+- animation ON/OFF에서 pipe latency와 outlier count를 비교했습니다.
+
+결과:
+- animation ON: p50 32ms, p95 1188ms, max 1214ms, 500ms 초과 3/57.
+- animation OFF: p50 32ms, p95 1276ms, max 1349ms, 500ms 초과 3/57.
+- animation 비활성화만으로 outlier가 제거되지 않아 tmux/PTY output delivery 또는 외부 scheduling을 다음 조사 대상으로 확정했습니다.
+- v0.6.8 성능 목표는 아직 미달이며 승격하지 않습니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.8 key-path maintenance defer 개선
+
+변경:
+- key가 있는 tick에서는 age-cell, force-refresh 확인, state refresh를 다음 tick으로 미루도록 변경했습니다.
+- maintenance defer 여부를 launcher trace에 기록합니다.
+
+결과:
+- 수정 후 reproduction 3회 pipe 결과: p50 26ms, p95 37ms, max 51ms, 500ms 초과 0/57.
+- capture 결과: p50 64ms, p95 78ms, max 93ms, 500ms 초과 0/57.
+- cursor/lifecycle/layout/archive/restore invariant는 PASS입니다.
+- CPU 8% 목표와 key/session/archive 최종 목표는 아직 미달하여 v0.6.8 승격은 보류합니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
 ## 2026-07-18 - reproduction setup 경로 및 archive 측정 보완
 
 변경:
@@ -3144,6 +3258,76 @@
 - sidebar count/client alignment/cursor/lifecycle/layout/archive restore invariant 모두 PASS.
 - navigation 1.2초대 outlier 일부를 다음 단계 trace 분석 대상으로 기록했습니다.
 - 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.9 periodic maintenance cooldown 계획 및 구현 시작
+
+변경:
+- 입력 직후 250ms 동안 age-cell, force-refresh 확인, periodic state refresh를 defer하는 cooldown을 추가했습니다.
+- `TMUX_SESSION_SIDEBAR_KEY_MAINTENANCE_COOLDOWN_MS`로 cooldown을 조절할 수 있게 했습니다.
+- `recent-input` defer trace를 추가해 periodic refresh 충돌 완화 여부를 측정할 수 있게 했습니다.
+- 상세 계획은 `docs/profile-isolated-sidebar-v0.6.9-plan.md`에 기록했습니다.
+
+상태:
+- 정적·기능 검증과 3회/10회 측정은 다음 단계에서 수행합니다.
+- 목표 달성 전에는 v0.6.9 승격, tag, commit, push를 수행하지 않습니다.
+
+## 2026-07-18 - v0.6.9 periodic snapshot 최적화 결과
+
+검증:
+- 입력 직후 cooldown 단독 적용은 periodic outlier를 제거하지 못해 1791ms가 재현됐습니다.
+- `PROFILE_STATE_REFRESH_SECONDS=3600` 통제군의 periodic 단계는 67ms였습니다.
+- 선택 session의 pane command signature가 동일하면 전체 periodic `collect_sessions`를 생략하도록 수정했습니다.
+- 수정 후 기본 5초 refresh에서 periodic 단계는 69ms였습니다.
+- idle/active CPU 16.14/15.66%, key 47ms, switch 292ms, archive 357ms, restore 502ms입니다.
+- gradient/fingerprint/hot-path/state/isolation/regression/lifecycle 회귀와 layout/cursor/archive/restore invariant는 PASS입니다.
+
+주의:
+- 전체 도전 목표는 아직 미달입니다.
+- shell pane 내부에서 AI child process가 command 이름을 유지하는 전이는 별도 회귀 확인이 필요합니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - v0.6.9 shell child AI process-tree 안전성 보완
+
+변경:
+- shell pane은 선택 session의 on-demand refresh에서만 child AI process probe를 수행합니다.
+- startup 전체 scan에서는 shell child probe를 생략해 hot-path display-message 호출 수를 기존 4회로 유지합니다.
+- stable busy non-shell pane은 command signature shortcut을 계속 사용합니다.
+- shell child AI, command transition, stable busy snapshot regression을 추가했습니다.
+
+검증:
+- regression 10/10 PASS.
+- 최종 reproduction periodic 단계 68ms, key 47ms, restore integrity/layout/cursor PASS.
+- idle/active CPU 16.63/16.40%, switch 864ms, archive 381ms, restore 484ms로 목표는 미달입니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+## 2026-07-18 - CPU polling 제거 실험 보류
+
+- blocking `read`와 signal timer 결합을 실험했습니다.
+- blocking `read`가 `USR1`에 의해 안정적으로 깨어나지 않아 lifecycle-e2e가 실패했습니다.
+- timeout read를 유지한 signal timer reproduction도 idle/active CPU 16.33/16.66%로 개선되지 않았습니다.
+- CPU 목표 달성에는 별도 event/input reader 구조가 필요하므로 해당 실험은 채택하지 않습니다.
+- rollback 후 전체 sidebar suite와 정적 검증은 PASS입니다.
+
+## 2026-07-18 - v0.6.9 비선택 process probe 제한 결과
+
+- 선택 session 외에는 AI 명령으로 식별된 pane만 process probe하도록 제한했습니다.
+- 전체 sidebar regression 10/10 및 lifecycle/layout/cursor/archive/restore invariant는 PASS했습니다.
+- reproduction idle/active CPU 16.95/16.27%, key 50ms, switch 483ms, archive 345ms, restore 510ms, periodic 71ms입니다.
+- CPU는 개선되지 않아 process probe는 주 CPU 병목이 아닌 것으로 판정했습니다.
+- archive/restore 실행·sidebar 생성·측정부 대기 구간을 다음 계측 대상으로 남겼습니다.
+
+## 2026-07-18 - v0.6.9 restore sidebar direct-open 최적화
+
+- restore 후 sidebar 생성에서 중복 전체 pane 조회를 제거했습니다.
+- 저장된 width를 직접 사용해 target session에 sidebar를 열도록 수정했습니다.
+- restore 510ms에서 418ms sample을 확인했으며 layout/cursor/integrity는 PASS입니다.
+- archive 322ms, CPU 16%대, switch 525ms로 전체 목표는 미달입니다.
+- switch 순서 변경은 편차가 커 원래 순서로 되돌렸습니다.
+- 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+
+추가 검증:
+- target pane 명시 후 sidebar 선생성 순서를 재시험했으나 restore 562ms로 악화되어 원복했습니다.
+- client 전환 후 direct-open 순서와 history append 최적화만 유지합니다.
 
 ## 2026-07-18 - clean standard reproduction phase 분리
 
@@ -3188,3 +3372,252 @@
 - source/target sidebar count와 client session alignment는 모두 3/3 PASS입니다.
 - 실제 source 안정화는 약 7054~7065ms, target 안정화는 약 2018~2038ms였습니다.
 - 사용자 리뷰 전이므로 commit/tag/push는 수행하지 않았습니다.
+## 2026-07-18 - v0.6.10 근본 병목 분리 계측
+
+- 현재 목표 미달의 근본 원인을 Bash polling loop, 동기식 tmux IPC, 동기식 archive/restore 실행 구조로 분류했습니다.
+- restore 내부에 history append, pane 복원, client 전환, force-refresh, target pane 탐색, sidebar startup 단계별 trace를 추가했습니다.
+- trace가 비활성화된 일반 실행 경로의 동작은 변경하지 않았으며, 다음 반복 최적화는 trace 결과 확인 후 결정합니다.
+- 현재 성능 목표와 기능 invariant는 아직 달성되지 않았고 commit/tag/push하지 않습니다.
+
+## 2026-07-18 - v0.6.10 restore 비동기 sidebar 실험
+
+- restore 후 sidebar startup을 background `run-shell` dispatch로 분리했습니다.
+- regression/lifecycle 10/10과 정적 검사는 PASS했습니다.
+- 1회 reproduction에서 restore 499ms → 476ms로 개선됐지만 CPU 16.55/17.43%, key 51ms, switch 370ms로 전체 목표는 미달입니다.
+- 다음 대상은 timed-read polling과 maintenance IPC를 분리하는 opt-in event-loop 실험입니다.
+
+## 2026-07-18 - v0.6.10 adaptive idle read 실험 결과
+
+- animation이 없는 idle 상태의 read timeout을 1초로 늘리는 opt-in 경로를 시험했습니다.
+- regression/lifecycle 10/10과 정적 검사는 통과했지만 idle/active CPU 15.19/16.34%, key 64ms, restore 496ms로 목표를 달성하지 못했습니다.
+- timeout만 늘리는 방식은 기본값에서 비활성화했으며, 다음 반복은 실제 event-driven wake-up 구조로 진행합니다.
+
+## 2026-07-18 - v0.6.10 opt-in event-loop 실험
+
+- blocking read와 signal timer 기반 opt-in event-loop를 구현했습니다.
+- 기본 경로 regression/lifecycle 10/10과 정적 검사는 PASS했고 reproduction lifecycle도 완료됐습니다.
+- opt-in 결과는 idle/active CPU 0.00%, key 57ms, switch 299ms, archive 404ms, restore 496ms입니다.
+- CPU는 개선됐지만 나머지 목표는 미달이며, `/proc` tick 측정 특성 확인을 위해 3회 반복 측정을 다음 단계로 남겼습니다.
+
+## 2026-07-18 - v0.6.10 event-loop 3회 reproduction
+
+- event-loop 조건에서 3회 reproduction lifecycle을 모두 완료했습니다.
+- 중앙값은 idle CPU 0.28%, active CPU 0%, key 66.5ms, switch 299ms, archive 363ms, restore 466ms입니다.
+- 기능 invariant와 기존 regression/lifecycle 10/10은 PASS했지만 전체 성능 목표는 미달입니다.
+- trace상 archive launcher 구간은 약 88ms, restore history→sidebar dispatch는 약 211ms로 외부 profile 관측값과 차이가 있었습니다.
+- `tests/profile-reports/v0.6.10-reproduction.md`에 기록했으며 event-loop 기본값 전환과 승격은 보류합니다.
+
+## 2026-07-18 - v0.6.10 selected-session active fixture
+
+- active CPU fixture를 sidebar 소유 session으로 수정해 실제 선택 session animation 경로를 측정했습니다.
+- 기본 regression/lifecycle 10/10과 정적 검사는 PASS했습니다.
+- 1회 결과는 idle/active CPU 0/0.28%, key 86ms, switch 294ms, archive 422ms, restore 521ms였습니다.
+- CPU spike는 확인되지 않았고 외부 key/archive/restore 지연이 증가해, 다음 대상은 product fork보다 내부 완료와 observer settlement 분리입니다.
+
+## 2026-07-18 - v0.6.10 internal/external metric 분리
+
+- profile에 trace 기반 `INTERNAL` phase metric을 추가했습니다.
+- 외부 archive 356ms 대비 내부 archive launcher 91.6ms, 외부 restore 489ms 대비 내부 restore launcher 189.2ms를 확인했습니다.
+- 내부 selection render는 약 1.3ms, 외부 key는 50ms였습니다.
+- archive/restore 내부 목표는 통과했으며, 남은 외부 초과는 tmux/PTY settlement와 observer 경로로 분리했습니다.
+
+## 2026-07-18 - v0.6.10 settlement phase 계측
+
+- archive observer wait와 restore client settlement phase를 profile에 추가했습니다.
+- 기본 regression/lifecycle 10/10과 정적 검사는 PASS했습니다.
+- 장시간 event-loop profile은 restore 이전에 조기 종료되어 성능 결과로 채택하지 않았습니다.
+- 짧은 재실행에서도 archive observer wait 113~120ms가 확인됐으며, restore lifecycle 안정화를 다음 과제로 분리했습니다.
+
+## 2026-07-18 - v0.6.10 profile exit-status race 수정
+
+- restore 이전 조기 종료 원인은 trace 비활성 시 optional internal metric 함수가 status 1을 반환한 `set -e` 버그였습니다.
+- 빈 trace metric도 성공 status를 반환하도록 profile을 수정했습니다.
+- 수정 후 lifecycle이 완주했고 archive observer wait 114ms, restore client settlement 247ms를 기록했습니다.
+- event-loop 결과는 idle/active CPU 0/0%, key 83ms, switch 384ms, archive 366ms, restore 510ms이며 외부 목표는 여전히 미달입니다.
+
+## 2026-07-18 - v0.6.10 event-loop 3회 및 settlement benchmark
+
+- 수정된 profile로 event-loop 3회 측정을 모두 완주했습니다.
+- 중앙값은 idle/active CPU 0/0%, key 69ms, switch 294ms, archive 365ms, observer wait 116ms, restore 475ms, client settlement 251ms입니다.
+- 독립 tmux settlement benchmark는 switch command 29ms, client settlement 85ms 중앙값을 기록했습니다.
+- restore settlement는 client 전환 단독 비용이 아니라 pane/layout 복원과 observer를 포함한 복합 구간으로 분리했습니다.
+## 2026-07-18 - v0.6.10 restore/switch phase trace
+
+- `switch_session`의 sidebar ensure, client lookup, client 전환, force-refresh 구간 trace를 추가했습니다.
+- restore pane 생성과 layout 적용을 pane/window 단위 trace로 분리했습니다.
+- 1회 진단에서 switch sidebar ensure 약 212.7ms, restore pane 생성 약 97.9ms, layout 약 60.4ms를 확인했습니다.
+- restore launcher trace 211ms와 외부 restore 521ms 사이의 약 310ms 차이는 다음 observer/readiness 분리 대상으로 남겼습니다.
+- 기능 regression/lifecycle 10/10과 정적 검사는 PASS했으며 commit/tag/push는 하지 않았습니다.
+
+## 2026-07-18 - v0.6.10 async restore ensure lifecycle 수정
+
+- `ensure_sidebar_for_session`의 tmux format 구분자 불일치로 target session sidebar가 생성되지 않던 lifecycle 버그를 수정했습니다.
+- `\\t` 기반 조회를 `|` 구분자로 변경하고 target session async ensure 회귀 시나리오를 추가했습니다.
+- 수정 후 최소 fixture에서 sidebar 1개 생성, launcher lifecycle 3/3, 전체 sidebar regression은 PASS했습니다.
+- reproduction은 readiness 336ms, restore 467ms, switch 324ms, archive 393ms, key 64ms를 기록했지만 성능 목표는 미달입니다.
+- transient ESC 관찰은 별도 안정성 분석 대상으로 남겼으며 commit/tag/push는 하지 않았습니다.
+
+## 2026-07-18 - v0.6.10 세 축 성능 분리 benchmark
+
+- `tests/profile-observer-settlement.sh`를 추가해 capture-pane polling과 pipe-pane observer를 동일 입력으로 비교했습니다.
+- observer 중앙값은 capture 51ms, pipe 40ms였고, 독립 tmux settlement는 command 27ms, client settlement 71ms였습니다.
+- 수정 후 trace reproduction 1회에서 launcher 내부 archive 160.7ms, restore 289.6ms, selection trace 1~2ms를 확인했습니다.
+- 같은 실행의 external profile은 key 92ms, switch 408ms, archive 540ms, restore 634ms였습니다.
+- launcher internal, tmux/PTY settlement, observer를 별도 축으로 기록했으며 3회 이상 반복 전에는 승격 판단을 보류합니다.
+
+## 2026-07-19 - v0.6.10 세 축 반복 측정 결과
+
+- launcher reproduction 3회와 settlement/observer benchmark 10회를 실행했습니다.
+- launcher 내부 archive p50/p95는 100.3/115.9ms, restore는 212.1/238.7ms였습니다.
+- 외부 profile p50/p95는 key 86/87ms, switch 297/310ms, archive 405/409ms, restore 507/515ms였습니다.
+- tmux client settlement는 61/114ms, capture observer는 62/74ms, pipe observer는 54.5/87ms였습니다.
+- 가장 큰 잔여 차이는 external archive/restore의 observer·topology settlement이며, 다음은 동일 run ID 통합 측정입니다.
+
+## 2026-07-19 - v0.6.10 campaign correlation
+
+- reproduction, tmux settlement, observer benchmark에 `separation-20260719-01` campaign ID를 연결했습니다.
+- launcher external은 key 75ms, switch 295ms, archive 395ms, restore 494ms였고 내부 archive/restore는 110.2/228.8ms였습니다.
+- settlement p50/p95는 59.5/77ms, capture observer는 48.5/90ms, pipe observer는 37.5/71ms였습니다.
+- fixture가 분리되어 있어 값을 직접 합산하지 않고 correlation key로만 사용했으며, 다음은 동일 lifecycle observer 측정입니다.
+
+## 2026-07-19 - v0.6.10 동일 lifecycle observer/restore phase
+
+- reproduction 내부에서 동일 입력의 capture/pipe observer phase를 측정하도록 추가했습니다.
+- capture 53ms, pipe 45ms, restore dispatch→sidebar create trace 362.7ms, sidebar readiness 314ms, client settlement 254ms였습니다.
+- profile external restore는 510ms였고 archive observer wait는 110ms였습니다.
+- reset race를 단계별 wait로 수정했으며 lifecycle과 전체 invariant는 PASS했습니다.
+
+## 2026-07-19 - v0.6.10 restore collect_sessions 병목 확인
+
+- trace event에 pane ID를 포함하고 restore startup을 process, title, collect, first render로 세분화했습니다.
+- process→title 52.2ms, title→collect end 1238.8ms, collect end→first render 16.5ms를 확인했습니다.
+- restore external 505ms, sidebar readiness 318ms, dispatch→sidebar create 370.2ms였습니다.
+- restore startup의 핵심 후보를 render가 아닌 `collect_sessions`로 좁혔으며, 전체 invariant는 PASS했습니다.
+
+## 2026-07-19 - v0.6.10 collect_sessions 내부 phase
+
+- collection setup/list-sessions 176.4ms, list-panes 84.0ms, parse-panes 58.3ms를 확인했습니다.
+- parse-sessions·state·AI 구간은 855.8ms로 title→collect 전체 1177.6ms의 대부분을 차지했습니다.
+- collect end→first render는 27.5ms로 render 병목 가설을 배제했습니다.
+- 다음은 AI probe/fingerprint 분리와 restore target-only 통제 실험입니다.
+
+## 2026-07-19 - v0.6.10 session loop 세분화 및 animation seed 최적화
+
+- AI state total과 parse-sessions 전체를 분리 계측해 AI probe보다 session loop 부수 계산이 큰 것을 확인했습니다.
+- `session_animation_seed_for`의 문자별 외부 `printf` 실행을 단일 `cksum` 호출로 변경했습니다.
+- parse-sessions는 1126.7ms에서 454.8ms로 감소했고, title→first render는 1342.2ms에서 700.6ms로 감소했습니다.
+- 최적화 후 archive 370ms, restore 501ms, key 60ms, switch 392ms를 기록했습니다.
+- 전체 sidebar gradient/lifecycle regression과 archive/restore/layout/cursor/navigation/resize invariant는 PASS했습니다.
+- target-only collection과 session status의 추가 분리는 다음 단계로 남겼으며 commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 restore session loop 추가 세분화
+
+- animation seed 계산을 외부 `cksum` 파이프라인에서 순수 Bash 내장 해시로 변경했습니다.
+- restore parse-sessions 구간에 session status/animation seed aggregate 계측을 추가하고, trace 전체 lifecycle이 아닌 마지막 restore collection 경계로 제한했습니다.
+- corrected reproduction은 parse-sessions 339.1ms, status total 282.7ms, seed total 319.6ms, title→first render 580.1ms를 기록했습니다.
+- key 70ms, switch 284ms, archive 382ms, restore 496ms였으며 기능/lifecycle invariant는 PASS, 목표 전체 달성은 아님을 기록했습니다.
+- target-only collection과 3회 중앙값 검증은 다음 단계이며 commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 영향 최소화 aggregate logging
+
+- launcher에 기본 비활성 `TMUX_SESSION_LAUNCHER_METRICS_FILE` 계측을 추가했습니다.
+- collection별 session 수, target 요청, snapshot/parse/status/AI/seed 시간과 호출 수를 메모리에 누적하고 2초 주기로 flush합니다.
+- 직접 append 방식은 idle CPU 12.18%로 영향이 확인되어 버퍼링 방식으로 대체했습니다.
+- buffered log는 idle 8.03%, key 51ms, archive 369ms, restore 468ms를 기록했으며 active CPU는 6.95%로 대조군과 편차가 있어 3회 반복이 필요합니다.
+- 로그에서 target 요청 시에도 status/seed가 전체 session 수만큼 실행되는 구조를 확인했습니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 operation correlation 및 cache 상태 계측
+
+- collection 로그에 operation ID, scan scope, AI cache hit/refresh, status/seed cache 상태를 추가했습니다.
+- selection input, archive complete, restore complete aggregate 로그를 추가했습니다.
+- operation ID에 run ID/pane/Bash PID/sequence를 포함해 process 간 중복을 제거했습니다.
+- target request에서도 `target-requested-full-loop`, status/seed cache miss 20회가 확인됐고 AI는 hit 19/refresh 1이었습니다.
+- 내부 selection 3.5~7.7ms, archive 90ms, restore 263ms를 기록했습니다.
+- target-only와 status/seed cache 구현 및 3회 p50/p95 비교는 다음 단계입니다.
+
+## 2026-07-19 - v0.6.10 status/seed 증분 cache 적용
+
+- persistent status cache와 session 생성시각 기반 animation seed cache를 session loop에 적용했습니다.
+- status는 activity busy 경계, busy command, pane generation, session 생성 변경 시 무효화합니다.
+- 20개 session target collection에서 status hit 19/miss 1, seed hit 20/miss 0을 확인했습니다.
+- 반복 parse-sessions는 약 360~700ms에서 100~330ms 구간으로 감소했습니다.
+- 최신 external sample은 idle/active 8.33/4.74%, key 60ms, archive 363ms, restore 502ms였으며 외부 목표는 아직 확정하지 않았습니다.
+- unchanged session cache 재사용 regression을 추가했고 전체 regression은 PASS했습니다.
+- target-only pane/session reconstruction과 3회 p50/p95 비교는 다음 단계입니다.
+
+## 2026-07-19 - v0.6.10 target-only pane snapshot 적용
+
+- target requested collection에서 target session pane만 재parse하고 다른 session metadata를 보존하도록 변경했습니다.
+- pane parse는 약 59~95ms에서 6~20ms로 감소했습니다.
+- session row 배열 전체 순회는 아직 남아 있으며, 전체 row index 재구축은 다음 단계입니다.
+- target metadata 보존 regression을 추가해 regression 12개 PASS를 확인했습니다.
+- 최신 external sample은 idle/active 5.18/4.39%, key 66ms, switch 413ms, archive 497ms, restore 884ms였으며 외부 목표는 아직 판정하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 session name-index row cache 적용
+
+- session order signature와 `name → row index` cache를 추가해 topology/order가 안정적인 target collection에서 target row만 in-place 교체하도록 변경했습니다.
+- session 생성·삭제·순서 변경 또는 target index 누락 시 전체 row rebuild로 fallback합니다.
+- 로그에 `scan_scope=target-requested-target-row`와 `row_cache_reusable`를 추가해 target-only와 fallback을 구분했습니다.
+- 20-session 안정 구간에서 `status_count=1`, `seed_count=1`을 확인했고, session 추가 시 full-row fallback을 확인했습니다.
+- 최신 단일 external sample은 idle/active 8.51/5.18%, key 78ms, switch 404ms, archive 361ms, restore 523ms이며 3회 중앙값 전 목표 판정은 보류합니다.
+- full regression 12개, lifecycle e2e 4개, launcher lifecycle 3개를 PASS했습니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 switch·key·archive phase 계측
+
+- switch의 sidebar ensure, force refresh, client lookup/switch, final refresh phase를 버퍼링 metrics로 분리했습니다.
+- key selection을 update, visibility, render phase로 분리하고 archive를 snapshot, write, rename phase로 분리했습니다.
+- 3회 중앙값은 switch 내부 302ms/외부 389ms, key 내부 17.9ms/외부 55ms, archive 내부 106ms/외부 401ms였습니다.
+- switch는 sidebar ensure 약 210ms, archive는 run-shell dispatch 약 280ms와 observer wait 약 119ms가 주요 병목으로 확인됐습니다.
+- 계측만 적용했으며 제품 동작 최적화와 버전 승격은 수행하지 않았습니다.
+
+## 2026-07-19 - v0.6.10 switch·archive 최적화 및 key observer 검증
+
+- cached pane snapshot에 target sidebar가 있으면 switch ensure에서 tmux pane/width 조회를 생략하도록 변경했습니다.
+- target sidebar가 없을 때 동기 생성하지 않고 `--ensure-sidebar-session`을 `run-shell -b`로 비동기 dispatch하도록 변경했습니다.
+- archive profile을 비동기 run-shell과 atomic final-file observer 기준으로 정리했습니다.
+- 3회 중앙값에서 switch 389ms→202ms, archive 401ms→310ms로 감소했습니다.
+- key pipe observer와 1ms polling은 개선되지 않아 기본 polling 경로를 유지했습니다.
+- regression 14개, lifecycle e2e 4개, launcher lifecycle 3개를 PASS했습니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - idle shell-child probe 및 blocking observer 후속 검증
+
+- 선택된 shell-only session에서 AI child가 없으면 전체 state snapshot을 건너뛰고 cached pane ID 기반 저비용 probe를 사용하도록 최적화했습니다.
+- 선택적 reproduction profile의 pipe observer에 FIFO blocking reader를 추가해 marker polling 지연을 측정 구간에서 제거했습니다. 제품 key/render 경로는 변경하지 않았습니다.
+- 3회 중앙값은 idle 2.76%, active 5.39%, key 36ms(blocking observer), switch 132ms, archive 312ms, restore 484ms였습니다. active CPU 때문에 전체 목표 달성으로 판정하지 않았습니다.
+- event-loop timer 실험은 active refresh 누락으로 폐기했습니다.
+- regression 15개, lifecycle e2e 4개, launcher lifecycle 3개와 정적 검사를 PASS했습니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - frame/render active CPU 원인 분석
+
+- animation frame, name formatting, ANSI emit, full render, state-change render를 metrics 파일에 누적 계측했습니다.
+- active profile에서 136 frame/약 34초, frame 전체 298ms, name format 139ms, ANSI emit 40ms, full render 4회 105ms, state render 2회 4.8ms를 확인했습니다.
+- animation 비활성 대조군 active CPU는 5.38%로, animation을 꺼도 active CPU 초과가 유지됐습니다.
+- frame/render는 주원인이 아닌 것으로 분리됐으며 다음 대상은 maintenance/read/selected-session refresh와 외부 observer입니다.
+- 계측 subprocess 오버헤드를 줄이기 위해 hot path에서는 `EPOCHREALTIME` 직접 캡처를 사용했습니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-19 - maintenance/refresh 후보 검증 보류
+
+- waiting fingerprint 억제와 최근 activity 기반 fingerprint skip 후보를 실험했지만 active CPU가 각각 5.49%, 5.68%로 개선되지 않아 제거했습니다.
+- state refresh 10초 대조군은 active CPU 9.29%, key 72ms로 악화되어 채택하지 않았습니다.
+- 이번 단계의 유효한 변경은 frame/render 계측뿐이며, 다음은 maintenance tick 내부 세분 계측입니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-20 - maintenance/read phase 계측 및 blocking-read 실험
+
+- read timeout, age render, force-refresh lookup, state refresh 경로를 누적 metrics로 분리했습니다.
+- 약 35초 profile에서 loop 142회, read timeout 140회, age render 42회/107.9ms, force check 8회/148ms, state path 42회/886ms를 기록했습니다.
+- animation 포함 blocking read 실험은 active CPU 0%처럼 보였지만 navigation·resize invariant가 실패해 즉시 원복했습니다.
+- read wall time과 CPU time을 구분해야 하므로 다음 단계는 phase별 command count 및 CPU tick 계측입니다. commit/tag/push는 하지 않았습니다.
+
+## 2026-07-20 - phase command count 및 `/proc` CPU tick 계측
+
+- metrics 모드에서만 `tmux`/`pgrep` 외부 호출을 phase별로 기록하고 `/proc/$$/stat` CPU tick을 read·age·force·state 경계에서 샘플링했습니다.
+- 진단 실행에서 state phase가 tmux 20회, pgrep 8회, 17 CPU ticks로 다음 최적화 경계로 확인됐습니다. read는 17.54초 wall wait에 17 ticks였습니다.
+- 테스트 socket에 실행별 `RANDOM`을 추가해 PID 재사용으로 인한 profile socket 충돌을 제거했습니다.
+- 계측은 metrics 모드에서만 활성화했으며 성능 목표 판정이나 commit/tag/push는 하지 않았습니다.
+
+## 2026-07-20 - state gate 및 shell-child probe 최적화
+
+- maintenance tick마다 state 함수를 호출하지 않고 refresh deadline을 먼저 확인하는 state gate를 추가했습니다.
+- cached pane PID와 procfs child traversal을 사용해 shell-child probe의 `pgrep` 호출을 줄이고, procfs 비호환 환경에만 fallback을 남겼습니다.
+- metrics 진단에서 state phase 진입은 19회에서 4회, `pgrep`은 8회에서 2회로 감소했습니다. state CPU tick은 17에서 16으로 줄었습니다.
+- no-metrics active CPU는 단일 실행 5.25%였으며 3회 중앙값 승격 판정은 아직 하지 않았습니다.

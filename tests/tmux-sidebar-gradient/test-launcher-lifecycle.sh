@@ -70,6 +70,20 @@ wait_for_no_sidebar "$sidebar"
 layout_after="$(tmuxc display-message -p -t "$window" '#{window_layout}')"
 [ "$layout_before" = "$layout_after" ]
 
+tmuxc new-session -d -s ensure-target -x 100 -y 30 'sleep 30'
+tmuxc set-environment -g TMUX_SESSION_HISTORY_DIR "$TMP_DIR"
+tmuxc run-shell -b -t '=ensure-target:' "$LAUNCHER --ensure-sidebar-session ensure-target"
+ensure_sidebar=""
+deadline=$(( $(date +%s) + 10 ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    ensure_sidebar="$(tmuxc list-panes -t '=ensure-target:' -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
+    [ -n "$ensure_sidebar" ] && break
+    sleep 0.05
+done
+[ -n "$ensure_sidebar" ]
+
 printf 'PASS: launcher-owned sidebar can be killed and recreated without lifecycle residue\n'
 printf 'PASS: launcher-owned sidebar lifecycle preserves work layout\n'
-printf 'SUMMARY: pass=2 xfail=0 fail=0\n'
+printf 'PASS: session-targeted async ensure creates exactly one sidebar\n'
+printf 'SUMMARY: pass=3 xfail=0 fail=0\n'

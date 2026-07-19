@@ -22,3 +22,10 @@
 reproduction profile은 source/target client session, sidebar 단일성, 실제 안정화 시간을 별도 `REPRO_*` metric으로 기록합니다.
 
 각 파일의 geometry, 실행 횟수, metric 이름을 변경하지 않아 버전 간 직접 비교할 수 있도록 유지합니다.
+- `v0.6.8-reproduction.md`: selection trace, pipe-observer, navigation p95/max를 포함한 v0.6.8 개발 측정 보고서입니다. 목표 미달 결과도 승격 보류 근거로 기록합니다.
+- `v0.6.9-reproduction.md`: periodic refresh 통제군과 command signature 최적화 결과를 기록합니다.
+- `v0.6.10-reproduction.md`: archive/restore phase 계측과 snapshot 단일 파싱 반복 결과를 기록합니다. 목표 미달이면 승격하지 않습니다.
+
+세 축 분리 진단은 `tests/profile-tmux-settlement.sh`(tmux/PTY settlement)와 `tests/profile-observer-settlement.sh`(capture-pane/pipe-pane observer)로 실행하며, launcher 내부 시간은 reproduction의 `INTERNAL` trace metric으로 기록합니다.
+
+저비용 collection 로그는 `PROFILE_METRICS=true`로 활성화합니다. launcher는 `TMUX_SESSION_LAUNCHER_METRICS_FILE`에 collection aggregate를 메모리 버퍼링 후 주기적으로 기록하며 기본 실행에서는 비활성입니다. per-event trace와 성능 판정용 metrics는 서로 구분합니다.

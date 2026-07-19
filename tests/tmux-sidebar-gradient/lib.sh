@@ -143,7 +143,31 @@ tmux()
             printf '%s\n' "$TEST_CLIENT_SESSIONS_SNAPSHOT"
             ;;
         list-panes)
-            printf '%s\n' "$TEST_PANES_SNAPSHOT"
+            format="${*: -1}"
+            pane_target=""
+            for ((arg_index = 1; arg_index <= $#; arg_index++)); do
+                if [ "${!arg_index}" = "-t" ]; then
+                    next_index=$((arg_index + 1))
+                    pane_target="${!next_index}"
+                    break
+                fi
+            done
+            pane_target="${pane_target#=}"
+            pane_target="${pane_target%%:}"
+            pane_snapshot="$TEST_PANES_SNAPSHOT"
+            if [ -n "$pane_target" ]; then
+                pane_snapshot="$(awk -F '\t' -v target="$pane_target" '$1 == target' <<< "$TEST_PANES_SNAPSHOT")"
+            fi
+            if [ "$format" = '#{pane_id}|#{pane_current_command}' ]; then
+                while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command rest; do
+                    [ -n "$pane_id" ] || continue
+                    printf '%s|%s\n' "$pane_id" "$pane_command"
+                done <<EOF
+$pane_snapshot
+EOF
+            else
+                printf '%s\n' "$pane_snapshot"
+            fi
             ;;
         capture-pane)
             printf '%s\n' "$TEST_CAPTURE"
@@ -169,6 +193,13 @@ load_launcher_functions()
     declare -gA session_ai_fingerprint=()
     declare -gA cached_session_cli_state=()
     declare -gA cached_session_ai_fingerprint=()
+    declare -gA cached_session_status=()
+    declare -gA cached_session_status_created=()
+    declare -gA cached_session_status_activity_age=()
+    declare -gA cached_session_status_busy_command=()
+    declare -gA cached_session_animation_seed=()
+    declare -gA cached_session_animation_seed_created=()
+    declare -gA cached_session_row_index=()
     declare -gA session_activity_age_cache=()
     declare -gA session_has_busy_command=()
     declare -gA session_ai_probe_pane_ids=()
