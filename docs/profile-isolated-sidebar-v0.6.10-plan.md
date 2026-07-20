@@ -759,3 +759,90 @@ metrics 모드에서만 `tmux`/`pgrep` 호출을 phase별 counter로 기록하�
 | no-metrics active CPU | 약 5.39% 기준 | 5.25% 단일 실행 | 개선 신호 |
 
 metrics profile은 계측 오버헤드를 포함하므로 목표 판정에 사용하지 않았습니다. active CPU는 3회 중앙값을 다시 확인해야 하며, 아직 버전 승격 조건으로 판정하지 않습니다.
+
+## 44차 정합성 점검 및 fallback 경로 보정 계획
+
+최신 commit의 코드와 43차 기록을 대조한 결과, procfs child 목록을 정상적으로 읽은 뒤에도 compatibility fallback이 실행되는 불일치가 발견되었습니다. 이 경로는 Linux의 일반적인 shell-only miss마다 `tmux display-message`와 `pgrep`를 추가 실행하므로, 43차의 `pgrep` 감소 기록을 실제 hot path 최적화로 해석하기 어렵게 만들었습니다.
+
+보정 범위는 다음으로 한정합니다.
+
+1. procfs children 파일이 readable이면 AI child hit/miss를 그 결과로 확정합니다.
+2. procfs children 파일이 unavailable한 환경에서만 기존 `tmux`/`pgrep` fallback을 실행합니다.
+3. procfs hit/miss와 fallback hit/miss를 debug log로 구분합니다.
+4. shell-only, AI child, pane command 변경, lifecycle 회귀를 각각 검증합니다.
+5. 동일 reproduction 조건 3회 중앙값으로 active CPU와 state command count를 재측정합니다.
+
+판정 기준은 기존 절대 목표인 idle ≤3%, active ≤5%, key ≤40ms, switch ≤1200ms, archive ≤350ms, restore ≤2200ms와 모든 invariant PASS입니다. 단일 실행 또는 metrics-enabled 실행은 원인 분석용으로만 사용하며 승격 근거로 사용하지 않습니다.
+
+## 44차 결과 및 최종 판정 계획
+
+fallback 경로 보정 후 정적 검사와 전체 회귀를 먼저 통과시킨 다음, 3회 reproduction을 완주합니다. active CPU가 여전히 5%를 초과하면 state probe를 추가로 줄이는 대신 로그에서 procfs probe, AI fingerprint, shell-only state refresh, 외부 observer 비용을 분리해 원인을 확정합니다.
+
+목표를 모두 충족한 경우에만 v0.6.10 승격 기록, tag, commit, push를 수행합니다. 하나라도 미달하면 승격하지 않고 해당 phase의 3회 중앙값과 로그를 다음 개선 계획으로 기록합니다.
+
+## 45차 공식 baseline 결과 및 다음 개선 계획
+
+`PROFILE_RUNS=3 bash tests/compare-profiles.sh`의 공식 3회 중앙값은 idle 1.39%, active 1.69%, key 75ms, switch 151ms, archive 445ms, restore 1467ms였습니다. 기능 invariant는 모두 PASS했지만 key와 archive가 각각 40ms·350ms 목표를 초과했으므로 v0.6.10 승격 조건은 미충족입니다.
+
+최신 metrics 로그에서는 procfs 보정 후 state phase의 `tmux=0`, `pgrep=0`을 확인했습니다. 따라서 다음 개선은 state probe가 아니라 다음 두 외부 경계로 한정합니다.
+
+1. key: launcher selection trace와 capture/PTY observer를 분리한 상태에서 observer settlement를 줄입니다. 제품 render 내부가 목표를 이미 충족하면 renderer를 재수정하지 않습니다.
+2. archive: run-shell dispatch, archive process settlement, final-file observer를 각각 측정하고, atomic rename invariant를 유지하면서 observer 중복 대기만 제거합니다.
+3. 매 반복마다 동일 공식 3회 baseline과 전체 lifecycle suite를 실행합니다.
+4. key ≤40ms와 archive ≤350ms를 동시에 통과하기 전에는 commit/tag/push 및 버전 승격을 하지 않습니다.
+
+이번 결과의 root cause는 state refresh가 아니라 외부 key capture/PTY 관측과 archive process/observer settlement입니다. 이 경계를 넘지 않는 변경은 다음 반복에서 제외합니다.
+
+## 46차 archive fast path 실행 결과
+
+공식 archive 경로에 비연결 session fast path를 적용했습니다.
+
+- 비연결 archive 대상은 대상 client 전환과 fallback session 조회를 생략합니다.
+- 마지막 session도 별도 session 목록 조회 없이 `kill-session`으로 정리합니다.
+- attached client와 delete-only 경로는 기존 동작을 유지합니다.
+- archive wrapper에 preflight, fallback lookup, archive, kill phase metrics를 추가했습니다.
+- archive lifecycle 회귀에 실제 archive 파일 생성 및 대상 session 제거 검증을 추가했습니다.
+
+| 단계 | Archive median | 결과 |
+|---|---:|---|
+| 기존 기준 | 445ms | FAIL |
+| client 전환 생략 | 418ms | FAIL |
+| fallback 조회 생략 | 378ms | FAIL |
+| 최종 fast path | 351ms | FAIL, 목표보다 1ms 초과 |
+
+최종 실행의 다른 결과는 idle 1.93%, active 1.67%, key 79ms, switch 160ms, restore 1530ms이며 모든 layout/cursor/integrity invariant는 PASS입니다.
+
+판정: archive는 실질적으로 개선됐지만 공식 350ms 기준을 중앙값으로 통과하지 못했습니다. 남은 차이는 wrapper 외부 tmux dispatch/settlement 및 측정 편차 범위로 보이며, 동일 fast path를 유지한 추가 재현성과 phase metrics를 먼저 확보한 뒤 추가 제품 변경 여부를 결정합니다. v0.6.10 승격은 보류합니다.
+
+## 48차 통합 key/archive 결과
+
+archive snapshot의 pane/window metadata를 한 번의 `list-panes` 호출로 통합하고, wrapper의 `list-clients` 성공 결과를 archive 존재성 검사로 재사용했습니다. archive 포맷, atomic rename, attached client 경로, restore/lifecycle 동작은 유지했습니다.
+
+최신 공식 3회 중앙값:
+
+| Metric | Median | Range | Target | Result |
+|---|---:|---:|---:|---|
+| Idle CPU | 1.12% | 1.10–1.92% | ≤3% | PASS |
+| Active CPU | 1.70% | 1.12–1.94% | ≤5% | PASS |
+| Key latency | 79ms | 76–81ms | ≤40ms | FAIL |
+| Session switch | 171ms | 153–176ms | ≤1200ms | PASS |
+| Archive | 312ms | 308–320ms | ≤350ms | PASS |
+| Restore | 1511ms | 1502–1645ms | ≤2200ms | PASS |
+| Functional invariants | 100% | every run | required | PASS |
+
+archive 목표는 달성했습니다. 반면 pipe observer 진단도 key 66ms로 40ms를 넘었으며, launcher 내부 selection render는 14~25ms입니다. 따라서 다음 개선은 key observer의 blocking/event-driven 경로를 별도 설계하는 작업으로 한정합니다. 전체 목표는 key 미달로 아직 달성하지 않았습니다.
+
+## 47차 archive 3회 phase 분리 측정
+
+`PROFILE_METRICS=true`, `PROFILE_TRACE=true`, FIFO observer를 활성화한 reproduction 3회에서 archive 관련 phase를 분리했습니다.
+
+| Phase | Run 1 | Run 2 | Run 3 | Median |
+|---|---:|---:|---:|---:|
+| 외부 archive completion | 327ms | 310ms | 322ms | 322ms |
+| archive wrapper total | 206.0ms | 190.8ms | 189.1ms | 190.8ms |
+| archive internal total | 136.8ms | 115.2ms | 115.9ms | 115.9ms |
+| wrapper preflight | 16.9ms | 20.4ms | 17.9ms | 17.9ms |
+| wrapper kill | 12.0ms | 17.4ms | 21.3ms | 17.4ms |
+| archive observer wait | 297ms | 274ms | 276ms | 276ms |
+
+내부 archive 중앙값은 snapshot 47.1ms, write 49.7ms, rename 11.2ms의 합계입니다. 외부 archive completion과 wrapper total의 차이는 비동기 run-shell dispatch 및 final-file observer 대기입니다. 따라서 archive 파일 serialization을 추가로 줄이는 것보다 observer settlement와 공식 profile의 동기 `run-shell` 측정 경계를 분리하는 것이 다음 분석 대상입니다.

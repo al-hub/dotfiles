@@ -3208,3 +3208,39 @@
 - state refresh deadline을 먼저 확인하는 gate와 cached pane PID 기반 procfs child probe를 적용했습니다.
 - state phase calls는 19회에서 4회, pgrep은 8회에서 2회로 감소했고 CPU tick은 17에서 16으로 감소했습니다.
 - procfs 비호환 PTY에서는 기존 pgrep fallback으로 기능을 유지합니다. no-metrics active CPU 5.25%는 단일 실행 결과이므로 3회 중앙값을 추가 확인합니다.
+
+## 2026-07-20 - 최신 commit 정합성 점검 및 fallback 보정
+
+- 문서에는 procfs 경로에서 `pgrep`를 제거했다고 기록했지만 실제 코드는 procfs miss 뒤 fallback을 계속 실행하는 불일치를 확인했습니다.
+- readable procfs child list의 miss를 즉시 반환하도록 보정하고, procfs unavailable 환경에서만 기존 fallback을 사용하도록 범위를 좁혔습니다.
+- 다음 판정은 동일 reproduction 3회 중앙값과 전체 invariant이며, active CPU가 5% 이하가 아니면 승격하지 않습니다.
+
+## 2026-07-20 - 공식 baseline 판정 및 다음 개선 경계
+
+- 최신 보정 후 공식 3회 결과는 idle 1.39%, active 1.69%, key 75ms, switch 151ms, archive 445ms, restore 1467ms였습니다.
+- 기능 invariant는 모두 통과했지만 key와 archive 목표가 미달해 commit/tag/push 및 승격을 진행하지 않았습니다.
+- metrics의 state phase `tmux=0`, `pgrep=0`으로 state probe는 개선된 것으로 확인했습니다. 다음은 key observer settlement와 archive process/observer settlement만 분리 최적화합니다.
+
+## 2026-07-20 - archive fast path 개선 결과
+
+- archive만 대상으로 비연결 session의 wrapper IPC를 줄이는 fast path를 적용했습니다.
+- archive 중앙값은 445ms에서 최종 351ms까지 감소했지만 공식 350ms 기준에 1ms 미달했습니다.
+- attached client, 마지막 session, archive integrity, layout, cursor lifecycle은 모두 유지됐습니다.
+- 목표 미달이므로 현재 변경은 commit/tag/push하지 않고, 다음 단계에서 phase metrics와 반복 편차를 먼저 확인합니다.
+
+## 2026-07-20 - archive phase 3회 분리 측정
+
+- reproduction 3회에서 external archive 322ms, wrapper 190.8ms, internal archive 115.9ms, observer wait 276ms 중앙값을 확인했습니다.
+- snapshot/write/rename보다 final-file observer와 tmux settlement가 큰 비용이며, 공식 동기 baseline 351ms와는 측정 경계를 분리해 유지합니다.
+
+## 2026-07-20 - archive 포함 전체 공식 3회 review
+
+- 최신 공식 결과는 idle 1.39%, active 1.13%, key 78ms, switch 168ms, archive 379ms, restore 1615ms입니다.
+- 기능 invariant는 모두 PASS했지만 key와 archive 목표는 미달했습니다.
+- archive phase 진단값 322ms는 비동기 reproduction 결과이므로 공식 동기 baseline 379ms와 분리해 해석합니다.
+
+## 2026-07-20 - archive 달성 및 key 잔여 미달
+
+- archive snapshot IPC 통합과 existence check 재사용 후 공식 archive 중앙값이 312ms로 350ms 목표를 달성했습니다.
+- 전체 공식 결과는 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms이며 invariant는 모두 PASS입니다.
+- pipe observer 진단도 key 66ms로 40ms를 넘었고, 내부 selection render는 14~25ms이므로 key observer의 blocking/event-driven 경로가 다음 유일한 개선 대상입니다.

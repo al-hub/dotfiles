@@ -3621,3 +3621,42 @@
 - cached pane PID와 procfs child traversal을 사용해 shell-child probe의 `pgrep` 호출을 줄이고, procfs 비호환 환경에만 fallback을 남겼습니다.
 - metrics 진단에서 state phase 진입은 19회에서 4회, `pgrep`은 8회에서 2회로 감소했습니다. state CPU tick은 17에서 16으로 줄었습니다.
 - no-metrics active CPU는 단일 실행 5.25%였으며 3회 중앙값 승격 판정은 아직 하지 않았습니다.
+
+## 2026-07-20 - procfs shell-child fallback 경로 정합성 보정
+
+- 최신 코드 점검에서 procfs child traversal 후에도 `tmux display-message`와 `pgrep` fallback이 정상 Linux 경로마다 실행되는 것을 확인했습니다.
+- readable한 `/proc/<pane-pid>/task/<pane-pid>/children`의 빈 결과를 완전한 AI-child miss로 처리하고, procfs를 사용할 수 없는 환경에서만 compatibility fallback을 실행하도록 수정했습니다.
+- 정적 검사·회귀·동일 조건 3회 reproduction을 다시 수행해 active CPU 목표와 lifecycle invariant를 판정합니다. 목표 미달이면 승격하지 않습니다.
+
+## 2026-07-20 - 최신 보정 후 공식 3회 baseline 및 미달 원인
+
+- 공식 `PROFILE_RUNS=3 bash tests/compare-profiles.sh`에서 idle 1.39%, active 1.69%, switch 151ms, restore 1467ms와 전체 invariant PASS를 확인했습니다.
+- key 75ms는 40ms 목표를, archive 445ms는 350ms 목표를 초과해 승격하지 않았습니다.
+- metrics 로그의 state phase는 procfs 보정 후 `tmux=0`, `pgrep=0`으로 확인되어 state probe를 현재 병목에서 제외했습니다.
+- 남은 병목은 launcher 내부 render가 아니라 외부 key capture/PTY settlement와 archive run-shell/process/observer settlement로 분리했습니다. 다음 계획은 이 두 경계만 대상으로 합니다.
+
+## 2026-07-20 - archive 비연결 session fast path 적용 및 판정
+
+- 비연결 archive 대상은 client 전환·fallback session 조회·중복 existence check를 생략하고 `archive → kill-session`으로 처리하도록 최적화했습니다.
+- attached client와 delete-only lifecycle은 기존 경로를 유지했습니다.
+- 공식 archive 중앙값은 445ms → 418ms → 378ms → 351ms로 개선됐고, 최종 목표 350ms에는 1ms 미달했습니다.
+- archive file/integrity/layout/cursor/lifecycle 회귀는 모두 PASS했지만 중앙값 목표 미달로 승격·tag·commit·push는 진행하지 않았습니다.
+
+## 2026-07-20 - archive 3회 phase 분리 측정
+
+- metrics/trace/FIFO observer를 사용해 archive external, wrapper, internal, preflight, kill, observer wait를 3회 분리 측정했습니다.
+- 중앙값은 external 322ms, wrapper 190.8ms, internal 115.9ms, preflight 17.9ms, kill 17.4ms, observer wait 276ms였습니다.
+- archive serialization보다 final-file observer/settlement가 큰 외부 비용임을 확인했습니다. 공식 동기 baseline 351ms 판정은 유지하며 승격하지 않습니다.
+
+## 2026-07-20 - archive 포함 전체 공식 3회 review
+
+- 최신 공식 중앙값은 idle 1.39%, active 1.13%, key 78ms, switch 168ms, archive 379ms, restore 1615ms였습니다.
+- CPU·switch·restore와 전체 lifecycle invariant는 PASS했지만 key와 archive는 각각 40ms·350ms 목표를 미달했습니다.
+- 비동기 reproduction archive 322ms와 공식 동기 archive 379ms는 측정 경계가 다르므로 승격 판정에는 공식 baseline만 사용합니다.
+
+## 2026-07-20 - archive IPC 통합 후 통합 목표 판정
+
+- `list-panes`에 window metadata를 포함해 archive snapshot의 `list-windows` 호출을 제거했습니다.
+- wrapper의 `list-clients` 성공 결과를 archive 존재성 검사로 재사용했습니다.
+- 최신 공식 중앙값은 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms입니다.
+- archive 목표와 모든 기능 invariant는 PASS했지만 key 40ms 목표는 미달했습니다. pipe observer 진단도 key 66ms로 남아 observer 경로 추가 설계가 필요합니다.

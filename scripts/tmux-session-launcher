@@ -418,8 +418,10 @@ prepare_window_for_archive_snapshot()
     local sidebar_present=false
     local pane_session pane_window_index pane_name pane_active pane_snapshot_layout pane_created
     local pane_index pane_path pane_command pane_title
+    local ignored_window_name ignored_window_active ignored_window_layout ignored_created
 
-    while IFS="$(printf '\t')" read -r pane_session pane_index pane_path pane_command pane_title; do
+    while IFS="$(printf '\t')" read -r pane_session pane_index pane_path pane_command pane_title \
+        ignored_window_name ignored_window_active ignored_window_layout ignored_created; do
         [ "$pane_session" = "$target" ] || continue
         if [ "$pane_title" = "$SIDEBAR_TITLE" ]; then
             sidebar_present=true
@@ -1010,6 +1012,7 @@ pane_has_ai_cli_process()
     local pane_id_value="$1"
     local pane_pid_value="${cached_pane_pid[$pane_id_value]:-}"
     local proc_index=0 proc_current="" proc_child="" proc_children="" proc_args="" proc_seen=0
+    local procfs_tree_available=false
     local -a proc_queue=()
     timing_enabled="${TMUX_SESSION_LAUNCHER_DEBUG:-0}"
     timing_start=""
@@ -1043,6 +1046,7 @@ pane_has_ai_cli_process()
     # Walk /proc children directly, preserving recursive pgrep behavior
     # without spawning pgrep/grep for every selected shell.
     if [ -r "/proc/$pane_pid_value/task/$pane_pid_value/children" ]; then
+        procfs_tree_available=true
         proc_children="$(< "/proc/$pane_pid_value/task/$pane_pid_value/children")"
     fi
     for proc_child in $proc_children; do
@@ -1075,6 +1079,18 @@ pane_has_ai_cli_process()
             proc_queue+=("$proc_child")
         done
     done
+
+    # An empty procfs child list is a valid, complete miss: the shell simply
+    # has no AI child. Do not fall through to tmux/pgrep in the normal Linux
+    # path; those compatibility probes were previously executed after every
+    # successful procfs traversal and dominated the state-refresh hot path.
+    if [ "$procfs_tree_available" = true ]; then
+        if [ "$timing_enabled" = "1" ]; then
+            timing_end="$(debug_now_us)"
+            debug_log "timing pane_has_ai_cli_process pane_id=$pane_id_value result=miss us=$(( timing_end - timing_start )) source=procfs"
+        fi
+        return 1
+    fi
 
     # Some tmux/PTY combinations expose the pane process but not its child
     # list through procfs. Keep the old observer as a compatibility fallback;
@@ -2806,10 +2822,16 @@ archive_session()
     local metrics_archive_phase_start=""
     declare -A archive_window_pane_counts=()
     declare -A archive_window_pane_lines=()
+    declare -A archive_window_names=()
+    declare -A archive_window_active=()
+    declare -A archive_window_layouts=()
+    declare -A archive_window_created=()
+    declare -a archive_window_order=()
 
     session_name="$1"
+    local existence_checked="${2:-false}"
     [ -n "$session_name" ] || return 1
-    session_exists "$session_name" || return 1
+    [ "$existence_checked" = "true" ] || session_exists "$session_name" || return 1
     if [ -n "$METRICS_FILE" ]; then
         metrics_archive_start="$(metrics_now_us)"
         metrics_next_operation_id
@@ -2827,13 +2849,21 @@ archive_session()
     archive_path="$HISTORY_DIR/${archive_base}-pending.tsv"
     trace_event "archive.snapshot.begin session=$session_name"
     archive_panes_snapshot="$(tmux list-panes -t "=$session_name:" \
-        -F '#{session_name}	#{window_index}	#{pane_index}	#{pane_current_path}	#{pane_current_command}	#{pane_title}' \
+        -F '#{session_name}	#{window_index}	#{pane_index}	#{pane_current_path}	#{pane_current_command}	#{pane_title}	#{window_name}	#{window_active}	#{window_layout}	#{session_created}' \
         2>/dev/null || true)"
     trace_event "archive.panes_snapshot session=$session_name"
     while IFS="$(printf '\t')" read -r archive_pane_session archive_pane_window \
-        archive_pane_index archive_pane_path archive_pane_command archive_pane_title; do
+        archive_pane_index archive_pane_path archive_pane_command archive_pane_title \
+        archive_window_name_value archive_window_active_value archive_window_layout_value archive_window_created_value; do
         [ "$archive_pane_session" = "=$session_name:" ] ||
             [ "$archive_pane_session" = "$session_name" ] || continue
+        if [ -z "${archive_window_pane_counts[$archive_pane_window]+set}" ]; then
+            archive_window_order+=( "$archive_pane_window" )
+            archive_window_names["$archive_pane_window"]="$archive_window_name_value"
+            archive_window_active["$archive_pane_window"]="$archive_window_active_value"
+            archive_window_layouts["$archive_pane_window"]="$archive_window_layout_value"
+            archive_window_created["$archive_pane_window"]="$archive_window_created_value"
+        fi
         [ "$archive_pane_title" = "$SIDEBAR_TITLE" ] && continue
         archive_window_pane_counts["$archive_pane_window"]=$((
             ${archive_window_pane_counts["$archive_pane_window"]:-0} + 1
@@ -2853,12 +2883,13 @@ archive_session()
         printf 'session\t%s\n' "$session_name"
         printf -v archived_at '%(%s)T' -1
         printf 'archived_at\t%s\n' "$archived_at"
-        windows_snapshot="$(tmux list-windows -t "=$session_name:" \
-            -F '#{window_index}	#{window_name}	#{window_active}	#{window_layout}	#{session_created}' 2>/dev/null || true)"
         window_count=0
         created_value=""
-        while IFS="$(printf '\t')" read -r window_index window_name window_active window_layout window_created; do
-            [ -n "$window_index" ] || continue
+        for window_index in "${archive_window_order[@]}"; do
+            window_name="${archive_window_names[$window_index]}"
+            window_active="${archive_window_active[$window_index]}"
+            window_layout="${archive_window_layouts[$window_index]}"
+            window_created="${archive_window_created[$window_index]}"
             [ -n "$created_value" ] || created_value="$window_created"
             window_pane_count="${archive_window_pane_counts["$window_index"]:-0}"
             [ "$window_pane_count" -gt 0 ] || continue
@@ -2869,9 +2900,7 @@ archive_session()
                 printf 'pane\t%s\t%s\t%s\n' "$pane_index" "$pane_path" "$pane_command"
             done <<< "${archive_window_pane_lines["$window_index"]:-}"
             printf 'endwindow\n'
-        done <<EOF
-$windows_snapshot
-EOF
+        done
         printf 'created\t%s\n' "$created_value"
         archive_shell_history
     } > "$archive_path"
@@ -2933,21 +2962,60 @@ shell_quote()
 
 delete_session_after_archive()
 {
-    session_name="$1"
-    should_archive="${2:-false}"
+    local session_name="$1"
+    local should_archive="${2:-false}"
+    local current_client_session="" target_clients="" target_has_clients=false
+    local next_session="" archive_fast_path=false
+    local metrics_delete_start="" metrics_delete_operation_id=""
+    local metrics_delete_phase_start="" metrics_delete_preflight_us=0
+    local metrics_delete_fallback_us=0 metrics_delete_archive_us=0 metrics_delete_kill_us=0
 
-    session_exists "$session_name" || return 0
-
-    current_client_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    target_has_clients=false
-    if tmux list-clients -t "=$session_name" >/dev/null 2>&1; then
-        target_has_clients=true
+    # archive_session performs the authoritative existence check.  The
+    # archive fast path can therefore avoid a duplicate tmux has-session IPC;
+    # delete-only keeps the original early return semantics below.
+    if [ "$should_archive" != "true" ]; then
+        session_exists "$session_name" || return 0
     fi
-    next_session="$(fallback_session "$session_name")"
 
-    debug_log "delete_session_after_archive start session=$session_name should_archive=$should_archive current_client_session=$current_client_session target_has_clients=$target_has_clients next_session=$next_session"
+    if [ -n "$METRICS_FILE" ]; then
+        metrics_delete_start="$(metrics_now_us)"
+        metrics_next_operation_id
+        metrics_delete_operation_id="$metrics_operation_id_result"
+        metrics_phase=action
+        metrics_delete_phase_start="$(metrics_now_us)"
+    fi
 
-    if [ "$current_client_session" = "$session_name" ] || [ "$target_has_clients" = true ]; then
+    # Capture the target's client attachment as data.  `list-clients` exits
+    # successfully for an existing session even when it has no clients, so
+    # checking only its exit status cannot distinguish the fast-path case.
+    if ! target_clients="$(tmux list-clients -t "=$session_name" -F '#{session_name}' 2>/dev/null)"; then
+        return 0
+    fi
+    [ -n "$target_clients" ] && target_has_clients=true
+    if [ -n "$metrics_delete_start" ]; then
+        metrics_delete_preflight_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
+        metrics_delete_phase_start="$(metrics_now_us)"
+    fi
+    if [ "$should_archive" = "true" ] && [ "$target_has_clients" = false ]; then
+        archive_fast_path=true
+        # An unconnected target cannot require client migration.  Let tmux
+        # remove the last session naturally instead of spending another IPC
+        # round trip discovering a fallback session.
+        next_session=""
+    else
+        session_exists "$session_name" || return 0
+        next_session="$(fallback_session "$session_name")"
+        if [ -n "$metrics_delete_start" ]; then
+            metrics_delete_fallback_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
+            metrics_delete_phase_start="$(metrics_now_us)"
+        fi
+        current_client_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+    fi
+
+    debug_log "delete_session_after_archive start session=$session_name should_archive=$should_archive current_client_session=$current_client_session target_has_clients=$target_has_clients next_session=$next_session archive_fast_path=$archive_fast_path"
+
+    if [ "$archive_fast_path" = false ] &&
+        { [ "$current_client_session" = "$session_name" ] || [ "$target_has_clients" = true ]; }; then
         if [ -n "$next_session" ]; then
             debug_log "delete_session_after_archive switch-client to fallback session=$next_session from session=$session_name"
             tmux switch-client -t "=$next_session" 2>/dev/null || true
@@ -2959,17 +3027,32 @@ delete_session_after_archive()
     if [ "$should_archive" = "true" ]; then
         debug_log "delete_session_after_archive archive session=$session_name"
         trace_event "archive.delete-wrapper.begin session=$session_name"
-        archive_session "$session_name" >/dev/null || true
+        if [ -n "$metrics_delete_start" ]; then
+            metrics_delete_phase_start="$(metrics_now_us)"
+        fi
+        archive_session "$session_name" true >/dev/null || true
+        if [ -n "$metrics_delete_start" ]; then
+            metrics_delete_archive_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
+            metrics_delete_phase_start="$(metrics_now_us)"
+        fi
         trace_event "archive.delete-wrapper.end session=$session_name"
     fi
 
-    if [ -n "$next_session" ]; then
+    if [ "$archive_fast_path" = true ]; then
+        debug_log "delete_session_after_archive kill-session fast path session=$session_name"
+        tmux kill-session -t "=$session_name" 2>/dev/null || true
+    elif [ -n "$next_session" ]; then
         debug_log "delete_session_after_archive kill-session session=$session_name next_session=$next_session"
         tmux switch-client -t "=$next_session" 2>/dev/null || true
         tmux kill-session -t "=$session_name" 2>/dev/null || true
     else
         debug_log "delete_session_after_archive kill-server session=$session_name"
         tmux kill-server
+    fi
+
+    if [ -n "$metrics_delete_start" ]; then
+        metrics_delete_kill_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
+        metrics_write "op=archive-wrapper phase=complete operation_id=$metrics_delete_operation_id session=$session_name fast_path=$archive_fast_path preflight_us=$metrics_delete_preflight_us fallback_lookup_us=$metrics_delete_fallback_us archive_us=$metrics_delete_archive_us kill_us=$metrics_delete_kill_us total_us=$(( $(metrics_now_us) - metrics_delete_start ))"
     fi
 }
 

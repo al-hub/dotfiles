@@ -83,7 +83,18 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 [ -n "$ensure_sidebar" ]
 
+tmuxc new-session -d -s archive-target -x 100 -y 30 'sleep 30'
+tmuxc split-window -d -t '=archive-target:' -v 'sleep 30'
+tmuxc run-shell "$LAUNCHER --delete-session-after-archive archive-target true"
+archive_file="$(find "$TMP_DIR" -type f -name '*archive-target*.tsv' -print -quit)"
+[ -s "$archive_file" ]
+if tmuxc has-session -t '=archive-target:' 2>/dev/null; then
+    printf 'FAIL: unconnected archive target was not removed\n' >&2
+    exit 1
+fi
+
 printf 'PASS: launcher-owned sidebar can be killed and recreated without lifecycle residue\n'
 printf 'PASS: launcher-owned sidebar lifecycle preserves work layout\n'
 printf 'PASS: session-targeted async ensure creates exactly one sidebar\n'
-printf 'SUMMARY: pass=3 xfail=0 fail=0\n'
+printf 'PASS: unconnected archive target uses archive/delete lifecycle successfully\n'
+printf 'SUMMARY: pass=4 xfail=0 fail=0\n'
