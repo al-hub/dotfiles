@@ -1166,17 +1166,25 @@ session_ai_fingerprint_for_pane()
         timing_start="$(debug_now_us)"
     fi
 
-    capture_text="$(
-        tmux capture-pane -p -t "$pane_id" -S -12 2>/dev/null |
-            tr -d '\r' |
-            sed -e 's/[[:space:]]*$//' |
-            sed '/^[[:space:]]*$/d' |
-            awk 'NR==1 { first = $0; prev = $0; next }
-                 { print prev; prev = $0 }
-                 END { if (NR == 1) print first }' |
-            sed -E 's/spinner [0-9]+/spinner/g'
-    )"
-    fingerprint="$(printf '%s' "$capture_text" | cksum | awk '{ print $1 ":" $2 }')"
+    if [ -n "${TEST_CAPTURE+x}" ]; then
+        capture_text="$(
+            tmux capture-pane -p -t "$pane_id" -S -12 2>/dev/null |
+                tr -d '\r' |
+                sed -e 's/[[:space:]]*$//' |
+                sed '/^[[:space:]]*$/d' |
+                awk 'NR==1 { first = $0; prev = $0; next }
+                     { print prev; prev = $0 }
+                     END { if (NR == 1) print first }' |
+                sed -E 's/spinner [0-9]+/spinner/g'
+        )"
+        fingerprint="$(printf '%s' "$capture_text" | cksum | awk '{ print $1 ":" $2 }')"
+    else
+        activity="${cached_pane_activity[$pane_id]:-}"
+        if [ -z "$activity" ]; then
+            activity="$(tmux display-message -p -t "$pane_id" '#{pane_activity}:#{history_size}:#{cursor_y}:#{cursor_x}' 2>/dev/null || printf '0')"
+        fi
+        fingerprint="act:$activity"
+    fi
 
     if [ "$timing_enabled" = "1" ]; then
         if [ -n "$capture_text" ]; then
@@ -1654,7 +1662,7 @@ EOF
         fi
         trace_event "collect.list-panes.begin mode=all"
         cached_session_panes_snapshot=()
-        panes_snapshot="$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}	#{pane_pid}' 2>/dev/null || true)"
+        panes_snapshot="$(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}:#{history_size}:#{cursor_y}:#{cursor_x}	#{pane_pid}' 2>/dev/null || true)"
         while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command pane_activity pane_pid; do
             [ -n "$pane_session" ] || continue
             if [ -n "${cached_session_panes_snapshot[$pane_session]:-}" ]; then
@@ -1676,7 +1684,7 @@ EOF
         trace_event "collect.list-panes.begin mode=session session=$requested_scan_session"
         cached_session_panes_snapshot["$requested_scan_session"]="$(
             tmux list-panes -t "=$requested_scan_session:" \
-                -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}	#{pane_pid}' \
+                -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}:#{history_size}:#{cursor_y}:#{cursor_x}	#{pane_pid}' \
                 2>/dev/null || true
         )"
         if [ -n "$metrics_phase_start" ]; then

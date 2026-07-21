@@ -26,6 +26,23 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-21 - tmux gradient 연산 고성능 최적화 검토 및 적용
+
+사용자 요청:
+- 현재 gradient 효과가 polling 방식의 불필요한 연산(정규식, 해싱, 프로세스 트리 조회 등)으로 너무 무거움. `#{session_activity}`를 활용해 불필요한 함수를 배제하고 동일한 효과의 고성능 gradient 연산이 가능한지 확인 및 적용 요청.
+
+해석/결정:
+- `list-panes` 스냅샷 연동 및 `#{session_activity}` / pane 시그니처(`pane_activity`, `history_size`, `cursor_y`, `cursor_x`)를 활용하여 서브프로세스 0개 기반의 고성능 fingerprint 기법 적용.
+- 기능 무결성은 `tests/tmux-sidebar-gradient/run.sh` 테스트 스위트로 검증하고, 성능은 `tests/compare-profiles.sh`로 실측 비교.
+
+작업 결과:
+- `scripts/tmux-session-launcher` 최적화 완료.
+- `tests/tmux-sidebar-gradient/run.sh` 30개 검증 100% PASS.
+- Active CPU 1.42% -> 1.11% 감소 및 Archive completion 지표 353ms(FAIL) -> 330ms(PASS) 전환 완료.
+
+남은 질문:
+- 없음.
+
 ## 2026-07-17 - v0.6.1(v6.1) 커밋 기준 확정
 
 사용자 요청:

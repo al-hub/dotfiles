@@ -26,6 +26,24 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-21 - tmux gradient 연산 고성능 최적화 (`session_activity` 기반)
+
+요약:
+- gradient 효과 판정 시 반복되던 무거운 external subprocess (`capture-pane`, `tr`, `sed`, `awk`, `cksum`) 파이프라인 호출을 100% 제거하고 `#{session_activity}` 및 `list-panes` 복합 시그니처 기반의 초경량 판정 구조로 전환했습니다.
+- CPU 점유율 약 20~27% 감소 및 Archive completion 지표가 353ms(FAIL)에서 330ms(PASS)로 향상되었습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `session_ai_fingerprint_for_pane` 및 `list-panes` 스냅샷 연동 구조 최적화.
+- `tests/profile-comparison-report.md`: 개선 후 실측 baseline 리포트 갱신.
+
+검증:
+- `bash tests/tmux-sidebar-gradient/run.sh`: All PASS (30개 항목 통과)
+- `bash tests/compare-profiles.sh --runs 3`: Active CPU 1.42% -> 1.11%, Archive completion 353ms -> 330ms (PASS 전환)
+- `bash -n scripts/tmux-session-launcher && git diff --check`: OK
+
+후속 주의:
+- 단위 테스트(`test-fingerprint.sh` 등)의 명시적 `TEST_CAPTURE` 덮어쓰기 모드와 production 호환성이 항상 보장되도록 유지 필요.
+
 ## 2026-07-17 - v0.6.1(v6.1) 기준 고정 및 버전별 profile report 보관
 
 요약:
