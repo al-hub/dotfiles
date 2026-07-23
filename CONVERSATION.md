@@ -26,6 +26,26 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-24 - sidebar 커서 지연 현상 원인 분석, 로직 문서화 및 최적 개선안 적용
+
+사용자 요청:
+- tmux sidebar 세션 이동 시 `>` 커서 표시 반응 지연(3~5초) 감지 및 원인 분석.
+- 중요 핵심 로직 문서화 (AI CLI 빠른 분석용).
+- 기존 안정적 갱신(버벅임/깜박임 없음) 메커니즘 점검 및 최적 개선 방안 도출.
+
+해석/결정:
+- `*`는 tmux 서버의 current_session 갱신으로 즉시 반영되나, `>`는 target sidebar 프로세스의 로컬 `selected_index`에 의존하며, 이는 `SIDEBAR_FORCE_REFRESH_CHECK_SECONDS` 5초 polling 주기에 종속됨을 밝혀냄.
+- 버벅임 없는 안정 렌더링 메커니즘(subshell atomic print, ANSI 라인 포지셔닝, 커서 숨김, maintenance cooldown 등 8개 메커니즘)을 점검하여 기존 렌더링 무결성 보장.
+- 가장 안전하고 최소 침습적인 방안(force refresh check 기본값 5초 -> 1초 변경)을 채택하고 문서(`docs/tmux-session-launcher-internals.md`)를 작성함.
+
+작업 결과:
+- `docs/tmux-session-launcher-internals.md` 신규 생성.
+- `scripts/tmux-session-launcher` 기본 체크 간격 1초로 단축.
+- `HISTORY.md` 및 `CONVERSATION.md` 갱신.
+
+남은 질문:
+- 없음.
+
 ## 2026-07-21 - tmux gradient 연산 고성능 최적화 검토 및 적용
 
 사용자 요청:

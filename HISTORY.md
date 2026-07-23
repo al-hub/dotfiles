@@ -26,6 +26,23 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+## 2026-07-24 - tmux session launcher 커서 지연 개선 및 아키텍처 문서화
+
+요약:
+- 세션 전환 시 target 세션의 sidebar에서 `>` 커서가 3~5초 후 반응하던 구조적 지연 원인을 분석하고, `SIDEBAR_FORCE_REFRESH_CHECK_SECONDS` 기본값을 5초에서 1초로 단축했습니다.
+- AI CLI 및 향후 유지보수를 위해 `docs/tmux-session-launcher-internals.md`에 핵심 로직(이벤트 루프, 렌더링 계층, IPC 메커니즘, 안정 렌더링 방어책)을 상세 문서화했습니다.
+
+변경 파일:
+- `scripts/tmux-session-launcher`: `SIDEBAR_FORCE_REFRESH_CHECK_SECONDS` 기본값 5 -> 1 변경.
+- `docs/tmux-session-launcher-internals.md`: 핵심 아키텍처 및 렌더링/IPC 메커니즘 문서 신규 생성.
+
+검증:
+- `bash -n scripts/tmux-session-launcher`: OK
+- `tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session -d`: OK
+
+후속 주의:
+- 이미 실행 중인 live tmux sidebar 프로세스는 새로 스폰되거나 쉘이 재시작되어야 1초 변경 파라미터가 적용됩니다.
+
 ## 2026-07-21 - tmux gradient 연산 고성능 최적화 (`session_activity` 기반)
 
 요약:
