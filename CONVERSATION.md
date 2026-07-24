@@ -9,6 +9,16 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-24 - 단일 sidebar 개발 branch 승인 및 TDD 설계 기준
+
+- 현재 안정 branch `master`는 유지하고 `feature/single-sidebar`에서 신규 개발을 진행하기로 승인했습니다.
+- 목표는 session마다 sidebar를 생성하지 않고, 하나의 sidebar pane/process를 active client의 target window로 이동시키는 것입니다.
+- 구현은 SOLID 책임 분리와 시나리오 기반 TDD를 필수 기준으로 합니다.
+- `docs/tmux-single-sidebar-design.md`에 상태 모델, invariant, session switch protocol, shortcut 호환 범위를 기록했습니다.
+- 신규 동작의 첫 RED 기준은 server 전체 sidebar pane 수가 session 전환 후에도 1개인지 확인하는 계약 테스트입니다.
+- `feature/single-sidebar`에서 tmux adapter/controller를 구현했고, session 전환 시 pane ID/PID를 유지하는 GREEN 상태로 전환했습니다.
+- attached reproduction에서 A→B session 이동, navigation, on/off, layout 보존을 검증했습니다. window 자동 이동과 multi-client는 후속 범위입니다.
+
 ## 템플릿
 
 ```md
@@ -3304,3 +3314,17 @@
 - archive snapshot IPC 통합과 existence check 재사용 후 공식 archive 중앙값이 312ms로 350ms 목표를 달성했습니다.
 - 전체 공식 결과는 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms이며 invariant는 모두 PASS입니다.
 - pipe observer 진단도 key 66ms로 40ms를 넘었고, 내부 selection render는 14~25ms이므로 key observer의 blocking/event-driven 경로가 다음 유일한 개선 대상입니다.
+## 2026-07-24 keyboard E2E verification decision
+
+- 실사용 검증은 pane에 `send-keys`를 직접 보내는 방식만으로 충분하지 않다. `tests/tmux-single-sidebar/test-keyboard-e2e.sh`는 `script(1)`이 만든 attached PTY에 실제 키 바이트를 주입해 tmux prefix(`Ctrl+a s`), 방향키, Enter, TUI prompt 입력을 검증한다.
+- 시나리오는 sidebar toggle, 6개 session 생성, 6회 이동/선택, 6개 archive 삭제, history 6개 복원, `d` → `All` → 저장 확인 → 전체 종료까지 포함한다.
+- 현재 실행 결과는 생성/이동/삭제까지 통과하고, bulk delete 직후 history 복원 단계에서 실패한다. 이는 테스트 결함으로 처리하지 않고, sidebar pane 존재와 실제 입력 focus/owner 안정성이 분리되는 구조 문제로 기록한다.
+- async restore의 target owner/client/sidebar ready polling을 추가하고 history view reset을 제거했지만, 반복 복원 3번째 Enter에서 PTY 입력이 sidebar TUI로 안정적으로 전달되지 않는 추가 race가 남았다. contract/lifecycle 테스트는 계속 통과한다.
+
+## 2026-07-24 live session `0` discrepancy diagnosis
+
+- 사용자의 live tmux에서 session 이동을 직접 실행했고, `Down` → `Enter` 후 client가 원래 session에 남고 sidebar pane이 사라지는 `session switch failed`를 재현했다.
+- live 환경에는 numeric session `0`이 있었고, adapter의 `list-panes -s -t "=$session_name"` 조회가 동일 sidebar pane을 두 번 반환했다.
+- 기존 isolated 테스트에는 numeric session이 없어서 PASS/실사용 FAIL 괴리가 발생했다.
+- `tests/tmux-single-sidebar/test-session-name-zero.sh`와 `docs/live-session-switch-regression.md`를 추가하는 진단 checkpoint를 만든다.
+- checkpoint commit은 `feature/single-sidebar`에만 생성하며 `master` merge/push는 사용자 confirm 전까지 보류한다.

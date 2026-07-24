@@ -9,6 +9,53 @@
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 - 각 항목에는 날짜, 요약, 변경 파일, 검증, 후속 주의점을 남깁니다.
 
+## 2026-07-24 - live session `0` session-switch failure 진단 checkpoint
+
+요약:
+- live tmux에서 session 이름 `0`이 존재할 때 `session switch failed: active sidebar client is unavailable`가 재현되는 원인을 확인했습니다.
+- adapter의 `=0` session target 조회가 sidebar pane을 중복 반환하여 owner/client resolution이 실패하는 경로입니다.
+
+변경 파일:
+- `tests/tmux-single-sidebar/test-session-name-zero.sh`: numeric session `0` 중복 discovery를 재현하는 의도적 RED 테스트.
+- `docs/live-session-switch-regression.md`: live 상태, 재현 절차, 원인, 테스트 gap 문서.
+- `AGENTS.md`: numeric-session 테스트와 live regression 문서 색인.
+
+검증:
+- live attached tmux에서 `Down` → `Enter` 후 client 미전환과 sidebar 소실을 확인했습니다.
+- live launcher와 branch launcher/module 파일이 동일함을 확인했습니다.
+- `master` merge/push는 수행하지 않습니다.
+
+후속 주의:
+- numeric-session regression은 adapter target ambiguity가 해결되기 전까지 RED 상태여야 합니다.
+- 이 항목은 구현 완료가 아니라 원인 고정용 checkpoint입니다.
+
+## 2026-07-24 - 단일 sidebar 개발 branch 설계 및 TDD 계약 추가
+
+요약:
+- `feature/single-sidebar`에서 개발할 단일 sidebar 구조의 pane/session/window
+  소유권, SOLID 책임 경계, session 전환 protocol, invariant를 문서화했습니다.
+- 기존 session별 sidebar 생성 동작을 대체하는 move-pane 경로와 신규 TDD 계약 테스트를 추가했습니다.
+
+변경 파일:
+- `docs/tmux-single-sidebar-design.md`: 신규 설계 계약.
+- `scripts/tmux-sidebar-tmux-adapter`: 명시적 tmux server/pane/window adapter.
+- `scripts/tmux-sidebar-controller`: 단일 pane 이동 및 on/off controller.
+- `tests/tmux-single-sidebar/test-contract.sh`: 전역 sidebar 1개 invariant 테스트.
+- `install.toml`: 신규 sourced module hidden dependency 등록.
+- `AGENTS.md`: 신규 설계 문서와 계약 테스트 색인.
+
+검증:
+- branch: `feature/single-sidebar`
+- `bash -n tests/tmux-single-sidebar/test-contract.sh`: PASS
+- `git diff --check`: PASS
+- `bash tests/tmux-single-sidebar/test-contract.sh`: PASS
+- `bash tests/tmux-sidebar-gradient/run.sh`: PASS
+- `bash tests/profile-isolated-sidebar-reproduction.sh`: 핵심 session move/navigation/layout invariant PASS
+
+후속 주의:
+- `master`에는 이 설계와 테스트가 반영되지 않았습니다.
+- window 전환 hook과 multi-client 지원은 범위에서 제외되어 있습니다.
+
 ## 2026-07-24 - tmux session launcher target sidebar 즉시 깨우기 실험
 
 요약:
@@ -45,6 +92,7 @@
 후속 주의:
 - 남은 위험, 다음 작업자가 확인할 점
 ```
+
 ## 2026-07-24 - tmux session launcher 커서 지연 개선 및 아키텍처 문서화
 
 요약:
@@ -3714,3 +3762,8 @@
 - wrapper의 `list-clients` 성공 결과를 archive 존재성 검사로 재사용했습니다.
 - 최신 공식 중앙값은 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms입니다.
 - archive 목표와 모든 기능 invariant는 PASS했지만 key 40ms 목표는 미달했습니다. pipe observer 진단도 key 66ms로 남아 observer 경로 추가 설계가 필요합니다.
+## 2026-07-24
+
+- Added `tests/tmux-single-sidebar/test-keyboard-e2e.sh`, an attached-PTY end-to-end scenario covering `Ctrl+a s`, six `c` session creations, repeated arrow/Enter switching, archived `d` deletion, `o` restoration, and `d All` shutdown.
+- The keyboard E2E currently exposes a remaining defect after bulk deletion: the sidebar can exist while focus/owner synchronization is not ready for the history `o` → arrow → Enter restore loop. Contract and lifecycle regressions remain passing.
+- Added bounded async-restore transition waiting and kept the TUI view mode stable across sidebar owner changes. The PTY scenario now advances through the first restore transitions but still exposes a later repeated-Enter focus race, which remains an open fix item.

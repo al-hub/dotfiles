@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Diagnostic RED regression for the live failure reproduced with a numeric
+# session named `0`. tmux interprets `=0` ambiguously in the adapter's
+# session-targeted list-panes lookup, causing the same sidebar pane to be
+# discovered more than once and session switching to abort.
+
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
+LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
+SOCKET="dotfiles-single-sidebar-session-zero-$$"
+SOCKET_PATH="/tmp/tmux-$(id -u)/$SOCKET"
+RUN_DIR="${TMPDIR:-/tmp}/dotfiles-single-sidebar-session-zero-$$"
+HOME_DIR="$RUN_DIR/home"
+TMUX_CONFIG="$REPO_ROOT/dotfiles/tmux.conf"
+CLIENT_LOG="$RUN_DIR/client.log"
+CLIENT_PID=""
+
+cleanup()
+{
+    tmux -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+    if [ -n "$CLIENT_PID" ]; then
+        kill "$CLIENT_PID" >/dev/null 2>&1 || true
+        wait "$CLIENT_PID" 2>/dev/null || true
+    fi
+    rm -rf "$RUN_DIR"
+}
+trap cleanup EXIT INT TERM
+
+mkdir -p "$HOME_DIR/.local/bin"
+ln -s "$LAUNCHER" "$HOME_DIR/.local/bin/tmux-session-launcher"
+ln -s "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" "$HOME_DIR/.local/bin/tmux-sidebar-tmux-adapter"
+ln -s "$REPO_ROOT/scripts/tmux-sidebar-controller" "$HOME_DIR/.local/bin/tmux-sidebar-controller"
+
+tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$TMUX_CONFIG" "$@"; }
+
+tmuxc new-session -d -s 0 -c "$REPO_ROOT" 'sleep 300'
+tmuxc new-session -d -s aaaaaaaaaaaaaaaaaaa -c "$REPO_ROOT" 'sleep 300'
+tmuxc new-session -d -s bbbbbbbbbbbbbbbbbb -c "$REPO_ROOT" 'sleep 300'
+tmuxc split-window -d -t '=aaaaaaaaaaaaaaaaaaa:' -h -b -l 35 "$LAUNCHER --sidebar"
+
+for attempt in $(seq 1 50); do
+    sidebar_count="$(tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
+        awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')"
+    [ "$sidebar_count" -eq 1 ] && break
+    sleep 0.05
+done
+
+sidebar_count="$(tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
+    awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')"
+[ "$sidebar_count" -eq 1 ]
+
+# The ambiguity is client-context dependent. Reproduce the live shape by
+# attaching the client to the session that owns the sidebar before discovery.
+TERM=xterm script -qefc "HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$TMUX_CONFIG' attach-session -t aaaaaaaaaaaaaaaaaaa" "$CLIENT_LOG" >/dev/null 2>&1 &
+CLIENT_PID=$!
+for attempt in $(seq 1 50); do
+    [ "$(tmuxc list-clients -F '#{session_name}' 2>/dev/null | grep -Fx 'aaaaaaaaaaaaaaaaaaa' | wc -l | tr -d ' ')" -eq 1 ] && break
+    sleep 0.05
+done
+
+# Use the same socket shape inherited by a real pane process so the checked-in
+# adapter takes its explicit -S socket path.
+export TMUX="$SOCKET_PATH,0,1"
+source "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter"
+
+discovered="$(sidebar_tmux_global_sidebar_pane)"
+discovered_lines="$(printf '%s\n' "$discovered" | sed '/^$/d' | wc -l | tr -d ' ')"
+printf 'discovered pane IDs (%s lines):\n%s\n' "$discovered_lines" "$discovered"
+if [ "$discovered_lines" -ne 1 ]; then
+    printf 'RED: numeric session name 0 duplicates global sidebar discovery\n' >&2
+    printf 'discovered pane IDs:\n%s\n' "$discovered" >&2
+    exit 1
+fi
+
+printf 'PASS: numeric session name does not duplicate global sidebar discovery\n'

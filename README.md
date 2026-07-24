@@ -70,6 +70,8 @@ dotfiles/
 │           └── resize-font
 ├── scripts/
 │   ├── tmux-session-launcher
+│   ├── tmux-sidebar-tmux-adapter
+│   ├── tmux-sidebar-controller
 │   └── tmux-theme-picker         ← 실시간 테마 피커 스크립트
 ├── get_dotfiles.sh
 ├── install_dotfiles.sh

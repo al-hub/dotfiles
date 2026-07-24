@@ -28,8 +28,30 @@ source = "scripts/tmux-session-launcher"
 target = "~/.local/bin/tmux-session-launcher"
 commands = ["bash", "tmux"]
 packages = ["bash", "tmux"]
+depends = ["tmux-sidebar-tmux-adapter", "tmux-sidebar-controller"]
+description = "tmux session launcher with a single movable sidebar"
+
+[[dotfiles]]
+name = "tmux-sidebar-tmux-adapter"
+enabled = false
+hidden = true
+source = "scripts/tmux-sidebar-tmux-adapter"
+target = "~/.local/bin/tmux-sidebar-tmux-adapter"
+commands = ["bash", "tmux"]
+packages = ["bash", "tmux"]
 depends = []
-description = "tmux popup session launcher"
+description = "tmux adapter for the single sidebar controller"
+
+[[dotfiles]]
+name = "tmux-sidebar-controller"
+enabled = false
+hidden = true
+source = "scripts/tmux-sidebar-controller"
+target = "~/.local/bin/tmux-sidebar-controller"
+commands = ["bash", "tmux"]
+packages = ["bash", "tmux"]
+depends = ["tmux-sidebar-tmux-adapter"]
+description = "single sidebar lifecycle and session move controller"
 
 [[dotfiles]]
 name = "tmux-zshrc"
@@ -107,4 +129,3 @@ commands = ["bash", "tmux"]
 packages = []
 depends = []
 description = "tmux command palette script"
-

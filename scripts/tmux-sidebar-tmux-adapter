@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+# tmux-sidebar-tmux-adapter
+#
+# Small, explicit tmux command boundary for the single-sidebar controller.
+# All callers should pass stable pane/window/session IDs where possible.
+
+sidebar_tmux_cmd()
+{
+    local tmux_socket="${TMUX:-}"
+    tmux_socket="${tmux_socket%%,*}"
+    if [ -n "$tmux_socket" ] && [ -S "$tmux_socket" ]; then
+        tmux -S "$tmux_socket" "$@"
+    else
+        tmux "$@"
+    fi
+}
+
+sidebar_tmux_global_sidebar_pane()
+{
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        sidebar_tmux_cmd list-panes -s -t "=$session_name" \
+            -F '#{pane_id}|#{session_name}|#{window_id}|#{pane_title}' 2>/dev/null |
+            awk -F '|' '$4 == "dotfiles-session-sidebar" { print $1; exit }'
+    done < <(sidebar_tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null)
+}
+
+sidebar_tmux_sidebar_pane_count()
+{
+    local count=0 session_name session_count
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        session_count="$(sidebar_tmux_cmd list-panes -s -t "=$session_name" -F '#{pane_title}' 2>/dev/null |
+            awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')"
+        count=$((count + session_count))
+    done < <(sidebar_tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null)
+    printf '%s\n' "$count"
+}
+
+sidebar_tmux_pane_session()
+{
+    sidebar_tmux_cmd display-message -p -t "$1" '#{session_name}' 2>/dev/null || true
+}
+
+sidebar_tmux_pane_window()
+{
+    sidebar_tmux_cmd display-message -p -t "$1" '#{window_id}' 2>/dev/null || true
+}
+
+sidebar_tmux_session_window()
+{
+    sidebar_tmux_cmd display-message -p -t "=$1:" '#{window_id}' 2>/dev/null || true
+}
+
+sidebar_tmux_work_pane()
+{
+    local target_window="$1"
+    sidebar_tmux_cmd list-panes -t "$target_window" -F '#{pane_id}|#{pane_title}|#{pane_active}' 2>/dev/null |
+        awk -F '|' '$2 != "dotfiles-session-sidebar" && $3 == 1 { print $1; exit }'
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        return 1
+    fi
+}
+
+sidebar_tmux_any_work_pane()
+{
+    local target_window="$1"
+    sidebar_tmux_cmd list-panes -t "$target_window" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }'
+}
+
+sidebar_tmux_client_tty_for_session()
+{
+    local session_name="$1"
+    sidebar_tmux_cmd list-clients -F '#{client_tty}|#{session_name}' 2>/dev/null |
+        awk -F '|' -v session="$session_name" '$2 == session { print $1; exit }'
+}
+
+sidebar_tmux_move_pane()
+{
+    local sidebar_pane="$1"
+    local target_work_pane="$2"
+    local width="$3"
+    sidebar_tmux_cmd move-pane -s "$sidebar_pane" -t "$target_work_pane" -b -h -l "$width"
+}
+
+sidebar_tmux_switch_client()
+{
+    local client_tty="$1"
+    local target_session="$2"
+    sidebar_tmux_cmd switch-client -c "$client_tty" -t "=$target_session"
+}

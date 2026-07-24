@@ -21,6 +21,11 @@
 - `CONVERSATION.md`: 사용자 의도와 의사결정 맥락
 - `README.md`: 사용자용 설치/구조 안내
 - `docs/reproduction.md`: 에이전트와 사용자의 실환경 재현 및 검증 가이드
+- `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: 실제 attached PTY 입력으로 prefix/sidebar/TUI 전체 시나리오를 검증
+- `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
+- `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
+- `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
+- `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-sidebar-controller`: 단일 sidebar의 tmux 경계와 lifecycle 구현
 
 ## 작업 규칙
 
@@ -42,6 +47,15 @@ sh -n get_dotfiles.sh
 sh -n install_dotfiles.sh
 git diff --check
 ```
+
+단일 sidebar 개발 branch의 TDD 계약 테스트:
+
+```sh
+bash tests/tmux-single-sidebar/test-contract.sh
+```
+
+이 테스트는 production `move-pane` 경로가 구현되기 전까지 의도적으로 실패할
+수 있으며, branch의 신규 동작 기준선으로 사용합니다.
 
 tmux 설정 로딩 검증:
 

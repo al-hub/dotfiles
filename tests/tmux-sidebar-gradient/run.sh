@@ -3,6 +3,8 @@ set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 test_files=(
+    ../tmux-single-sidebar/test-contract.sh
+    ../tmux-single-sidebar/test-keyboard-e2e.sh
     test-render.sh
     test-fingerprint.sh
     test-hot-path.sh

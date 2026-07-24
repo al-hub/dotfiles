@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+# Controller functions are sourced after the launcher helpers so they can use
+# layout storage and refresh functions without embedding tmux details here.
+
+sidebar_controller_width()
+{
+    local pane_id="$1"
+    local width
+    width="$(sidebar_tmux_cmd display-message -p -t "$pane_id" '#{pane_width}' 2>/dev/null || true)"
+    case "$width" in
+        ''|*[!0-9]*) sidebar_width ;;
+        *) printf '%s\n' "$width" ;;
+    esac
+}
+
+sidebar_controller_move_to_session()
+{
+    local target_session="$1"
+    local sidebar_pane source_window target_window source_work_pane target_work_pane
+    local width source_session
+
+    [ -n "$target_session" ] || return 1
+    sidebar_pane="$(find_global_sidebar_pane)"
+    if [ -z "$sidebar_pane" ]; then
+        target_window="$(sidebar_tmux_session_window "$target_session")"
+        target_work_pane="$(sidebar_tmux_any_work_pane "$target_window")"
+        [ -n "$target_window" ] && [ -n "$target_work_pane" ] || {
+            debug_log "single-sidebar ensure failed: target work pane absent target=$target_session"
+            return 1
+        }
+        open_sidebar "$target_work_pane"
+        return $?
+    fi
+
+    if [ "$(sidebar_tmux_sidebar_pane_count)" -ne 1 ]; then
+        debug_log "single-sidebar move refused: sidebar count is not one"
+        return 1
+    fi
+
+    source_session="$(sidebar_tmux_pane_session "$sidebar_pane")"
+    source_window="$(sidebar_tmux_pane_window "$sidebar_pane")"
+    target_window="$(sidebar_tmux_session_window "$target_session")"
+    trace_event "sidebar.move.resolve pane=${sidebar_pane:-none} source=${source_session:-none}:$source_window target=$target_session:$target_window"
+    [ -n "$source_session" ] && [ -n "$source_window" ] && [ -n "$target_window" ] || return 1
+
+    if [ "$source_window" = "$target_window" ]; then
+        sidebar_session_cached="$target_session"
+        return 0
+    fi
+
+    source_work_pane="$(sidebar_tmux_any_work_pane "$source_window")"
+    target_work_pane="$(sidebar_tmux_work_pane "$target_window")"
+    trace_event "sidebar.move.work-panes source=${source_work_pane:-none} target=${target_work_pane:-none}"
+    [ -n "$source_work_pane" ] && [ -n "$target_work_pane" ] || {
+        debug_log "single-sidebar move refused: missing work pane source=$source_window target=$target_window"
+        return 1
+    }
+
+    width="$(sidebar_controller_width "$sidebar_pane")"
+    # The target currently has no sidebar, so this snapshot is work-only and
+    # can later restore the target when the sidebar is toggled off.
+    save_work_layout "$target_window"
+    trace_event "sidebar.move.begin pane=$sidebar_pane source=$source_session:$source_window target=$target_session:$target_window"
+    if ! sidebar_tmux_move_pane "$sidebar_pane" "$target_work_pane" "$width"; then
+        debug_log "single-sidebar move failed: tmux move-pane source=$source_window target=$target_window"
+        return 1
+    fi
+
+    sidebar_tmux_cmd select-pane -t "$sidebar_pane" -T "$SIDEBAR_TITLE" 2>/dev/null || true
+    sidebar_tmux_cmd select-pane -t "$sidebar_pane" 2>/dev/null || true
+    if [ "$(sidebar_tmux_pane_session "$sidebar_pane")" != "$target_session" ]; then
+        debug_log "single-sidebar move failed verification target=$target_session pane=$sidebar_pane"
+        sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+        restore_work_layout "$source_window"
+        return 1
+    fi
+
+    # The source is now work-only; save this layout only after the move has
+    # been verified so the snapshot never includes the sidebar pane.
+    save_work_layout "$source_window"
+    sidebar_session_cached="$target_session"
+    trace_event "sidebar.move.end pane=$sidebar_pane target=$target_session:$target_window"
+    return 0
+}

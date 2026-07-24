@@ -6,19 +6,19 @@
 
 ## 아키텍처 개요
 
-sidebar는 **세션당 하나의 bash 프로세스**로 동작하며, 각 프로세스는 독립적인
-이벤트 루프(`run_tui`)를 돌린다. 세션 전환 시 사용자 화면은 target 세션으로
-이동하지만, 소스 세션의 sidebar 프로세스도 background에서 계속 동작한다.
+`feature/single-sidebar`의 sidebar는 **tmux server당 하나의 pane과 하나의
+bash process**로 동작한다. session 전환 시 process를 respawn하지 않고 기존
+pane을 target session의 active window로 `move-pane`한다. `master`의 이전
+per-session 구조와 구분되는 branch 전용 동작이다.
 
 ```
 ┌─────────────────────────────────────────────────┐
 │ tmux server                                      │
 │  ├─ session "A"                                  │
-│  │   ├─ pane %1 (sidebar bash) ← run_tui 루프    │
-│  │   └─ pane %2 (work zsh)                       │
+│  │   └─ work panes                               │
 │  ├─ session "B"                                  │
-│  │   ├─ pane %3 (sidebar bash) ← run_tui 루프    │
-│  │   └─ pane %4 (work zsh)                       │
+│  │   ├─ pane %1 (sidebar bash) ← run_tui 루프    │
+│  │   └─ work panes                               │
 │  └─ client (attached to session "B")             │
 └─────────────────────────────────────────────────┘
 ```
@@ -30,7 +30,7 @@ sidebar는 **세션당 하나의 bash 프로세스**로 동작하며, 각 프로
 | `current_session` | `*` 표시 기준. tmux가 현재 어떤 세션에 attached인지 | `collect_sessions()` 내 `tmux display-message -p '#S'` |
 | `selected_session` | `>` 표시 기준 세션 이름 | 방향키 이동, enter, force_refresh 시 |
 | `selected_index` | `>` 표시 기준 배열 인덱스 | `move_selection()`, `align_selection_to_session()` |
-| `sidebar_session_cached` | 이 sidebar pane이 속한 세션 이름 (불변) | 최초 1회 `sidebar_session_name()` |
+| `sidebar_session_cached` | 이 sidebar pane의 현재 owner session | pane 이동 감지 시 `collect_sessions()` |
 | `snapshot_signature` | 세션 목록 변경 감지용 시그니처 | `collect_sessions()` |
 
 ## 행 표시 마크 결정 로직
@@ -79,72 +79,76 @@ while true:
 
 ## 세션 전환 흐름 (switch_session)
 
-**위치**: 라인 871-951
+**위치**: `switch_session()` 및 `tmux-sidebar-controller`
 
 ```
 switch_session(session_name):
-  1. ensure_session_sidebar(session_name)   ← target에 sidebar pane 보장
-  2. tmux set-option -g "@sidebar_force_refresh_$session_name" 1
-     ↑ target sidebar에 갱신 상태 기록 (fallback IPC)
-  3. client_tty 찾기
-  4. tmux switch-client -t "=$session_name"  ← 실제 전환
-  5. tmux set-option -g "@sidebar_force_refresh_$session_name" 1
-     ↑ 한번 더 (race condition 방어)
-  6. target sidebar pane PID에 SIGUSR2 전송
-     ↑ target event loop에 refresh pending 상태를 전달
-  7. current_session = session_name   ← 로컬 변수 즉시 갱신
-  8. selected_session = session_name  ← 로컬 변수 즉시 갱신
+  1. global sidebar pane과 owner session을 resolve
+  2. owner session의 client tty를 명시적으로 resolve
+  3. source work layout 저장
+  4. target active window/work pane 검증
+  5. 기존 sidebar pane을 target으로 move-pane
+  6. 명시적 client에 switch-client 실행
+  7. 동일 pane process에 refresh signal 전송
+  8. 실패 시 pane rollback 및 source layout 복구
 ```
 
-### 전환 후 소스 sidebar 처리 (라인 3674-3677)
+### 전환 후 surviving sidebar 처리
 ```
 enter 핸들러:
-  switch_session("$selected_session")  ← 전환
-  collect_sessions(false, "$selected_session")  ← 소스 sidebar 갱신
-  render_full()  ← 소스 sidebar 다시 그리기 (background)
+  switch_session("$selected_session")  ← pane 이동 + client 전환
+  collect_sessions(false, "$selected_session")
+  render_full()
 ```
 
 ### 전환 후 target sidebar 처리 — signal + polling fallback
 
-target sidebar는 SIGUSR2를 받으면 refresh pending 상태를 기록하고 다음
-event-loop 경계에서 force-refresh를 처리한다. Bash의 read -t가 signal
-수신 순간 즉시 반환되지 않을 수 있으므로, signal은 기존 5초 지연을 제거하지만
-대기 중인 read timeout(현재 최대 1초)의 영향을 받을 수 있다. signal이
-유실되거나 sidebar가 아직 시작 중인 경우에는 기존 force-refresh flag polling이
-fallback으로 동작한다:
+sidebar는 SIGUSR2를 받으면 refresh pending 상태를 기록하고 다음 event-loop
+경계에서 자기 pane의 현재 owner session을 다시 확인한다. pane 이동으로 owner가
+바뀌면 sessions view로 재정렬하고 history view 상태를 초기화한다. signal이
+유실되거나 startup race가 발생하면 force-refresh flag polling이 fallback으로
+동작한다:
 
 ```
 SIGUSR2:
   refresh_signal_pending = true
   event loop 다음 경계에서 재개
-  force_refresh = tmux show-option -gqv "@sidebar_force_refresh_$my_session"
-  if force_refresh == "1":
-    collect_sessions()
-    align_selection_to_session("$my_session")  ← > 커서를 자기 세션으로
-    render_full()
-    tmux set-option -g "$flag" 0  ← 플래그 리셋
+  my_session = sidebar_session_name()  ← pane ID로 owner 재탐색
+  collect_sessions(false, "$my_session")
+  align_selection_to_session("$my_session")
+  render_full()
 
 fallback maintenance tick:
   if 1초 경과 since last check:
     force_refresh = tmux show-option -gqv "@sidebar_force_refresh_$my_session"
     if force_refresh == "1":
-      collect_sessions()
-      align_selection_to_session("$my_session")  ← > 커서를 자기 세션으로
+      collect_sessions(false, "$my_session")
+      align_selection_to_session("$my_session")
       render_full()
-      tmux set-option -g "$flag" 0  ← 플래그 리셋
+      tmux set-option -g "$flag" 0
 ```
 
 signal 경로는 세션 전환 직후 target을 갱신하고, polling은 startup/race와
 signal 유실을 보장하는 fallback이다.
 
+history restore의 async 경로도 bounded transition polling을 사용한다. restore
+작업은 target session, sidebar owner, attached client가 일치하고 sidebar pane이
+선택될 때까지 짧게 기다린 후 다음 입력을 처리한다. 이때 sidebar owner가
+변경되어도 history view/index는 유지한다. 반복 restore 입력에 대한 PTY focus
+race는 `tests/tmux-single-sidebar/test-keyboard-e2e.sh`에서 추적한다.
+
 ## IPC 메커니즘
 
-sidebar 프로세스 간 통신은 tmux 글로벌 옵션을 이용한다:
+sidebar controller와 sidebar process 간 통신은 tmux 글로벌 옵션과 signal을
+이용한다. tmux command의 server/pane/window 경계는
+`scripts/tmux-sidebar-tmux-adapter`가 담당하고 lifecycle 전이는
+`scripts/tmux-sidebar-controller`가 담당한다:
 
 | 옵션 | 용도 | 설정 | 읽기 |
 |---|---|---|---|
-| `@sidebar_force_refresh_<session>` | 세션 전환 시 target sidebar 갱신 fallback 상태 | `switch_session()` 라인 914,940 | 메인 루프 라인 3776 |
+| `@sidebar_force_refresh_<session>` | pane 이동 후 refresh fallback 상태 | `switch_session()` 및 toggle 경로 | main loop |
 | `@dotfiles-session-work-layout` | 작업 영역 레이아웃 저장/복구 | `save_work_layout()` | `restore_work_layout()` |
+| `SIGUSR2` | surviving sidebar process 즉시 refresh 요청 | controller/switch 경로 | `handle_refresh_signal()` |
 
 ## 데이터 수집 (collect_sessions)
 
