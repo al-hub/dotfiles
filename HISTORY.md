@@ -7,6 +7,95 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
+
+## 2026-07-25 - feature branch 보존 및 master 반영 보류
+
+사용자 결정:
+- 자동 검증이 PASS여도 실사용 side-effect와 bug 가능성이 있으므로 현재 결과를
+  `master`에 반영하지 않습니다.
+- `feature/single-sidebar`의 변경은 commit/push하여 후속 실사용 검증을 이어갑니다.
+
+후속 기준:
+- feature branch에서 manual/live tmux 검증과 side-effect 분석을 계속합니다.
+- `master` merge는 명시적인 사용자 승인 전까지 수행하지 않습니다.
+
+## 2026-07-25 - script PTY 실패 원인 수정 및 acceptance 복구
+
+요약:
+- `LD_PRELOAD` interposer로 script와 tmux child의 read/write/poll/ioctl,
+  termios, FD identity를 관측했습니다.
+- post-switch Down 자체는 script가 PTY master에 정상 write했지만, coprocess가
+  소비하지 않은 stdout pipe에 출력하면서 `EPIPE`가 발생하는 것을 확인했습니다.
+- `script --log-out`가 이미 client log를 저장하므로 script stdout/stderr를
+  `/dev/null`로 연결해 미소비 pipe를 제거했습니다.
+
+검증:
+- corrected full script E2E: PASS
+- `TMUX_KEYBOARD_E2E_TRANSPORT=script E2E_RUNS=3`: PASS
+- explicit target `keyboard-1`~`keyboard-6`, 삭제, 복원, `d All`: PASS
+
+후속 주의:
+- `master` merge/push/commit은 사용자 확인 전까지 수행하지 않습니다.
+
+## 2026-07-24 - full E2E target 선택 교정 및 post-switch 입력 경계 확정
+
+요약:
+- full keyboard E2E가 session 생성 직후 `keyboard-6 → keyboard-anchor` 자기
+  선택을 실제 switch로 세던 문제를 수정했습니다.
+- 각 Enter가 `keyboard-1`부터 `keyboard-6`까지 명시적 target으로 이동하는지
+  검증하도록 강화했습니다.
+- 교정 후 bridge는 full 시나리오를 통과했고, script transport는
+  `keyboard-1` 전환 및 `transition.ready/action.complete` 이후 다음 Down 입력을
+  launcher가 읽지 못하는 현상을 재현했습니다.
+
+검증:
+- full bridge: explicit target switch, delete, restore, `d All` PASS
+- full script: post-switch Down `input.read.result` 누락 재현
+
+후속 주의:
+- test selection ambiguity는 제거되었습니다.
+- 남은 blocker는 실제 `script(1)` child PTY → tmux client → sidebar 입력 경계입니다.
+
+## 2026-07-24 - PTY 상태 및 syscall 관측 계획 구현
+
+요약:
+- test-only PTY bridge에 termios, FD blocking flag, window size, poll revents,
+  signal, read/write 오류 로그를 추가했습니다.
+- `script(1)` transport에서 `TMUX_KEYBOARD_E2E_SYSCALL_TRACE=auto|0|1`로
+  조건부 `strace -ff` 수집을 지원합니다.
+- `TMUX_KEYBOARD_E2E_SCENARIO=minimal`을 추가해 짧은 session 전환과 전환 후
+  첫 Down 입력을 전체 삭제/복원 흐름과 분리했습니다.
+
+검증:
+- minimal bridge: PASS
+- minimal script: PASS
+- 기존 full bridge 3회 반복: PASS
+
+후속 주의:
+- minimal case는 양쪽 transport 모두 통과하므로, 남은 실패는 긴 workflow의
+  상태 의존 경계로 추적해야 합니다.
+- full `script(1)` acceptance는 아직 최종 blocker이며, 원인 확정 전에는
+  수정 완료로 판정하지 않습니다.
+
+## 2026-07-24 - 실제 PTY bridge로 keyboard E2E 경계 확정
+
+요약:
+- `script(1)` 입력 경로와 실제 `forkpty(3)` 입력 경로를 분리해 로그를 보강했습니다.
+- `script` 경로에서 session 전환 후 다음 Down의 `input.read.result`가 사라지는 현상을 확인했지만, 실제 PTY bridge에서는 동일한 전환이 정상 동작했습니다.
+- 전체 사용자 시나리오를 bridge로 3회 연속 PASS하여 launcher의 session-switch 로직과 transport/harness 문제를 분리했습니다.
+- 최종 전체 종료 직후 tmux option이 사라지는 특성을 반영해 테스트 harness의 prompt polling을 수정했습니다.
+
+변경 파일:
+- `tests/tmux-single-sidebar/pty-bridge.c`: test-only forkpty transport 및 stdin/pty raw hex trace.
+- `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: bridge 선택, control observer, transport trace, 안전한 cleanup/final shutdown 검증.
+- `docs/live-session-switch-regression.md`: script 경로 실패와 bridge 경로 성공의 원인 경계 및 acceptance 기준.
+
+검증:
+- `TMUX_KEYBOARD_E2E_TRANSPORT=bridge E2E_RUNS=3 bash tests/tmux-single-sidebar/test-keyboard-e2e-repeat.sh`: PASS.
+
+후속 주의:
+- `script(1)`은 비교/진단 모드로 유지하며, 이 경로의 PTY handoff 문제는 별도 조사 대상입니다.
+- `master` merge/push는 사용자 확인 전까지 수행하지 않습니다.
 - 각 항목에는 날짜, 요약, 변경 파일, 검증, 후속 주의점을 남깁니다.
 
 ## 2026-07-24 - live session `0` session-switch failure 진단 checkpoint
@@ -28,6 +117,14 @@
 후속 주의:
 - numeric-session regression은 adapter target ambiguity가 해결되기 전까지 RED 상태여야 합니다.
 - 이 항목은 구현 완료가 아니라 원인 고정용 checkpoint입니다.
+
+## 2026-07-24 - numeric session target 안정화 및 explicit restore readiness
+
+- global sidebar discovery를 session별 ambiguous target loop에서 `list-panes -a` 단일 조회로 변경했습니다.
+- session window/client target 조회와 switch에 stable session ID를 사용하도록 adapter를 보강했습니다.
+- restore readiness에서 client tty, target window, active sidebar pane, 기존 sidebar PID를 확인하고 explicit client/pane selection을 수행합니다.
+- numeric session `0` attached-client Down+Enter regression은 PASS로 전환됐습니다.
+- 전체 history restore keyboard E2E는 세 번째 Enter 단계에서 여전히 실패하여 후속 focus/input race로 추적합니다.
 
 ## 2026-07-24 - 단일 sidebar 개발 branch 설계 및 TDD 계약 추가
 
@@ -3767,3 +3864,24 @@
 - Added `tests/tmux-single-sidebar/test-keyboard-e2e.sh`, an attached-PTY end-to-end scenario covering `Ctrl+a s`, six `c` session creations, repeated arrow/Enter switching, archived `d` deletion, `o` restoration, and `d All` shutdown.
 - The keyboard E2E currently exposes a remaining defect after bulk deletion: the sidebar can exist while focus/owner synchronization is not ready for the history `o` → arrow → Enter restore loop. Contract and lifecycle regressions remain passing.
 - Added bounded async-restore transition waiting and kept the TUI view mode stable across sidebar owner changes. The PTY scenario now advances through the first restore transitions but still exposes a later repeated-Enter focus race, which remains an open fix item.
+- Numeric session name `0` attached-client regression is now covered by global pane discovery and session-ID targets; the dedicated regression passes. ESC sequence follow-up parsing also uses a configurable 50ms default instead of the previous 10ms fixed window.
+- 일반 `switch_session`에도 sidebar/client/window/active-pane transition barrier를 적용했지만, 실제 PTY E2E에서는 deletion prompt 직전의 `y` 입력 유실이 아직 재현되어 최종 승격하지 않았습니다.
+- `prompt_line`이 main loop의 noncanonical `min 0/time 0` 상태에서 빈 read를 Enter로 오인하던 문제를 수정했습니다. prompt는 canonical blocking read와 `icrnl`을 사용하며, PTY E2E session 입력도 literal `\\r`가 아닌 실제 CR byte를 전송하도록 수정했습니다. deletion 단계는 PASS하지만 history 반복 복구 race는 여전히 남아 있습니다.
+## 2026-07-24 - keyboard E2E trace instrumentation
+
+- `tmux-session-launcher` trace에 action ID를 기준으로 raw key bytes, dispatch 시작/종료, prompt 시작/결과/종료, action 완료 generation을 기록했습니다.
+- session 전환 barrier는 sidebar pane, owner session, client session/window, active pane, sidebar PID별 관측 상태와 ready/timeout을 기록합니다.
+- `test-keyboard-e2e.sh`는 실제 입력 바이트와 timeout 시점의 client/pane/active snapshot을 남깁니다. 전송 직전 snapshot은 `TEST_TRACE_VERBOSE=true`에서만 활성화해 기본 시나리오 timing을 보존합니다.
+- 최신 관측에서 생성과 6회 전환은 PASS했으며, 삭제 2번째 시도는 sidebar pane은 존재하지만 후속 입력이 event loop에 도달하지 않아 session count가 감소하지 않았습니다. 이 결과는 full E2E 미해결 상태로 유지합니다.
+## 2026-07-24 - readiness barrier implementation and PTY boundary result
+
+- launcher에 `@dotfiles_sidebar_input_ready`와 `@dotfiles_sidebar_prompt_ready` 상태 marker를 추가했습니다. action dispatch 중에는 input readiness를 내리고, prompt read 진입/종료와 action 완료를 각각 기록합니다.
+- transition은 topology가 두 번 연속 안정된 경우에만 ready로 판정하고, 전환 완료 후 client focus reassert와 refresh를 수행합니다.
+- keyboard E2E는 고정 sleep 대신 prompt readiness, action generation, sidebar focus/readiness를 기다리도록 변경했고 반복 실행 wrapper를 추가했습니다.
+- contract, numeric-session, lifecycle 회귀는 PASS했습니다. 그러나 실제 attached PTY에서 `transition.ready`와 `action.complete` 이후 Down 입력이 launcher `input.read`에 도달하지 않는 문제가 계속 재현되어 full E2E 승격은 보류합니다.
+## 2026-07-24 - control-mode and script input transport observation
+
+- attached PTY E2E에 tmux control-mode observer를 추가하고 control client를 사용자 client 탐색에서 제외했습니다.
+- client session/window/pane, activity, key table, prefix, pane tty/input-off 상태와 session-change notification을 기록합니다.
+- `script --log-in`으로 test write가 script 입력까지 도달했는지 failure artifact에서 확인하도록 했습니다.
+- 최신 실패는 test→script raw input은 확인되지만 이후 launcher `input.read`가 발생하지 않는 구간으로 좁혀졌습니다. `client_activity`는 Enter 입력마다 증가하지 않아 tmux byte 수신의 단독 증거로 사용하지 않으며, 남은 경계는 script child PTY→tmux client입니다.

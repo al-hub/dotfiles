@@ -9,6 +9,79 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-24 - 최종 원인 확정을 위한 PTY 관측 보강
+
+사용자 요청:
+- 최종 수정 방법을 결정할 수 있도록 로그를 강화하고 다음 작업 계획을 실행.
+
+작업 결과:
+- PTY bridge에 termios, FD flags, window size, poll 결과, signal, read/write 오류
+  로그를 추가함.
+- `script(1)` 실행에 조건부 `strace -ff` 옵션을 연결함.
+- minimal 시나리오를 추가해 session 1회 전환 후 Down 입력을 독립 검증함.
+- minimal bridge/script는 모두 PASS했으며, 따라서 남은 문제는 긴 create/delete/
+  restore 흐름에서 발생하는 상태 의존 문제로 좁혀짐.
+
+결정:
+- `script(1)` 경로를 최종 acceptance 대상으로 유지함.
+- bridge는 비교용 control transport로 유지함.
+- full script E2E가 PASS하기 전에는 수정 완료로 판정하지 않음.
+
+## 2026-07-24 - full keyboard target 검증 교정
+
+작업 결과:
+- session 생성 직후 cursor wrap으로 anchor를 다시 선택하던 테스트 경로를 제거함.
+- `keyboard-1`부터 `keyboard-6`까지 각 Enter의 실제 client target을 검증하도록 수정함.
+- bridge는 교정된 full 시나리오를 통과함.
+- script는 `keyboard-1` 전환과 transition completion까지 성공한 뒤 다음 Down 입력에서
+  launcher read가 멈추는 현상을 재현함.
+
+결론:
+- 테스트의 자기 session 선택 오류는 제거됨.
+- 남은 문제는 긴 workflow 후 실제 script PTY 입력 handoff 경계로 확정됨.
+
+## 2026-07-25 - script stdout EPIPE 원인 수정
+
+작업 결과:
+- `LD_PRELOAD` interposer로 script/tmux child의 FD identity와 syscall을 확인함.
+- post-switch Down은 `script fd=0` read 및 PTY master `fd=4` write까지 성공했음.
+- 실패 시 script stdout write가 `EPIPE`를 반환했으며, coprocess stdout을 테스트가
+  소비하지 않는 구조가 원인임을 확인함.
+- `script --log-out`를 유지하고 unused stdout/stderr를 `/dev/null`로 redirect함.
+
+검증 결과:
+- corrected full script E2E 3회 연속 PASS.
+- bridge 및 numeric/session/sidebar 회귀도 유지 PASS.
+
+## 2026-07-25 - feature branch 보존 및 실사용 보류 결정
+
+사용자 결정:
+- 자동 E2E가 PASS하더라도 실사용 side-effect와 추가 bug 가능성이 있으므로
+  `master`에는 절대 반영하지 않음.
+- 현재 작업 내용은 `feature/single-sidebar`에 기록하고 commit/push하여 후속
+  작업이 이어질 수 있도록 함.
+
+운영 기준:
+- feature branch에서 실사용 검증과 side-effect 분석을 계속함.
+- `master` merge는 별도 사용자 확인 전까지 금지함.
+
+## 2026-07-24 - 로그 강화 후 최종 transport 경계 확정
+
+사용자 요청:
+- 로그로 정확한 원인을 분석하고, 검증 실패 시 다음 개선방법을 결정할 수 있도록 보강.
+
+해석/결정:
+- tmux control-mode observer와 launcher correlation trace만으로는 PTY 중간 계층을 확정할 수 없으므로 `script(1)`과 실제 `forkpty(3)` transport를 분리해 비교.
+- `script` 경로는 전송 입력 로그에 Down byte가 존재하지만 launcher read가 끊겼고, forkpty 경로는 동일한 실사용 키보드 시나리오를 통과하므로 acceptance 경로는 forkpty로 고정.
+
+작업 결과:
+- test-only `pty-bridge.c`를 추가하고 stdin/PTY read/write에 timestamp, 길이, hex 로그를 기록.
+- final `d All` 직후 tmux server가 종료되어 option polling이 불가능한 harness 특성을 수정.
+- toggle, session 6개 생성, 방향키/Enter 6회 전환, 삭제/복원, 전체 종료를 실제 PTY bridge에서 3회 연속 PASS.
+
+남은 질문:
+- `script(1)` 자체의 child PTY handoff 문제를 제품 blocker로 볼지, 진단용 legacy transport로 유지할지 후속 결정이 필요합니다. 현재 branch acceptance에는 영향을 주지 않습니다.
+
 ## 2026-07-24 - 단일 sidebar 개발 branch 승인 및 TDD 설계 기준
 
 - 현재 안정 branch `master`는 유지하고 `feature/single-sidebar`에서 신규 개발을 진행하기로 승인했습니다.
@@ -3328,3 +3401,33 @@
 - 기존 isolated 테스트에는 numeric session이 없어서 PASS/실사용 FAIL 괴리가 발생했다.
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`와 `docs/live-session-switch-regression.md`를 추가하는 진단 checkpoint를 만든다.
 - checkpoint commit은 `feature/single-sidebar`에만 생성하며 `master` merge/push는 사용자 confirm 전까지 보류한다.
+
+## 2026-07-24 numeric target fix progress
+
+- global sidebar discovery를 `list-panes -a`로 변경하고 session ID target helper를 추가했다.
+- numeric session `0` live-shaped regression과 attached-client Down+Enter가 PASS로 전환됐다.
+- restore는 explicit client tty/window/active pane/PID readiness를 확인하도록 보강했지만, full PTY history restore는 세 번째 Enter에서 아직 실패한다.
+
+## 2026-07-24 prompt input fix progress
+
+- `prompt_line`이 main loop의 noncanonical `min 0/time 0` 상태에서 빈 read를 Enter로 오인하는 원인을 확인했다.
+- prompt는 canonical blocking read와 `icrnl`로 전환했고, keyboard E2E session명 입력은 literal `\\r`가 아닌 실제 CR byte를 사용한다.
+- deletion/archive 단계는 PASS하지만 history 반복 복구의 PTY handoff race는 후속 수정 대상으로 남긴다.
+## 2026-07-24 keyboard E2E logging decision
+
+- 사용자가 확인할 수 있는 session switch 괴리를 분석하기 위해 launcher와 attached-PTY E2E 양쪽에 동일한 action correlation 정보를 추가한다.
+- 핵심 로그 순서는 `input.read.result` → `input.dispatch.begin` → `prompt.*`/`switch.*` → `input.dispatch.end` → `action.complete`이며, `action_id`와 raw key hex로 물리 입력과 TUI 처리를 대조한다.
+- tmux 상태 snapshot은 verbose 모드에서 입력 직전에 기록하고, timeout 시에는 client/session/window/pane/active 상태를 자동 기록한다.
+- 최신 실행은 생성 및 6회 전환 PASS, 삭제 두 번째 시도에서 count 감소 실패로 종료됐다. 따라서 history restore PASS나 master 승격을 주장하지 않는다.
+## 2026-07-24 readiness barrier implementation result
+
+- action dispatch 중 `input_ready=0`, prompt canonical read 중 `prompt_ready=1`, action/render 종료 후 generation 증가와 `input_ready=1`을 기록하도록 구현했다.
+- session transition은 sidebar/client/window/active pane 상태를 두 번 연속 확인하고, 완료 후 client focus reassert를 수행한다.
+- E2E의 고정 sleep을 제거하고 marker와 generation을 기준으로 다음 물리 키 입력을 보냈다.
+- 회귀 테스트는 통과했지만 실제 attached PTY에서는 transition/action 완료 이후에도 다음 Down byte가 launcher read에 도달하지 않는 문제가 남았다. 따라서 readiness marker는 상태 관측에는 유효하지만 PTY 입력 경로 자체의 준비를 보장하지 않는다는 결론이다.
+## 2026-07-24 input transport observation result
+
+- tmux control-mode observer와 `client_control_mode` 필터를 추가해 observer가 사용자 client로 오인되지 않도록 했다.
+- `client_activity`는 Enter마다 증가하지 않아 byte 수신의 확정 증거가 아니며, session-change와 topology 관측용으로만 사용한다.
+- `script --log-in`으로 failing Down byte가 script 입력까지 도달함을 확인했다. launcher에는 해당 byte의 `input.read.result`가 없다.
+- 현재 정확한 분류는 test→script는 PASS, script child PTY→tmux client→sidebar는 미확정/실패 경계다. 다음 개선은 lower-level PTY transport 관측 또는 transport 경로 자체의 통제다.

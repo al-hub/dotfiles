@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Diagnostic RED regression for the live failure reproduced with a numeric
-# session named `0`. tmux interprets `=0` ambiguously in the adapter's
-# session-targeted list-panes lookup, causing the same sidebar pane to be
-# discovered more than once and session switching to abort.
+# Regression for the live failure reproduced with a numeric session named `0`.
+# The adapter must not use ambiguous name-based list-panes targets.
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
@@ -74,4 +72,18 @@ if [ "$discovered_lines" -ne 1 ]; then
     exit 1
 fi
 
-printf 'PASS: numeric session name does not duplicate global sidebar discovery\n'
+sidebar_pane="$(printf '%s\n' "$discovered" | head -n 1)"
+tmuxc send-keys -t "$sidebar_pane" Down Enter
+for attempt in $(seq 1 100); do
+    client_session="$(tmuxc list-clients -F '#{session_name}' 2>/dev/null | head -n 1 || true)"
+    owner_session="$(tmuxc display-message -p -t "$sidebar_pane" '#{session_name}' 2>/dev/null || true)"
+    [ "$client_session" = bbbbbbbbbbbbbbbbbb ] &&
+        [ "$owner_session" = bbbbbbbbbbbbbbbbbb ] && break
+    sleep 0.05
+done
+
+[ "$client_session" = bbbbbbbbbbbbbbbbbb ]
+[ "$owner_session" = bbbbbbbbbbbbbbbbbb ]
+[ "$(sidebar_tmux_sidebar_pane_count)" = 1 ]
+printf 'PASS: numeric session name preserves unique sidebar discovery\n'
+printf 'PASS: attached-client Down+Enter switches to bbbbbbbbbbbbbbbbbb\n'
