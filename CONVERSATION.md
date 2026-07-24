@@ -65,6 +65,24 @@
 - feature branch에서 실사용 검증과 side-effect 분석을 계속함.
 - `master` merge는 별도 사용자 확인 전까지 금지함.
 
+## 2026-07-25 - 실사용 side-effect audit 우선 진행
+
+사용자 요청:
+- 실사용에서 발생할 핵심 side-effect와 bug를 대신 찾아 문서로 정리하고,
+  사용자가 일일이 확인하지 않아도 후속 검증을 이어갈 수 있게 함.
+
+확인 결과:
+- 격리 설치에서 `c` 입력 문자열이 `New:` prompt에 표시되지 않음.
+- installer의 tmux item이 default tmux server를 종료할 수 있음.
+- sidebar 열린 상태의 raw tmux split/resize는 layout store가 완전히 추적하지 않음.
+- archive/restore, session/window 이동은 asynchronous operation과 active-window
+  ownership 때문에 실사용 side-effect 위험이 있음.
+
+기록:
+- 상세 audit은 `docs/live-usage-side-effects.md`에 확정/사용자 보고/추가 재현 필요
+  상태로 구분해 기록함.
+- 해당 항목들이 해결되기 전까지 `master` 반영은 금지함.
+
 ## 2026-07-24 - 로그 강화 후 최종 transport 경계 확정
 
 사용자 요청:

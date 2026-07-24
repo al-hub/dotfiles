@@ -25,6 +25,7 @@
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
 - `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
 - `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
+- `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit
 - `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-sidebar-controller`: 단일 sidebar의 tmux 경계와 lifecycle 구현
 
 ## 작업 규칙

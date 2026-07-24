@@ -8,6 +8,25 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - 실사용 side-effect 및 bug audit 문서화
+
+요약:
+- 격리된 HOME과 전용 tmux socket으로 설치 및 실제 키 입력 흐름을 점검했습니다.
+- `c` 입력 내용 미표시를 재현했습니다.
+- 설치 중 default tmux server 종료 가능성, 직접 split/layout 추적 제한,
+  archive/restore race, window/session 이동 side-effect를 우선순위별로 정리했습니다.
+
+문서:
+- `docs/live-usage-side-effects.md`
+
+검증:
+- isolated local install: status 0
+- installed launcher `c` prompt capture: typed text not visible
+- configured sidebar E2E와 사용자가 보고한 raw split/restore 시나리오는 확정/추가 재현 필요로 구분했습니다.
+
+후속 주의:
+- 이 audit 항목이 해결되기 전에는 `master`에 반영하지 않습니다.
+
 ## 2026-07-25 - feature branch 보존 및 master 반영 보류
 
 사용자 결정:
