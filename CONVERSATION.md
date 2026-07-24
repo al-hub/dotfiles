@@ -26,6 +26,29 @@
 남은 질문:
 - 다음에 확인할 점
 ```
+## 2026-07-24 - target sidebar signal refresh 실험
+
+사용자 요청:
+- polling 단축이나 sidebar 재시작이 근본 해결이 아니므로, 낮은 복잡도의
+  signal refresh와 polling fallback 방식을 실제 적용하고 6회 재현 측정.
+
+해석/결정:
+- 기존 SIGUSR1은 optional tick timer에 사용 중이므로 refresh 전용 signal은
+  충돌을 피하기 위해 SIGUSR2로 분리함.
+- signal handler는 렌더링하지 않고 pending flag만 설정하며, 기존 event loop가
+  force-refresh를 처리하도록 함.
+
+작업 결과:
+- target sidebar pane PID에 SIGUSR2를 보내는 실험 구현을 추가함.
+- live tmux 수정본으로 방향키→Enter 6회를 재현함: 753/782/831/803/804/804ms.
+- 평균 796ms, 중앙값 약 804ms, 최대 831ms로 기존 4~5초 지연은 제거했지만
+  Bash read -t가 signal 순간 즉시 깨어나지 않아 완전한 즉시 갱신은 아님.
+- commit은 보류함.
+
+남은 질문:
+- 수십 ms 수준의 완전한 즉시 갱신이 필요하면 read/event-loop 경계의 추가
+  설계가 필요함. 현재 변경은 낮은 복잡도로 지연을 약 0.8초까지 줄이는 실험 결과임.
+
 ## 2026-07-24 - sidebar 커서 지연 현상 원인 분석, 로직 문서화 및 최적 개선안 적용
 
 사용자 요청:

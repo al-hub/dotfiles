@@ -9,6 +9,25 @@
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 - 각 항목에는 날짜, 요약, 변경 파일, 검증, 후속 주의점을 남깁니다.
 
+## 2026-07-24 - tmux session launcher target sidebar 즉시 깨우기 실험
+
+요약:
+- 세션 전환 시 target sidebar pane에 SIGUSR2를 보내 event loop를 즉시
+  깨우고, 기존 force-refresh flag polling은 fallback으로 유지했습니다.
+- signal handler는 상태만 기록하고 실제 tmux 조회와 렌더링은 기존 event loop에서
+  수행하도록 했습니다.
+
+변경 파일:
+- scripts/tmux-session-launcher: target refresh signal과 event-loop 처리 추가.
+- docs/tmux-session-launcher-internals.md: signal/fallback 흐름 반영.
+
+검증:
+- bash -n scripts/tmux-session-launcher 및 기존 sidebar regression suite: PASS.
+- live tmux에서 선택 상태를 매회 초기화한 방향키→Enter 6회:
+  753/782/831/803/804/804ms.
+- 평균 796ms, 중앙값 약 804ms, 최대 831ms. 수 초 지연은 제거됐지만 Bash
+  read -t 경계 때문에 즉시(수십 ms) 처리는 아님.
+
 ## 템플릿
 
 ```md

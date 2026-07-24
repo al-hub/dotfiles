@@ -11,7 +11,7 @@
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
 - sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. 직접 tmux 기본 split/resize로 sidebar가 열린 상태의 work 영역을 바꾼 경우까지 완전 추적하지는 못하므로, sidebar와 함께 split할 때는 wrapper에 묶인 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`를 사용하세요.
-- session 전환 시 target sidebar 프로세스는 유지하고 force-refresh를 사용합니다. 최종 `>*` 정렬은 확인됐지만, 빠른 전환 직후 이전 `>`가 잠깐 남는 transient cursor frame은 아직 재현 가능한 제한사항입니다.
+- session 전환 시 target sidebar 프로세스는 유지하고 refresh signal과 force-refresh polling fallback을 사용합니다. 운용 개선판의 live 측정은 0.75~0.83초이며, Bash `read -t` 경계로 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제입니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
 
 ## 문서 역할

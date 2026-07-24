@@ -85,13 +85,15 @@ while true:
 switch_session(session_name):
   1. ensure_session_sidebar(session_name)   ← target에 sidebar pane 보장
   2. tmux set-option -g "@sidebar_force_refresh_$session_name" 1
-     ↑ target sidebar에 갱신 신호 (IPC)
+     ↑ target sidebar에 갱신 상태 기록 (fallback IPC)
   3. client_tty 찾기
   4. tmux switch-client -t "=$session_name"  ← 실제 전환
   5. tmux set-option -g "@sidebar_force_refresh_$session_name" 1
      ↑ 한번 더 (race condition 방어)
-  6. current_session = session_name   ← 로컬 변수 즉시 갱신
-  7. selected_session = session_name  ← 로컬 변수 즉시 갱신
+  6. target sidebar pane PID에 SIGUSR2 전송
+     ↑ target event loop에 refresh pending 상태를 전달
+  7. current_session = session_name   ← 로컬 변수 즉시 갱신
+  8. selected_session = session_name  ← 로컬 변수 즉시 갱신
 ```
 
 ### 전환 후 소스 sidebar 처리 (라인 3674-3677)
@@ -102,13 +104,28 @@ enter 핸들러:
   render_full()  ← 소스 sidebar 다시 그리기 (background)
 ```
 
-### 전환 후 target sidebar 처리 — IPC polling
+### 전환 후 target sidebar 처리 — signal + polling fallback
 
-target sidebar는 **force_refresh 플래그**를 polling으로 감지한다:
+target sidebar는 SIGUSR2를 받으면 refresh pending 상태를 기록하고 다음
+event-loop 경계에서 force-refresh를 처리한다. Bash의 read -t가 signal
+수신 순간 즉시 반환되지 않을 수 있으므로, signal은 기존 5초 지연을 제거하지만
+대기 중인 read timeout(현재 최대 1초)의 영향을 받을 수 있다. signal이
+유실되거나 sidebar가 아직 시작 중인 경우에는 기존 force-refresh flag polling이
+fallback으로 동작한다:
 
 ```
-maintenance tick (1초마다):
-  if 5초 경과 since last check:
+SIGUSR2:
+  refresh_signal_pending = true
+  event loop 다음 경계에서 재개
+  force_refresh = tmux show-option -gqv "@sidebar_force_refresh_$my_session"
+  if force_refresh == "1":
+    collect_sessions()
+    align_selection_to_session("$my_session")  ← > 커서를 자기 세션으로
+    render_full()
+    tmux set-option -g "$flag" 0  ← 플래그 리셋
+
+fallback maintenance tick:
+  if 1초 경과 since last check:
     force_refresh = tmux show-option -gqv "@sidebar_force_refresh_$my_session"
     if force_refresh == "1":
       collect_sessions()
@@ -117,7 +134,8 @@ maintenance tick (1초마다):
       tmux set-option -g "$flag" 0  ← 플래그 리셋
 ```
 
-**이 5초 polling이 `>` 커서 지연의 근본 원인이다.**
+signal 경로는 세션 전환 직후 target을 갱신하고, polling은 startup/race와
+signal 유실을 보장하는 fallback이다.
 
 ## IPC 메커니즘
 
@@ -125,7 +143,7 @@ sidebar 프로세스 간 통신은 tmux 글로벌 옵션을 이용한다:
 
 | 옵션 | 용도 | 설정 | 읽기 |
 |---|---|---|---|
-| `@sidebar_force_refresh_<session>` | 세션 전환 시 target sidebar 갱신 신호 | `switch_session()` 라인 914,940 | 메인 루프 라인 3776 |
+| `@sidebar_force_refresh_<session>` | 세션 전환 시 target sidebar 갱신 fallback 상태 | `switch_session()` 라인 914,940 | 메인 루프 라인 3776 |
 | `@dotfiles-session-work-layout` | 작업 영역 레이아웃 저장/복구 | `save_work_layout()` | `restore_work_layout()` |
 
 ## 데이터 수집 (collect_sessions)

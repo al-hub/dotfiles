@@ -93,6 +93,7 @@ last_force_refresh_check_epoch=""
 last_input_epoch_us=""
 tick_timer_pid=""
 tick_signal_pending=false
+refresh_signal_pending=false
 metrics_buffer=""
 metrics_last_flush_epoch=""
 metrics_operation_seq=0
@@ -868,6 +869,25 @@ wait_for_sidebar_refresh()
     return 0
 }
 
+signal_sidebar_refresh()
+{
+    local session_name_value="$1"
+    local sidebar_pane sidebar_pid
+
+    [ -n "$session_name_value" ] || return 0
+    sidebar_pane="$(cached_sidebar_pane_for_session "$session_name_value" || true)"
+    [ -n "$sidebar_pane" ] ||
+        sidebar_pane="$(find_sidebar_pane "=$session_name_value:" 2>/dev/null || true)"
+    [ -n "$sidebar_pane" ] || return 0
+
+    sidebar_pid="$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}' 2>/dev/null || true)"
+    if [ -n "$sidebar_pid" ] && kill -USR2 "$sidebar_pid" 2>/dev/null; then
+        trace_event "switch.force-refresh.signal session=$session_name_value pane=$sidebar_pane pid=$sidebar_pid"
+    else
+        trace_event "switch.force-refresh.signal-failed session=$session_name_value pane=$sidebar_pane pid=${sidebar_pid:-none}"
+    fi
+}
+
 switch_session()
 {
     local session_name="$1"
@@ -938,6 +958,7 @@ switch_session()
     fi
     trace_event "switch.force-refresh.final.begin session=$session_name"
     tmux set-option -g "@sidebar_force_refresh_$session_name" 1 2>/dev/null || true
+    signal_sidebar_refresh "$session_name"
     trace_event "switch.force-refresh.final.end session=$session_name"
     if [ -n "$metrics_switch_start" ]; then
         metrics_switch_final_force_us=$(( $(metrics_now_us) - metrics_switch_phase_start ))
@@ -2602,6 +2623,11 @@ handle_tick_signal()
     tick_signal_pending=true
 }
 
+handle_refresh_signal()
+{
+    refresh_signal_pending=true
+}
+
 start_tick_timer()
 {
     local parent_pid="$$"
@@ -2633,6 +2659,7 @@ setup_terminal()
     trap restore_terminal EXIT INT TERM
     trap 'update_pane_geometry; full_render_required=true' WINCH
     trap handle_tick_signal USR1
+    trap handle_refresh_signal USR2
 }
 
 prompt_line()
@@ -3727,7 +3754,11 @@ run_tui()
 
         now="${EPOCHSECONDS:-$SECONDS}"
         maintenance_tick=false
-        if [ "$tick_signal_pending" = "true" ] || [ "$now" != "$last_tick" ]; then
+        refresh_signal_tick="$refresh_signal_pending"
+        refresh_signal_pending=false
+        if [ "$tick_signal_pending" = "true" ] ||
+            [ "$refresh_signal_tick" = "true" ] ||
+            [ "$now" != "$last_tick" ]; then
             tick_signal_pending=false
             if [ "$now" != "$last_tick" ]; then
                 maintenance_tick=true
@@ -3755,13 +3786,14 @@ run_tui()
                 last_tick="$now"
             fi
 
-            if [ "$maintenance_tick" = true ]; then
+            if [ "$maintenance_tick" = true ] || [ "$refresh_signal_tick" = true ]; then
                 if [ -n "$key" ]; then
                     trace_event "maintenance.defer type=refresh reason=key"
                 elif maintenance_cooldown_active; then
                     trace_event "maintenance.defer type=refresh reason=recent-input"
                 else
-                    if [ -z "$last_force_refresh_check_epoch" ] ||
+                    if [ "$refresh_signal_tick" = true ] ||
+                        [ -z "$last_force_refresh_check_epoch" ] ||
                         [ $((now - last_force_refresh_check_epoch)) -ge "$SIDEBAR_FORCE_REFRESH_CHECK_SECONDS" ]; then
                         if [ -n "$METRICS_FILE" ]; then
                             metrics_phase=force
@@ -3791,7 +3823,7 @@ run_tui()
                         fi
                     fi
 
-                    if state_refresh_due; then
+                    if [ "$maintenance_tick" = true ] && state_refresh_due; then
                         if [ -n "$METRICS_FILE" ]; then
                             metrics_phase=state
                             metrics_proc_cpu_ticks

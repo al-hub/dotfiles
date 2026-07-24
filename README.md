@@ -178,7 +178,8 @@ mouse 기본 동작은 유지하며, sidebar의 session name 위치를 클릭한
 복원은 session/window 이름, sidebar를 제외한 pane current path, sidebar-free window layout metadata, 저장된 shell history를 사용해 원래 session 이름으로 새 session을 만듭니다. 저장된 tmux layout은 새 pane id에 맞게 다시 계산해 vertical-only, horizontal-only, mixed split 배치를 유지합니다. 같은 이름의 session이 이미 있으면 복원하지 않습니다. 실행 중이던 process 자체를 되살리지는 않습니다.
 이 sidebar는 별도 selector 의존성 없이 tmux와 bash만으로 동작합니다. 각 session의 busy/idle 상태는 내부 snapshot 구조에 포함하지만, 현재 UI에는 표시하지 않습니다.
 
-session 전환 직후에는 target sidebar가 force-refresh되어 최종적으로 `>*`로 정렬됩니다. 다만 빠른 전환에서는 이전 `>`가 한두 frame 동안 남는 transient cursor 표시가 현재 알려진 제한사항입니다.
+session 전환 시 target sidebar pane에 refresh signal을 보내 `>`를 빠르게 `>*`로 정렬하고, signal 유실이나 startup race에는 기존 polling이 fallback으로 동작합니다. 운용 개선판의 live 측정은 0.75~0.83초였으며, Bash `read -t` 경계 때문에 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제로 남아 있습니다.
+설치 후 이미 실행 중인 sidebar에는 새 코드가 자동 적용되지 않으므로, installer를 다시 실행한 뒤 sidebar를 재시작해야 합니다.
 
 ## 로컬 검증
 
