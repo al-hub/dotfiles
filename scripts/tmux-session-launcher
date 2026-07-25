@@ -40,6 +40,9 @@ SIDEBAR_EVENT_LOOP_ENABLED="${TMUX_SESSION_SIDEBAR_EVENT_LOOP_ENABLED:-false}"
 SIDEBAR_ACTION_GENERATION_OPTION="@dotfiles_sidebar_action_generation"
 SIDEBAR_INPUT_READY_OPTION="@dotfiles_sidebar_input_ready"
 SIDEBAR_PROMPT_READY_OPTION="@dotfiles_sidebar_prompt_ready"
+SIDEBAR_OPERATION_OPTION="@dotfiles_sidebar_operation"
+SIDEBAR_MANAGED_OPTION="@dotfiles_sidebar_managed"
+SIDEBAR_HOOK_GUARD_OPTION="@dotfiles_sidebar_hook_guard"
 SIDEBAR_ASYNC_RESTORE="${TMUX_SESSION_SIDEBAR_ASYNC_RESTORE:-true}"
 METRICS_FILE="${TMUX_SESSION_LAUNCHER_METRICS_FILE:-}"
 METRICS_COMMAND_FILE="${METRICS_FILE:+${METRICS_FILE}.commands}"
@@ -47,6 +50,8 @@ METRICS_RUN_ID="${TMUX_SESSION_LAUNCHER_METRICS_RUN_ID:-none}"
 METRICS_FLUSH_SECONDS="${TMUX_SESSION_LAUNCHER_METRICS_FLUSH_SECONDS:-2}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
+WORK_LAYOUT_PANES_OPTION="@dotfiles-session-work-pane-ids"
+WORK_LAYOUT_GENERATION_OPTION="@dotfiles-session-work-layout-generation"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 SELF_PANE="${TMUX_PANE:-}"
 current_session="$(tmux display-message -p '#S')"
@@ -319,6 +324,88 @@ session_exists()
     tmux has-session -t "$session_target" >/dev/null 2>&1
 }
 
+sidebar_operation_state()
+{
+    tmux show-option -gqv "$SIDEBAR_OPERATION_OPTION" 2>/dev/null || true
+}
+
+sidebar_operation_busy()
+{
+    case "$(sidebar_operation_state)" in
+        saving:*|deleting:*|restoring:*|moving:*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidebar_operation_set()
+{
+    local state="$1" operation_id="${2:-none}"
+    tmux set-option -gq "$SIDEBAR_OPERATION_OPTION" "$state:$operation_id" 2>/dev/null || true
+    trace_event "operation.state state=$state operation_id=$operation_id"
+}
+
+mark_session_managed()
+{
+    local session_name_value="$1" session_target
+    [ -n "$session_name_value" ] || return 1
+    session_target="$(sidebar_tmux_session_target "$session_name_value" 2>/dev/null || true)"
+    [ -n "$session_target" ] || return 1
+    tmux set-option -q -t "$session_target" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || return 1
+}
+
+session_is_managed()
+{
+    local session_name_value="$1" session_target
+    session_target="$(sidebar_tmux_session_target "$session_name_value" 2>/dev/null || true)"
+    [ -n "$session_target" ] || return 1
+    [ "$(tmux show-option -qv -t "$session_target" "$SIDEBAR_MANAGED_OPTION" 2>/dev/null || true)" = 1 ]
+}
+
+managed_session_names()
+{
+    while IFS= read -r session_name_value; do
+        session_is_managed "$session_name_value" && printf '%s\n' "$session_name_value"
+    done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
+}
+
+install_sidebar_hooks()
+{
+    local quoted_script
+    quoted_script="$(shell_quote "$SCRIPT_PATH")"
+    tmux set-hook -g client-session-changed "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
+    tmux set-hook -g after-select-window "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
+}
+
+sync_active_window()
+{
+    local guard active_session active_window sidebar_pane sidebar_window
+    guard="$(tmux show-option -gqv "$SIDEBAR_HOOK_GUARD_OPTION" 2>/dev/null || true)"
+    [ "$guard" = 1 ] && return 0
+    sidebar_pane="$(find_global_sidebar_pane || true)"
+    [ -n "$sidebar_pane" ] || return 0
+    active_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+    active_window="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
+    sidebar_window="$(sidebar_tmux_pane_window "$sidebar_pane" 2>/dev/null || true)"
+    [ -n "$active_session" ] && [ -n "$active_window" ] || return 1
+    [ "$active_window" = "$sidebar_window" ] && {
+        tmux select-pane -t "$sidebar_pane" 2>/dev/null || true
+        return 0
+    }
+    trace_event "sidebar.hook.sync.begin session=$active_session source_window=$sidebar_window target_window=$active_window pane=$sidebar_pane"
+    tmux set-option -gq "$SIDEBAR_HOOK_GUARD_OPTION" 1 2>/dev/null || true
+    sidebar_operation_set moving "hook-${BASHPID:-$$}"
+    if sidebar_controller_move_to_session "$active_session"; then
+        tmux select-pane -t "$sidebar_pane" 2>/dev/null || true
+        sidebar_operation_set idle hook
+        trace_event "sidebar.hook.sync.end session=$active_session result=ok pane=$sidebar_pane"
+    else
+        sidebar_operation_set failed hook
+        tmux display-message "Sidebar move failed; current window preserved" 2>/dev/null || true
+        trace_event "sidebar.hook.sync.end session=$active_session result=failed pane=$sidebar_pane"
+    fi
+    tmux set-option -gq "$SIDEBAR_HOOK_GUARD_OPTION" 0 2>/dev/null || true
+}
+
 wait_for_session_absence()
 {
     session_name="$1"
@@ -400,6 +487,13 @@ save_work_layout()
     [ -n "$layout" ] || return 0
 
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_OPTION" "$layout" 2>/dev/null || true
+    work_pane_ids="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title { print $1 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    active_work_pane="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{pane_active}' 2>/dev/null |
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title && $3 == 1 { print $1; exit }')"
+    tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_PANES_OPTION" "$work_pane_ids" 2>/dev/null || true
+    tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_GENERATION_OPTION" "$(date +%s%N)" 2>/dev/null || true
+    trace_event "layout.snapshot window=$window_id panes=${work_pane_ids:-none} active=${active_work_pane:-none}"
 }
 
 restore_work_layout()
@@ -661,6 +755,10 @@ open_sidebar()
     width="${3:-$(sidebar_width)}"
     pane_path="${4:-}"
     preserve_layout="${5:-false}"
+    install_sidebar_hooks
+    if [ -z "$target" ]; then
+        mark_session_managed "$(tmux display-message -p '#S' 2>/dev/null || true)" || true
+    fi
     global_existing_pane="$(find_global_sidebar_pane)"
     if [ -n "$global_existing_pane" ]; then
         if [ -n "$target" ]; then
@@ -670,6 +768,7 @@ open_sidebar()
         else
             tmux select-pane -t "$global_existing_pane" 2>/dev/null || true
         fi
+        install_sidebar_hooks
         return 0
     fi
     trace_event "sidebar.open.begin target=${target:-current} refresh=$refresh width=$width preserve_layout=$preserve_layout"
@@ -689,6 +788,7 @@ open_sidebar()
         fi
         tmux select-pane -t "$existing_pane"
         trace_event "sidebar.open.end target=${target:-current} mode=existing pane=$existing_pane"
+        install_sidebar_hooks
         return 0
     fi
 
@@ -724,6 +824,7 @@ open_sidebar()
         tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
         tmux select-pane -t "$pane_id"
     fi
+    install_sidebar_hooks
     trace_event "sidebar.open.end target=${target:-current} mode=created pane=${pane_id:-none}"
 }
 
@@ -3095,16 +3196,27 @@ archive_all_sessions()
             archive_session "$session_name" >/dev/null || true
         fi
     done <<EOF
-$(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+$(managed_session_names)
 EOF
 }
 
 delete_all_sessions_after_archive()
 {
     should_archive="${1:-false}"
+    local managed_sessions session_name
+
+    managed_sessions="$(managed_session_names)"
+    [ -n "$managed_sessions" ] || {
+        sidebar_operation_set idle all-empty
+        return 0
+    }
 
     archive_all_sessions "$should_archive"
-    tmux kill-server
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        tmux kill-session -t "=$session_name" 2>/dev/null || true
+    done <<< "$managed_sessions"
+    sidebar_operation_set idle all-complete
 }
 
 fallback_session()
@@ -3134,7 +3246,10 @@ delete_session_after_archive()
     # archive fast path can therefore avoid a duplicate tmux has-session IPC;
     # delete-only keeps the original early return semantics below.
     if [ "$should_archive" != "true" ]; then
-        session_exists "$session_name" || return 0
+        session_exists "$session_name" || {
+            sidebar_operation_set idle "delete-$session_name-missing"
+            return 0
+        }
     fi
 
     if [ -n "$METRICS_FILE" ]; then
@@ -3150,6 +3265,7 @@ delete_session_after_archive()
     # checking only its exit status cannot distinguish the fast-path case.
     if ! target_clients="$(tmux list-clients -t "=$session_name" -F '#{client_control_mode}|#{session_name}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2 }')"; then
+        sidebar_operation_set idle "delete-$session_name-client-query"
         return 0
     fi
     [ -n "$target_clients" ] && target_has_clients=true
@@ -3164,7 +3280,10 @@ delete_session_after_archive()
         # round trip discovering a fallback session.
         next_session=""
     else
-        session_exists "$session_name" || return 0
+        session_exists "$session_name" || {
+            sidebar_operation_set idle "delete-$session_name-gone"
+            return 0
+        }
         next_session="$(fallback_session "$session_name")"
         if [ -n "$metrics_delete_start" ]; then
             metrics_delete_fallback_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
@@ -3215,6 +3334,7 @@ delete_session_after_archive()
         metrics_delete_kill_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
         metrics_write "op=archive-wrapper phase=complete operation_id=$metrics_delete_operation_id session=$session_name fast_path=$archive_fast_path preflight_us=$metrics_delete_preflight_us fallback_lookup_us=$metrics_delete_fallback_us archive_us=$metrics_delete_archive_us kill_us=$metrics_delete_kill_us total_us=$(( $(metrics_now_us) - metrics_delete_start ))"
     fi
+    sidebar_operation_set idle "delete-$session_name-complete"
 }
 
 run_session_delete()
@@ -3226,6 +3346,7 @@ run_session_delete()
     quoted_archive="$(shell_quote "$should_archive")"
 
     debug_log "run_session_delete session=$session_name should_archive=$should_archive"
+    sidebar_operation_set deleting "delete-$session_name"
     tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive"
 }
 
@@ -3235,6 +3356,7 @@ run_all_sessions_delete()
     quoted_script="$(shell_quote "$SCRIPT_PATH")"
     quoted_archive="$(shell_quote "$should_archive")"
 
+    sidebar_operation_set deleting all
     tmux run-shell -b "$quoted_script --delete-all-sessions-after-archive $quoted_archive"
 }
 
@@ -3264,6 +3386,7 @@ restore_archive()
         metrics_next_operation_id
         metrics_restore_operation_id="$metrics_operation_id_result"
     fi
+    sidebar_operation_set restoring "${metrics_restore_operation_id:-restore-${BASHPID:-$$}}"
 
     original_name="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path")"
     [ -n "$original_name" ] || original_name="restored"
@@ -3296,6 +3419,7 @@ restore_archive()
                 if [ "$first_window" = "false" ] && [ -n "$current_window_target" ]; then
                     if ! apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"; then
                         trace_event "restore.abort session=$restore_name window=$current_window reason=layout"
+                        sidebar_operation_set failed "${metrics_restore_operation_id:-restore-layout}"
                         return 1
                     fi
                 fi
@@ -3348,6 +3472,7 @@ restore_archive()
                 if [ -n "$current_window_target" ]; then
                     if ! apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"; then
                         trace_event "restore.abort session=$restore_name window=$current_window reason=layout"
+                        sidebar_operation_set failed "${metrics_restore_operation_id:-restore-layout}"
                         return 1
                     fi
                 fi
@@ -3362,11 +3487,13 @@ restore_archive()
     if [ "$created" = "false" ]; then
         tmux new-session -d -s "$restore_name" -c "$HOME"
     fi
+    mark_session_managed "$restore_name" || true
 
     if [ -n "$active_window" ]; then
         trace_event "restore.select-window.begin session=$restore_name"
         if ! tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1; then
             trace_event "restore.abort session=$restore_name reason=select-window"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-select-window}"
             return 1
         fi
         trace_event "restore.select-window.end session=$restore_name"
@@ -3391,6 +3518,7 @@ restore_archive()
         trace_event "restore.sidebar.begin session=$restore_name pane=$restore_target_pane"
         if ! open_sidebar "$restore_target_pane" false "$width" "" true; then
             trace_event "restore.abort session=$restore_name reason=open-sidebar"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-open-sidebar}"
             return 1
         fi
         trace_event "restore.sidebar.end session=$restore_name pane=$restore_target_pane"
@@ -3398,6 +3526,7 @@ restore_archive()
         trace_event "restore.sidebar.ensure.begin session=$restore_name"
         if ! ensure_sidebar_for_session "$restore_name"; then
             trace_event "restore.abort session=$restore_name reason=ensure-sidebar"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-ensure-sidebar}"
             return 1
         fi
         trace_event "restore.sidebar.ensure.end session=$restore_name"
@@ -3406,11 +3535,13 @@ restore_archive()
     if [ -n "$restore_client_tty" ]; then
         if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
             trace_event "restore.abort session=$restore_name reason=switch-client"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-switch-client}"
             return 1
         fi
     else
         if ! tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
             trace_event "restore.abort session=$restore_name reason=switch-client"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-switch-client}"
             return 1
         fi
     fi
@@ -3423,12 +3554,14 @@ restore_archive()
     wait_for_sidebar_transition "$restore_name" "$restore_client_tty" "$sidebar_pid_before" || {
         trace_event "restore.sidebar.wait timeout session=$restore_name"
         debug_log "restore sidebar transition timeout session=$restore_name"
+        sidebar_operation_set failed "${metrics_restore_operation_id:-restore-transition-timeout}"
         return 1
     }
     if [ -n "$restore_client_tty" ]; then
         restore_sidebar_pane="$(find_global_sidebar_pane || true)"
         if [ -z "$restore_sidebar_pane" ] || ! tmux select-pane -t "$restore_sidebar_pane" 2>/dev/null; then
             trace_event "restore.abort session=$restore_name reason=focus-sidebar"
+            sidebar_operation_set failed "${metrics_restore_operation_id:-restore-focus-sidebar}"
             return 1
         fi
         tmux refresh-client -S -t "$restore_client_tty" 2>/dev/null || true
@@ -3437,6 +3570,7 @@ restore_archive()
     if [ -n "$metrics_restore_start" ]; then
         metrics_write "op=restore phase=complete operation_id=$metrics_restore_operation_id session=$restore_name duration_us=$(( $(metrics_now_us) - metrics_restore_start )) sidebar_mode=$SIDEBAR_ASYNC_RESTORE"
     fi
+    sidebar_operation_set idle "${metrics_restore_operation_id:-restore-complete}"
 }
 
 wait_for_sidebar_transition()
@@ -3542,6 +3676,7 @@ tui_new_session()
     fi
 
     tmux new-session -d -s "$session_name" -c "$current_path"
+    mark_session_managed "$session_name" || true
     selected_session="$session_name"
 }
 
@@ -3843,6 +3978,9 @@ run_tui()
     setup_terminal
     trace_event "sidebar.setup.end pane=${TMUX_PANE:-none}"
     mark_sidebar_pane
+    mark_session_managed "$current_session" || true
+    install_sidebar_hooks
+    sidebar_operation_set idle startup
     trace_event "sidebar.collect.begin pane=${TMUX_PANE:-none}"
     collect_sessions
     trace_event "sidebar.collect.end pane=${TMUX_PANE:-none}"
@@ -3914,6 +4052,12 @@ run_tui()
             fi
         fi
 
+        if [ -n "$key" ] && sidebar_operation_busy; then
+            trace_event "input.rejected action_id=${current_action_id:-none} key_name=$key reason=operation-busy state=$(sidebar_operation_state)"
+            message_line "Busy: $(sidebar_operation_state)"
+            key=""
+            current_action_id=""
+        fi
         if [ -n "$key" ]; then
             tmux set-option -g "$SIDEBAR_INPUT_READY_OPTION" 0 2>/dev/null || true
             trace_event "input.dispatch.begin action_id=$current_action_id key_name=$key view_mode=$view_mode current=$current_session selected=$selected_session"
@@ -4156,6 +4300,10 @@ main()
             ;;
         --ensure-sidebar-session)
             sidebar_controller_move_to_session "${2:-}"
+            return 0
+            ;;
+        --sync-active-window)
+            sync_active_window
             return 0
             ;;
         --list-sessions)

@@ -12,9 +12,9 @@ Keep one sidebar pane and one sidebar process for the active tmux client.
 When the client switches sessions, move the existing pane to the target
 session's active window instead of creating or respawning another sidebar.
 
-The first implementation guarantees the sidebar for the active window. Keeping
-it visible across every window is a follow-up that requires window-selection
-hooks.
+The implementation keeps the sidebar for the active client window. Runtime
+`client-session-changed` and `after-select-window` hooks move the existing pane
+to the newly active window while preserving its pane ID and process.
 
 ## Invariants
 
@@ -78,6 +78,9 @@ session or window names.
 If the client switch itself fails after the pane move, move the sidebar back to
 the source window and restore the source work layout before reporting failure.
 
+Window selection invokes the same move protocol through the runtime hook. A
+hook guard prevents recursive move events while the pane is being relocated.
+
 ## On/off policy
 
 The first implementation retains the current user-visible semantics: `Ctrl+a
@@ -95,8 +98,8 @@ The following bindings remain part of the public behavior contract:
 - pane navigation, mouse selection, session Enter, create, rename, delete,
   and history actions
 
-Window-to-window automatic relocation is explicitly deferred until the
-session-to-session move path is stable.
+Window-to-window automatic relocation uses the same controller path as
+session-to-session movement and is guarded by the active-client hook.
 
 ## Test contract
 
@@ -108,4 +111,6 @@ The scenario suite must verify:
 - split shortcuts never split the sidebar;
 - rapid switching never creates duplicates;
 - target deletion and move failure have safe fallback behavior;
+- active-window hooks move the same pane to a selected window;
+- `d All` removes only sessions marked as sidebar-managed and preserves external sessions;
 - current behavior on `master` remains untouched.

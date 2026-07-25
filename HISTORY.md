@@ -8,6 +8,25 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - active window hook과 managed session 삭제 범위 구현
+
+변경:
+- `client-session-changed`/`after-select-window` runtime hook으로 active window 변경 시
+  기존 sidebar pane을 이동하도록 했습니다.
+- hook 재진입 guard와 sidebar operation state를 추가했습니다.
+- work layout snapshot에 work pane ID와 generation metadata를 기록합니다.
+- session metadata `@dotfiles_sidebar_managed`를 도입하고 `d All`이 managed session만
+  삭제하도록 변경했습니다.
+- archive/delete/restore/move 중에는 새 sidebar 입력을 거부합니다.
+
+검증:
+- active-window attached-client test PASS
+- managed-session deletion test PASS
+- single-sidebar contract PASS
+- full PTY keyboard E2E 3회 연속 PASS
+- isolated install에서 pre-existing tmux session 보존 PASS
+- raw split/restore의 정확한 layout 보존은 후속 안정성 검증 대상으로 유지합니다.
+
 ## 2026-07-25 - installer 안전성과 sidebar prompt/restore 오류 처리 보강
 
 변경:

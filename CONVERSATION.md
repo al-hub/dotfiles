@@ -9,6 +9,19 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - active window와 managed d All 개선 적용
+
+작업 결과:
+- active client window 선택 hook이 기존 sidebar pane을 새 window로 이동합니다.
+- sidebar pane ID/PID uniqueness를 attached-client 테스트로 검증했습니다.
+- `d All`은 `@dotfiles_sidebar_managed` session만 삭제하고 외부 session을 보존합니다.
+- operation busy 상태에서 추가 입력을 거부하도록 했습니다.
+
+검증 상태:
+- active-window, managed-session, contract, full PTY E2E는 PASS입니다.
+- full PTY E2E 3회 연속과 isolated install session 보존은 PASS했습니다.
+- raw split/archive/restore의 정확한 layout 보존은 아직 후속 검증입니다.
+
 ## 2026-07-25 - 실사용 side-effect 수정 1차 적용
 
 사용자 결정:

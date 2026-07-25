@@ -17,10 +17,10 @@ and tmux server are not modified.
 | P0 | Installer | Installing the `tmux` item previously terminated the default tmux server. | `install.sh:after_install_item/cleanup_tmux_runtime` | Fixed: existing server is preserved and restart is user-controlled |
 | P1 | `c` prompt | `c` entered `New:` mode but typed session name was not rendered because prompt input used `stty -echo`. | Isolated installed launcher capture | Fixed: modal prompt enables echo |
 | P1 | Split/layout | Direct tmux split/resize commands while sidebar is open are not fully tracked by the single-sidebar layout store. The supported wrapper bindings target a work pane, but arbitrary tmux split commands can leave the saved/restored work layout inconsistent. | `AGENTS.md`, single-sidebar design contract, controller layout ownership | Confirmed design limitation |
-| P1 | Session move | Sidebar ownership is tied to the active client target window. Switching session/window can move the single sidebar away from the user's expected visible work area; windows changed directly outside the wrapper are not automatically followed. | Design explicitly scopes relocation to active window and excludes window hooks | User-reported operational risk; targeted manual reproduction still required |
+| P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window hook test with pane ID/PID assertion | Fixed for active client window; multi-client behavior remains follow-up |
 | P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `run_session_delete`, `restore_archive`, `wait_for_sidebar_transition` | Remaining risk: restore critical tmux failures now abort with traceable reason |
 | P1 | Restore layout | A sidebar-side split followed by archive/delete and `o` restore can restore work panes but not the exact sidebar/work focus or layout expected by the user. | User report; direct split is outside the tracked layout protocol | Reproduction scenario required |
-| P2 | Destructive action | `d All` archives and terminates every session on the tmux server, not only sessions created by the current sidebar workflow. | `delete_all_sessions_after_archive` calls `tmux kill-server` | Intended but dangerous; requires explicit confirmation UX |
+| P2 | Destructive action | `d All` must not terminate unrelated tmux sessions. | Managed-session contract test | Fixed: only `@dotfiles_sidebar_managed` sessions are removed |
 | P2 | Installer/X | With `DISPLAY` set but no usable X server, installation previously invoked `xrdb -merge` and emitted an X connection error. | Isolated install with `DISPLAY=:0` | Fixed: `xrdb -query` must succeed first |
 | P2 | Installer/network | If `opencode` is not already available, `install.sh` previously ran the external OpenCode installer even for local `file://` installs. | `install_opencode_cli` | Fixed: remote CLI installation is opt-in |
 
@@ -60,14 +60,22 @@ pre-existing sessions, or live installation are side-effect free.
 - Restore critical tmux failures now produce `restore.abort` trace events instead
   of being silently ignored.
 - Single-sidebar contract and one complete keyboard E2E pass.
-- A two-run E2E observed one restore-adjacent action-generation timeout; this
-  remains a follow-up stability issue and is not treated as master-ready proof.
+- Earlier two-run E2E observed one restore-adjacent action-generation timeout;
+  the operation guard and prompt-state test were strengthened afterward.
+- The current three-run PTY E2E is PASS, but raw split/restore layout fidelity
+  remains a separate acceptance item.
+- Runtime active-window hooks now move the existing sidebar pane and preserve
+  pane ID/PID; a dedicated attached-client test passes.
+- `d All` now targets sessions marked `@dotfiles_sidebar_managed` and preserves
+  external sessions; a dedicated contract test passes.
+- Operation state is exposed through `@dotfiles_sidebar_operation` and input is
+  rejected while save/delete/restore/move is in progress.
 
 ## Next audit order
 
 1. Verify installer preservation against a live, pre-existing tmux server.
 2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action.
-3. Reproduce session/window movement with both configured wrapper shortcuts and raw tmux commands.
-4. Add explicit confirmation and race detection for `d All` and asynchronous archive/restore operations.
+3. Repeat active-window and rapid restore E2E at least three consecutive times.
+4. Add explicit operation failure injection tests for move, restore, and archive.
 
 Until these items are resolved, this branch remains unsuitable for `master`.
