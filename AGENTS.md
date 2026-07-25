@@ -15,6 +15,7 @@
 - active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부합니다.
 - sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
 - archive는 version 2 pane identity/geometry/active metadata를 기록하고 restore에서 geometry와 focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, arbitrary topology의 완전한 process/identity 복원은 아직 후속 검증입니다.
+- session 이동 전 sidebar 포함 full window layout을 저장하고, target 이동 후 pane ID 순서에 맞춰 재적용합니다. horizontal/vertical multi-pane split의 sidebar geometry가 보존되지 않으면 이동을 rollback합니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
 
 ## 문서 역할
@@ -26,6 +27,7 @@
 - `docs/reproduction.md`: 에이전트와 사용자의 실환경 재현 및 검증 가이드
 - `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: 실제 attached PTY 입력으로 prefix/sidebar/TUI 전체 시나리오를 검증
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
+- `tests/tmux-single-sidebar/test-layout-metadata-failure.sh`: multi-pane target metadata 부재 시 rollback을 검증
 - `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
 - `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
 - `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit

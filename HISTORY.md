@@ -51,6 +51,22 @@
   변경되어 두 방향 모두 multi-pane geometry 보존 문제가 확인됩니다.
 - production code는 수정하지 않았습니다.
 
+## 2026-07-25 - multi-pane sidebar geometry restore 구현
+
+변경:
+- session 이동 전에 sidebar 포함 full window layout, pane ID, geometry, active pane을 저장합니다.
+- target 이동 시 첫 work pane을 안정적인 insertion anchor로 사용하고 저장 layout을 재적용합니다.
+- pane 집합/geometry/active focus 검증 실패 시 source와 target layout을 rollback합니다.
+- layout metadata가 없는 multi-pane target은 best-effort 이동 대신 실패 처리합니다.
+
+검증:
+- horizontal split-cycle PASS
+- vertical split-cycle PASS
+- contract, active-window, managed-session, failure injection, raw layout,
+  multi-client test PASS
+- keyboard E2E 3회 연속 PASS
+- sidebar layout metadata가 없는 multi-pane target rollback test PASS
+
 ## 2026-07-25 - active window hook과 managed session 삭제 범위 구현
 
 변경:

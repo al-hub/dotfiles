@@ -51,6 +51,20 @@
   않는 공통 구조를 확인했습니다.
 - 이번 변경에도 production code 수정은 없습니다.
 
+## 2026-07-25 - multi-pane sidebar geometry restore 적용
+
+작업 결과:
+- 이동 전 sidebar 포함 full layout을 저장하고 target에서 pane order를 보정해
+  layout을 재적용합니다.
+- 첫 work pane을 insertion anchor로 사용해 horizontal/vertical split tree의
+  잘못된 branch에 sidebar가 nested되는 문제를 제거했습니다.
+- geometry/active pane 검증과 rollback을 추가했습니다.
+
+검증:
+- horizontal/vertical split-cycle 모두 PASS
+- 전체 regression PASS
+- keyboard E2E 3회 연속 PASS
+
 ## 2026-07-25 - active window와 managed d All 개선 적용
 
 작업 결과:

@@ -54,6 +54,11 @@ HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-hist
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 WORK_LAYOUT_PANES_OPTION="@dotfiles-session-work-pane-ids"
 WORK_LAYOUT_GENERATION_OPTION="@dotfiles-session-work-layout-generation"
+SIDEBAR_LAYOUT_OPTION="@dotfiles-session-sidebar-layout"
+SIDEBAR_LAYOUT_PANES_OPTION="@dotfiles-session-sidebar-pane-ids"
+SIDEBAR_LAYOUT_GEOMETRY_OPTION="@dotfiles-session-sidebar-geometry"
+SIDEBAR_LAYOUT_ACTIVE_PANE_OPTION="@dotfiles-session-sidebar-active-pane"
+SIDEBAR_LAYOUT_GENERATION_OPTION="@dotfiles-session-sidebar-layout-generation"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 SELF_PANE="${TMUX_PANE:-}"
 current_session="$(tmux display-message -p '#S')"
@@ -526,6 +531,74 @@ window_target()
     fi
 }
 
+sidebar_window_pane_geometry()
+{
+    local target="$1"
+    tmux list-panes -t "$target" \
+        -F '#{pane_id}:#{pane_left},#{pane_top},#{pane_width},#{pane_height}' 2>/dev/null |
+        sort
+}
+
+save_sidebar_layout()
+{
+    local target="$1" window_id layout pane_ids geometry active_pane
+    window_id="$(window_target "$target")"
+    [ -n "$window_id" ] || return 1
+    layout="$(sidebar_tmux_window_layout "$window_id")"
+    pane_ids="$(sidebar_tmux_window_pane_ids "$window_id" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    geometry="$(sidebar_window_pane_geometry "$window_id" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    active_pane="$(sidebar_tmux_window_active_pane "$window_id")"
+    [ -n "$layout" ] && [ -n "$pane_ids" ] && [ -n "$geometry" ] || return 1
+    tmux set-option -wq -t "$window_id" "$SIDEBAR_LAYOUT_OPTION" "$layout"
+    tmux set-option -wq -t "$window_id" "$SIDEBAR_LAYOUT_PANES_OPTION" "$pane_ids"
+    tmux set-option -wq -t "$window_id" "$SIDEBAR_LAYOUT_GEOMETRY_OPTION" "$geometry"
+    tmux set-option -wq -t "$window_id" "$SIDEBAR_LAYOUT_ACTIVE_PANE_OPTION" "$active_pane"
+    tmux set-option -wq -t "$window_id" "$SIDEBAR_LAYOUT_GENERATION_OPTION" "$(date +%s%N)"
+    trace_event "sidebar.layout.snapshot window=$window_id panes=$pane_ids active=${active_pane:-none} geometry=$geometry"
+}
+
+sidebar_layout_available()
+{
+    local window_id="$1"
+    [ -n "$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_OPTION" 2>/dev/null || true)" ] &&
+        [ -n "$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_PANES_OPTION" 2>/dev/null || true)" ]
+}
+
+restore_sidebar_layout()
+{
+    local window_id="$1" layout restored_layout expected_ids expected_ids_raw actual_ids actual_ids_ordered expected_geometry actual_geometry active_pane
+    layout="$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_OPTION" 2>/dev/null || true)"
+    expected_ids_raw="$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_PANES_OPTION" 2>/dev/null || true)"
+    expected_geometry="$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_GEOMETRY_OPTION" 2>/dev/null || true)"
+    active_pane="$(tmux show-option -wqv -t "$window_id" "$SIDEBAR_LAYOUT_ACTIVE_PANE_OPTION" 2>/dev/null || true)"
+    [ -n "$layout" ] && [ -n "$expected_ids_raw" ] && [ -n "$expected_geometry" ] || return 2
+
+    actual_ids_ordered="$(sidebar_tmux_window_pane_ids "$window_id" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    actual_ids="$(printf '%s\n' "$actual_ids_ordered" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    expected_ids="$(printf '%s\n' "$expected_ids_raw" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    if [ "$actual_ids" != "$expected_ids" ]; then
+        trace_event "sidebar.layout.error window=$window_id reason=pane-set expected=$expected_ids actual=$actual_ids"
+        return 1
+    fi
+    trace_event "sidebar.layout.restore.begin window=$window_id layout=$layout"
+    restored_layout="$(layout_with_pane_ids "$layout" "${actual_ids_ordered//%/}")"
+    trace_event "sidebar.layout.restore.mapping window=$window_id pane-order=$actual_ids_ordered restored=$restored_layout"
+    if ! sidebar_tmux_select_layout "$window_id" "$restored_layout"; then
+        trace_event "sidebar.layout.error window=$window_id reason=select-layout"
+        return 1
+    fi
+    actual_geometry="$(sidebar_window_pane_geometry "$window_id" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    if [ "$actual_geometry" != "$expected_geometry" ]; then
+        trace_event "sidebar.layout.error window=$window_id reason=geometry expected=$expected_geometry actual=$actual_geometry"
+        return 1
+    fi
+    if [ -n "$active_pane" ] && ! sidebar_tmux_select_pane "$active_pane"; then
+        trace_event "sidebar.layout.error window=$window_id reason=active-pane pane=$active_pane"
+        return 1
+    fi
+    trace_event "sidebar.layout.restore.end window=$window_id active=${active_pane:-none}"
+}
+
 save_work_layout()
 {
     target="${1:-}"
@@ -859,6 +932,7 @@ open_sidebar()
             sidebar_controller_move_to_session "$target_session_name"
         else
             tmux select-pane -t "$global_existing_pane" 2>/dev/null || true
+            save_sidebar_layout "$(window_target "$global_existing_pane")" || true
         fi
         install_sidebar_hooks
         return 0
@@ -879,6 +953,7 @@ open_sidebar()
             trace_event "sidebar.existing-respawn.end pane=$existing_pane"
         fi
         tmux select-pane -t "$existing_pane"
+        save_sidebar_layout "$(window_target "$existing_pane")" || true
         trace_event "sidebar.open.end target=${target:-current} mode=existing pane=$existing_pane"
         install_sidebar_hooks
         return 0
@@ -915,6 +990,7 @@ open_sidebar()
     if [ -n "$pane_id" ]; then
         tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
         tmux select-pane -t "$pane_id"
+        save_sidebar_layout "$target_window" || true
     fi
     install_sidebar_hooks
     trace_event "sidebar.open.end target=${target:-current} mode=created pane=${pane_id:-none}"

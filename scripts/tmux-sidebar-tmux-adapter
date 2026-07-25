@@ -78,6 +78,32 @@ sidebar_tmux_any_work_pane()
         awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }'
 }
 
+sidebar_tmux_window_layout()
+{
+    sidebar_tmux_cmd display-message -p -t "$1" '#{window_layout}' 2>/dev/null || true
+}
+
+sidebar_tmux_window_pane_ids()
+{
+    sidebar_tmux_cmd list-panes -t "$1" -F '#{pane_id}' 2>/dev/null
+}
+
+sidebar_tmux_window_active_pane()
+{
+    sidebar_tmux_cmd list-panes -t "$1" -F '#{pane_id}|#{pane_active}' 2>/dev/null |
+        awk -F '|' '$2 == 1 { print $1; exit }'
+}
+
+sidebar_tmux_select_layout()
+{
+    sidebar_tmux_cmd select-layout -t "$1" "$2" >/dev/null 2>&1
+}
+
+sidebar_tmux_select_pane()
+{
+    sidebar_tmux_cmd select-pane -t "$1" >/dev/null 2>&1
+}
+
 sidebar_tmux_client_tty_for_session()
 {
     local session_name="$1"

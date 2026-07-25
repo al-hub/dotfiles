@@ -18,7 +18,8 @@ sidebar_controller_move_to_session()
 {
     local target_session="$1"
     local sidebar_pane source_window target_window source_work_pane target_work_pane
-    local width source_session
+    local width source_session target_work_pane_count
+    local source_layout_saved=false target_layout_restored=false
 
     [ -n "$target_session" ] || return 1
     sidebar_pane="$(find_global_sidebar_pane)"
@@ -50,7 +51,10 @@ sidebar_controller_move_to_session()
     fi
 
     source_work_pane="$(sidebar_tmux_any_work_pane "$source_window")"
-    target_work_pane="$(sidebar_tmux_work_pane "$target_window")"
+    # Use the first work pane as the stable insertion anchor. Anchoring to
+    # the active pane nests the sidebar inside the active branch of a split
+    # tree, which changes sidebar geometry after a round trip.
+    target_work_pane="$(sidebar_tmux_any_work_pane "$target_window")"
     trace_event "sidebar.move.work-panes source=${source_work_pane:-none} target=${target_work_pane:-none}"
     [ -n "$source_work_pane" ] && [ -n "$target_work_pane" ] || {
         debug_log "single-sidebar move refused: missing work pane source=$source_window target=$target_window"
@@ -58,9 +62,25 @@ sidebar_controller_move_to_session()
     }
 
     width="$(sidebar_controller_width "$sidebar_pane")"
+    if ! save_sidebar_layout "$source_window"; then
+        trace_event "sidebar.move.abort reason=source-layout-snapshot-failed source=$source_window"
+        return 1
+    fi
+    source_layout_saved=true
+
+    target_work_pane_count="$(sidebar_tmux_cmd list-panes -t "$target_window" \
+        -F '#{pane_title}' 2>/dev/null |
+        awk -v title="$SIDEBAR_TITLE" '$0 != title { count++ } END { print count + 0 }')"
+    if [ "$target_work_pane_count" -gt 1 ] && ! sidebar_layout_available "$target_window"; then
+        trace_event "sidebar.move.abort reason=target-layout-metadata-unavailable target=$target_window work_panes=$target_work_pane_count"
+        return 1
+    fi
     # The target currently has no sidebar, so this snapshot is work-only and
     # can later restore the target when the sidebar is toggled off.
-    save_work_layout "$target_window"
+    if ! save_work_layout "$target_window"; then
+        trace_event "sidebar.move.abort reason=target-work-layout-snapshot-failed target=$target_window"
+        return 1
+    fi
     trace_event "sidebar.move.begin pane=$sidebar_pane source=$source_session:$source_window target=$target_session:$target_window"
     if ! sidebar_tmux_move_pane "$sidebar_pane" "$target_work_pane" "$width"; then
         debug_log "single-sidebar move failed: tmux move-pane source=$source_window target=$target_window"
@@ -72,14 +92,43 @@ sidebar_controller_move_to_session()
     if [ "$(sidebar_tmux_pane_session "$sidebar_pane")" != "$target_session" ]; then
         debug_log "single-sidebar move failed verification target=$target_session pane=$sidebar_pane"
         sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
-        restore_work_layout "$source_window"
+        restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+        restore_work_layout "$target_window"
         return 1
+    fi
+
+    if sidebar_layout_available "$target_window"; then
+        if ! restore_sidebar_layout "$target_window"; then
+            trace_event "sidebar.move.abort reason=target-layout-restore-failed target=$target_window"
+            sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+            restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+            restore_work_layout "$target_window"
+            return 1
+        fi
+        target_layout_restored=true
+    else
+        # A single work pane has no ambiguous topology. Capture the first
+        # combined layout so subsequent visits use the same deterministic
+        # restore path.
+        save_sidebar_layout "$target_window" || {
+            trace_event "sidebar.move.abort reason=target-layout-capture-failed target=$target_window"
+            sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+            restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+            restore_work_layout "$target_window"
+            return 1
+        }
     fi
 
     # The source is now work-only; save this layout only after the move has
     # been verified so the snapshot never includes the sidebar pane.
-    save_work_layout "$source_window"
+    if ! save_work_layout "$source_window"; then
+        trace_event "sidebar.move.abort reason=source-work-layout-snapshot-failed source=$source_window"
+        sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+        restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+        restore_work_layout "$target_window"
+        return 1
+    fi
     sidebar_session_cached="$target_session"
-    trace_event "sidebar.move.end pane=$sidebar_pane target=$target_session:$target_window"
+    trace_event "sidebar.move.end pane=$sidebar_pane target=$target_session:$target_window full-layout-restored=$target_layout_restored source-layout-saved=$source_layout_saved"
     return 0
 }

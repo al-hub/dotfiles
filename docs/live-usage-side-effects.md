@@ -16,10 +16,10 @@ and tmux server are not modified.
 | --- | --- | --- | --- | --- |
 | P0 | Installer | Installing the `tmux` item previously terminated the default tmux server. | `install.sh:after_install_item/cleanup_tmux_runtime` | Fixed: existing server is preserved and restart is user-controlled |
 | P1 | `c` prompt | `c` entered `New:` mode but typed session name was not rendered because prompt input used `stty -echo`. | Isolated installed launcher capture | Fixed: modal prompt enables echo |
-| P1 | Split/layout | Direct tmux split/resize commands while sidebar is open are not fully tracked by the single-sidebar layout store. The supported wrapper bindings target a work pane, but arbitrary tmux split commands can leave the saved/restored work layout inconsistent. | `AGENTS.md`, single-sidebar design contract, controller layout ownership | Confirmed design limitation |
+| P1 | Split/layout | Direct tmux split/resize commands while sidebar is open are not fully tracked by the single-sidebar layout store. The supported wrapper bindings target a work pane, but arbitrary tmux split commands can leave the saved/restored work layout inconsistent. | `AGENTS.md`, single-sidebar design contract, controller layout ownership | Wrapper bindings fixed; arbitrary direct split remains limitation |
 | P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window hook test with pane ID/PID assertion | Fixed for active client window; multi-client behavior remains follow-up |
 | P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `run_session_delete`, `restore_archive`, `wait_for_sidebar_transition` | Remaining risk: restore critical tmux failures now abort with traceable reason |
-| P1 | Restore layout | A sidebar-side split followed by archive/delete and `o` restore can restore work panes but not the exact sidebar/work focus or layout expected by the user. | User report; direct split is outside the tracked layout protocol | Reproduction scenario required |
+| P1 | Restore layout | A sidebar-side split followed by session movement can restore work panes but not the exact sidebar/work focus or layout expected by the user. | Horizontal/vertical PTY split-cycle tests | Fixed for tracked wrapper topology; metadata-missing multi-pane targets fail closed |
 | P2 | Destructive action | `d All` must not terminate unrelated tmux sessions. | Managed-session contract test | Fixed: only `@dotfiles_sidebar_managed` sessions are removed |
 | P2 | Installer/X | With `DISPLAY` set but no usable X server, installation previously invoked `xrdb -merge` and emitted an X connection error. | Isolated install with `DISPLAY=:0` | Fixed: `xrdb -query` must succeed first |
 | P2 | Installer/network | If `opencode` is not already available, `install.sh` previously ran the external OpenCode installer even for local `file://` installs. | `install_opencode_cli` | Fixed: remote CLI installation is opt-in |
@@ -91,7 +91,7 @@ pre-existing sessions, or live installation are side-effect free.
 
 ## 2026-07-25 split-cycle reproduction
 
-The real-PTY reproduction is `tests/tmux-single-sidebar/test-keyboard-e2e-split-cycle.sh`.
+The real-PTY acceptance test is `tests/tmux-single-sidebar/test-keyboard-e2e-split-cycle.sh`.
 It performs the user sequence:
 
 1. Open/focus the sidebar and create `split-cycle-1` through `split-cycle-3`.
@@ -102,33 +102,26 @@ It performs the user sequence:
 5. Compare sidebar count/width, work-pane count, and window layout before and
    after the round trip.
 
-Current result is intentionally RED:
+Current result is PASS after full-layout restore was added:
 
 ```text
-before: sidebars=1 work_panes=2 sidebar_width=35
-after:  sidebars=1 work_panes=2 sidebar_width=1
+PASS: split-cycle preserved horizontal work split and sidebar geometry
 ```
 
-The layout changes from a 35-column sidebar plus two work panes to a 1-column
-sidebar plus resized work panes. The failure occurs during the existing
-single-sidebar move path: `sidebar_controller_move_to_session` snapshots only
-the selected target work pane, then `move-pane -b -h -l <sidebar-width>` inserts
-the shared sidebar into a target window that already has a multi-pane layout.
-The move preserves pane count and pane ID but does not preserve the sidebar
-geometry/topology. This is an analysis finding only; no production fix is
-included in this change.
+The fix snapshots the sidebar-inclusive source layout before moving, uses the
+first work pane as a stable insertion anchor, and reapplies the saved layout
+after the move using the target pane order. Pane IDs, geometry, and active focus
+are verified before the session switch completes.
 
 The vertical variant is `tests/tmux-single-sidebar/test-keyboard-e2e-split-cycle-vertical.sh`.
-It uses `Ctrl+a _` and is also RED:
+It uses `Ctrl+a _` and also passes:
 
 ```text
-before: sidebar spans the full height beside two stacked work panes
-after:  sidebar is placed in the lower half of the window
+PASS: split-cycle preserved vertical work split and sidebar geometry
 ```
 
-The vertical case keeps the sidebar width at 35 columns but loses its full-height
-placement. Therefore the defect is not limited to horizontal work splits; the
-shared sidebar loses its geometry/topology when reinserted into a multi-pane
-target window.
+The controller now preserves the full-height sidebar placement beside the
+stacked work panes. If a multi-pane target has no compatible saved sidebar
+layout metadata, the move fails closed and rolls back.
 
 Until these items are resolved, this branch remains unsuitable for `master`.

@@ -28,6 +28,10 @@ to the newly active window while preserving its pane ID and process.
 8. `master` behavior is unchanged until this branch is explicitly merged.
 9. New archives carry version 2 pane identity and geometry metadata; version 1
    archives remain readable.
+10. A session move snapshots the sidebar-inclusive window layout and reapplies
+    it after moving the same pane into the target window.
+11. A multi-pane target without compatible sidebar layout metadata rejects the
+    move and rolls back instead of accepting a best-effort geometry.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -126,15 +130,15 @@ The scenario suite must verify:
 - active-window hooks move the same pane to a selected window;
 - `d All` removes only sessions marked as sidebar-managed and preserves external sessions;
 - current behavior on `master` remains untouched.
+- a multi-pane target without a saved sidebar layout fails closed and preserves the source sidebar;
 
 Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
 snapshot, restore-layout, focus, and transition rollback without leaving a
 duplicate sidebar or an unrecoverable operation state.
 
-The split-cycle reproduction is currently RED: a real PTY creates a horizontal
-work split, switches away, and returns; the sidebar remains unique but its
-width/topology changes. This is a known acceptance failure and must be fixed
-before any `master` promotion.
-The corresponding vertical `Ctrl+a _` reproduction is RED as well: width is
-preserved, but the sidebar loses its full-height placement beside stacked work
-panes.
+The split-cycle reproductions now pass: real PTY horizontal `Ctrl+a |` and
+vertical `Ctrl+a _` work splits preserve sidebar geometry and work topology
+after switching away and returning. The controller uses the first work pane as
+the stable insertion anchor and reapplies the saved full layout. A target with
+multiple work panes but no compatible saved sidebar layout fails closed and
+rolls back.
