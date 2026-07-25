@@ -124,9 +124,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle|direct-layout) ;;
+    full|minimal|split-cycle|direct-layout|rapid-operations) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, or direct-layout\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, or rapid-operations\n' >&2
         exit 2
         ;;
 esac
@@ -459,6 +459,25 @@ wait_for_session_count_above()
     return 1
 }
 
+operation_state()
+{
+    tmuxc show-option -gqv '@dotfiles_sidebar_operation' 2>/dev/null || true
+}
+
+wait_for_operation_quiet()
+{
+    local deadline=$(( $(date +%s) + 20 )) state
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state="$(operation_state)"
+        case "$state" in
+            idle:*|failed:*) return 0 ;;
+        esac
+        sleep 0.05
+    done
+    test_log "wait.operation-quiet.timeout state=$(operation_state)"
+    return 1
+}
+
 send_keys()
 {
     # ATTACHED[1] is the stdin of `script`; script forwards it to the tmux
@@ -473,6 +492,71 @@ send_keys()
     test_log "input.send.end seq=$INPUT_SEQUENCE telemetry=$(client_telemetry)"
 }
 
+run_rapid_operations_reproduction()
+{
+    local iteration before_generation previous_session_count
+    local trace_before trace_rejected
+
+    for iteration in 1 2 3; do
+        before_generation="$(action_generation)"
+        send_keys 'c'
+        wait_for_prompt_ready
+        send_keys "rapid-$iteration"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+
+        previous_session_count="$(count_sessions)"
+        trace_before="$(grep -c 'input.rejected.*reason=operation-complete-drain' "$RUN_DIR/trace.log" 2>/dev/null || true)"
+        before_generation="$(action_generation)"
+        send_keys 'd'
+        wait_for_prompt_ready
+        send_keys $'y\r'
+        if [ "$iteration" -eq 2 ]; then
+            # A pending navigation must not switch sessions after delete.
+            send_keys $'\033[B\r'
+        else
+            # A pending history request must not restore a stale archive.
+            send_keys $'o\033[B\r'
+        fi
+        wait_for_prompt_complete
+        wait_for_session_count_below "$previous_session_count"
+        wait_for_operation_quiet
+        wait_for_sidebar_input_ready
+        trace_rejected="$(grep -c 'input.rejected.*reason=operation-complete-drain' "$RUN_DIR/trace.log" 2>/dev/null || true)"
+        [ "$trace_rejected" -gt "$trace_before" ] || {
+            printf 'ERROR: rapid delete input was not rejected (iteration %s)\n' "$iteration" >&2
+            return 1
+        }
+        [ "$(count_sidebars)" = 1 ] || {
+            printf 'ERROR: rapid delete changed sidebar uniqueness (iteration %s)\n' "$iteration" >&2
+            return 1
+        }
+
+        before_generation="$(action_generation)"
+        send_keys 'o'
+        wait_for_action_generation_change "$before_generation"
+        previous_session_count="$(count_sessions)"
+        before_generation="$(action_generation)"
+        send_keys $'\r'
+        # Navigation typed while restore is busy is intentionally discarded.
+        send_keys $'\033[B\r'
+        wait_for_action_generation_change "$before_generation"
+        wait_for_session_count_above "$previous_session_count"
+        wait_for_operation_quiet
+        wait_for_sidebar_input_ready
+        [ "$(count_sidebars)" = 1 ] || {
+            printf 'ERROR: rapid restore changed sidebar uniqueness (iteration %s)\n' "$iteration" >&2
+            return 1
+        }
+        send_keys $'\033'
+        wait_for_sidebar_input_ready
+    done
+
+    printf 'PASS: rapid d→o/session navigation input is rejected during delete (3 iterations)\n'
+    printf 'PASS: rapid restore→navigation input is rejected during restore (3 iterations)\n'
+}
+
 tmuxc new-session -d -s keyboard-anchor -c "$REPO_ROOT" 'sleep 300'
 if [ "$SCENARIO" = minimal ]; then
     tmuxc new-session -d -s keyboard-target -c "$REPO_ROOT" 'sleep 300'
@@ -482,6 +566,7 @@ tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG "${TMUX_SESSION_LAUNCHER_DE
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE "$RUN_DIR/debug.log"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE "${TMUX_SESSION_LAUNCHER_TRACE:-0}"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "${TMUX_SESSION_LAUNCHER_TRACE_FILE:-$RUN_DIR/trace.log}"
+tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TEST_OPERATION_DELAY "${TMUX_SESSION_LAUNCHER_TEST_OPERATION_DELAY:-0}"
 tmuxc split-window -d -t '=keyboard-anchor:' -h -b -l 35 "$LAUNCHER --sidebar"
 test_log 'step=sidebar.start'
 test_log "transport=$TRANSPORT"
@@ -524,6 +609,11 @@ observer_read_loop &
 OBSERVER_LOG_PID=$!
 sleep 0.1
 test_log "observer.started pid=$OBSERVER_PID"
+
+if [ "$SCENARIO" = rapid-operations ]; then
+    run_rapid_operations_reproduction
+    exit 0
+fi
 
 if [ "$SCENARIO" = split-cycle ] || [ "$SCENARIO" = direct-layout ]; then
     run_split_cycle_reproduction

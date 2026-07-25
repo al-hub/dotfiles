@@ -12,7 +12,7 @@
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
 - sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. sidebar가 열린 상태의 직접 tmux split/resize도 after-command/window-resized hook으로 full layout metadata를 갱신하며, sidebar 이동·복구 시 해당 metadata를 검증합니다. wrapper에 묶인 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`는 sidebar를 제외한 work pane을 대상으로 하는 권장 경로입니다.
 - session 전환 시 target sidebar 프로세스는 유지하고 refresh signal과 force-refresh polling fallback을 사용합니다. 운용 개선판의 live 측정은 0.75~0.83초이며, Bash `read -t` 경계로 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제입니다.
-- active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부합니다.
+- active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부하고, 완료 시 PTY에 쌓인 pending 입력도 drain합니다. 각 async worker는 operation id ownership을 확인해 stale completion이 최신 상태를 덮어쓰지 못합니다.
 - sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
 - archive는 version 2 pane identity/geometry/active metadata를 기록하고 restore에서 geometry와 focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, arbitrary topology의 완전한 process/identity 복원은 아직 후속 검증입니다.
 - archive 생성은 임시 파일 검증 후 고유 이름으로 rename하며, restore 후 history import marker로 동일 archive의 중복 import를 막습니다. bulk archive 실패 시 session 삭제를 중단합니다.
@@ -30,6 +30,7 @@
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
 - `tests/tmux-single-sidebar/test-layout-metadata-failure.sh`: multi-pane target metadata 부재 시 rollback을 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-direct-layout.sh`: raw tmux horizontal/vertical split/resize 후 session 왕복을 attached PTY로 검증
+- `tests/tmux-single-sidebar/test-keyboard-e2e-rapid-operations.sh`: archive/delete/restore 중 급속 입력 drain과 operation ownership을 검증
 - `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
 - `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
 - `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit

@@ -353,6 +353,45 @@ sidebar_operation_set()
     trace_event "operation.state state=$state operation_id=$operation_id"
 }
 
+new_sidebar_operation_id()
+{
+    printf -v sidebar_operation_id_result 'op-%s-%s-%s' \
+        "$(date +%s%N)" "${BASHPID:-$$}" "${RANDOM:-0}"
+}
+
+sidebar_operation_is_owner()
+{
+    local expected_id="$1" current_state
+    [ -n "$expected_id" ] || return 1
+    current_state="$(sidebar_operation_state)"
+    case "$current_state" in
+        *:"$expected_id") return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidebar_operation_finish()
+{
+    local state="$1" operation_id="$2"
+    if sidebar_operation_is_owner "$operation_id"; then
+        sidebar_operation_set "$state" "$operation_id"
+        return 0
+    fi
+    trace_event "operation.owner-mismatch expected=$operation_id actual=$(sidebar_operation_state) final_state=$state"
+    return 1
+}
+
+operation_test_delay()
+{
+    local delay="${TMUX_SESSION_LAUNCHER_TEST_OPERATION_DELAY:-0}"
+    case "$delay" in
+        ''|0) return 0 ;;
+        *[!0-9.]* ) return 0 ;;
+    esac
+    trace_event "operation.test-delay seconds=$delay operation_id=${1:-none}"
+    sleep "$delay"
+}
+
 fault_injection()
 {
     local step="$1"
@@ -3567,25 +3606,28 @@ EOF
 
 delete_all_sessions_after_archive()
 {
-    should_archive="${1:-false}"
-    local managed_sessions session_name
+    local should_archive="${1:-false}" operation_id="${2:-}" managed_sessions session_name
+
+    trace_event "operation.worker.begin operation_id=$operation_id type=delete-all archive=$should_archive worker=${BASHPID:-$$}"
+    operation_test_delay "$operation_id"
 
     managed_sessions="$(managed_session_names)"
     [ -n "$managed_sessions" ] || {
-        sidebar_operation_set idle all-empty
+        sidebar_operation_finish idle "$operation_id" || true
         return 0
     }
 
     if [ "$should_archive" = "true" ] && ! archive_all_sessions "$should_archive"; then
-        sidebar_operation_set failed all-archive
         trace_event "archive.all.abort reason=archive-failed"
+        sidebar_operation_finish failed "$operation_id" || true
         return 1
     fi
     while IFS= read -r session_name; do
         [ -n "$session_name" ] || continue
         tmux kill-session -t "=$session_name" 2>/dev/null || true
     done <<< "$managed_sessions"
-    sidebar_operation_set idle all-complete
+    sidebar_operation_finish idle "$operation_id" || true
+    trace_event "operation.worker.end operation_id=$operation_id type=delete-all result=complete"
 }
 
 fallback_session()
@@ -3605,18 +3647,22 @@ delete_session_after_archive()
 {
     local session_name="$1"
     local should_archive="${2:-false}"
+    local operation_id="${3:-}"
     local current_client_session="" target_clients="" target_has_clients=false
     local next_session="" archive_fast_path=false
     local metrics_delete_start="" metrics_delete_operation_id=""
     local metrics_delete_phase_start="" metrics_delete_preflight_us=0
     local metrics_delete_fallback_us=0 metrics_delete_archive_us=0 metrics_delete_kill_us=0
 
+    trace_event "operation.worker.begin operation_id=$operation_id type=delete-session session=$session_name archive=$should_archive worker=${BASHPID:-$$}"
+    operation_test_delay "$operation_id"
+
     # archive_session performs the authoritative existence check.  The
     # archive fast path can therefore avoid a duplicate tmux has-session IPC;
     # delete-only keeps the original early return semantics below.
     if [ "$should_archive" != "true" ]; then
         session_exists "$session_name" || {
-            sidebar_operation_set idle "delete-$session_name-missing"
+            sidebar_operation_finish idle "$operation_id" || true
             return 0
         }
     fi
@@ -3634,7 +3680,7 @@ delete_session_after_archive()
     # checking only its exit status cannot distinguish the fast-path case.
     if ! target_clients="$(tmux list-clients -t "=$session_name" -F '#{client_control_mode}|#{session_name}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2 }')"; then
-        sidebar_operation_set idle "delete-$session_name-client-query"
+        sidebar_operation_finish idle "$operation_id" || true
         return 0
     fi
     [ -n "$target_clients" ] && target_has_clients=true
@@ -3650,7 +3696,7 @@ delete_session_after_archive()
         next_session=""
     else
         session_exists "$session_name" || {
-            sidebar_operation_set idle "delete-$session_name-gone"
+            sidebar_operation_finish idle "$operation_id" || true
             return 0
         }
         next_session="$(fallback_session "$session_name")"
@@ -3679,7 +3725,11 @@ delete_session_after_archive()
         if [ -n "$metrics_delete_start" ]; then
             metrics_delete_phase_start="$(metrics_now_us)"
         fi
-        archive_session "$session_name" true >/dev/null || true
+        if ! archive_session "$session_name" true >/dev/null; then
+            trace_event "operation.worker.end operation_id=$operation_id type=delete-session session=$session_name result=archive-failed"
+            sidebar_operation_finish failed "$operation_id" || true
+            return 1
+        fi
         if [ -n "$metrics_delete_start" ]; then
             metrics_delete_archive_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
             metrics_delete_phase_start="$(metrics_now_us)"
@@ -3703,30 +3753,49 @@ delete_session_after_archive()
         metrics_delete_kill_us=$(( $(metrics_now_us) - metrics_delete_phase_start ))
         metrics_write "op=archive-wrapper phase=complete operation_id=$metrics_delete_operation_id session=$session_name fast_path=$archive_fast_path preflight_us=$metrics_delete_preflight_us fallback_lookup_us=$metrics_delete_fallback_us archive_us=$metrics_delete_archive_us kill_us=$metrics_delete_kill_us total_us=$(( $(metrics_now_us) - metrics_delete_start ))"
     fi
-    sidebar_operation_set idle "delete-$session_name-complete"
+    sidebar_operation_finish idle "$operation_id" || true
+    trace_event "operation.worker.end operation_id=$operation_id type=delete-session session=$session_name result=complete"
 }
 
 run_session_delete()
 {
     session_name="$1"
     should_archive="$2"
+    new_sidebar_operation_id
+    operation_id="$sidebar_operation_id_result"
     quoted_script="$(shell_quote "$SCRIPT_PATH")"
     quoted_session="$(shell_quote "$session_name")"
     quoted_archive="$(shell_quote "$should_archive")"
+    quoted_operation="$(shell_quote "$operation_id")"
 
-    debug_log "run_session_delete session=$session_name should_archive=$should_archive"
-    sidebar_operation_set deleting "delete-$session_name"
-    tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive"
+    debug_log "run_session_delete session=$session_name should_archive=$should_archive operation_id=$operation_id"
+    trace_event "operation.begin operation_id=$operation_id type=delete-session session=$session_name archive=$should_archive"
+    sidebar_operation_set deleting "$operation_id"
+    if ! tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive $quoted_operation"; then
+        sidebar_operation_finish failed "$operation_id" || true
+        trace_event "operation.launch.error operation_id=$operation_id type=delete-session session=$session_name"
+        return 1
+    fi
+    trace_event "operation.launch operation_id=$operation_id type=delete-session session=$session_name"
 }
 
 run_all_sessions_delete()
 {
     should_archive="$1"
+    new_sidebar_operation_id
+    operation_id="$sidebar_operation_id_result"
     quoted_script="$(shell_quote "$SCRIPT_PATH")"
     quoted_archive="$(shell_quote "$should_archive")"
+    quoted_operation="$(shell_quote "$operation_id")"
 
-    sidebar_operation_set deleting all
-    tmux run-shell -b "$quoted_script --delete-all-sessions-after-archive $quoted_archive"
+    trace_event "operation.begin operation_id=$operation_id type=delete-all archive=$should_archive"
+    sidebar_operation_set deleting "$operation_id"
+    if ! tmux run-shell -b "$quoted_script --delete-all-sessions-after-archive $quoted_archive $quoted_operation"; then
+        sidebar_operation_finish failed "$operation_id" || true
+        trace_event "operation.launch.error operation_id=$operation_id type=delete-all"
+        return 1
+    fi
+    trace_event "operation.launch operation_id=$operation_id type=delete-all"
 }
 
 archive_selected_indices()
@@ -3755,7 +3824,7 @@ restore_abort()
     if [ -n "${restore_name:-}" ] && session_exists "$restore_name"; then
         tmux kill-session -t "=$restore_name" 2>/dev/null || true
     fi
-    sidebar_operation_set failed "${metrics_restore_operation_id:-restore-$reason}"
+    sidebar_operation_finish failed "${restore_operation_id:-${metrics_restore_operation_id:-restore-$reason}}" || true
     return 1
 }
 
@@ -3763,14 +3832,20 @@ restore_archive()
 {
     archive_path="$1"
     [ -f "$archive_path" ] || return 1
-    local metrics_restore_start="" metrics_restore_operation_id=""
+    local metrics_restore_start="" metrics_restore_operation_id="" restore_operation_id="${2:-}"
     local restore_client_tty="" restore_original_session="" sidebar_pane_before="" sidebar_pid_before=""
+    if [ -z "$restore_operation_id" ]; then
+        new_sidebar_operation_id
+        restore_operation_id="$sidebar_operation_id_result"
+    fi
     if [ -n "$METRICS_FILE" ]; then
         metrics_restore_start="$(metrics_now_us)"
         metrics_next_operation_id
         metrics_restore_operation_id="$metrics_operation_id_result"
     fi
-    sidebar_operation_set restoring "${metrics_restore_operation_id:-restore-${BASHPID:-$$}}"
+    trace_event "operation.begin operation_id=$restore_operation_id type=restore archive=$archive_path"
+    sidebar_operation_set restoring "$restore_operation_id"
+    operation_test_delay "$restore_operation_id"
     archive_version="$(awk -F '\t' '$1 == "version" { print $2; exit }' "$archive_path")"
     case "$archive_version" in
         2) trace_event "restore.archive-format version=2" ;;
@@ -3778,7 +3853,7 @@ restore_archive()
     esac
     if [ "$archive_version" = 2 ] && ! validate_archive_file "$archive_path"; then
         trace_event "restore.abort session=${restore_name:-unknown} reason=invalid-archive"
-        sidebar_operation_set failed restore-invalid-archive
+        sidebar_operation_finish failed "$restore_operation_id" || true
         return 1
     fi
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
@@ -3794,7 +3869,7 @@ restore_archive()
     restore_name="$original_name"
     if session_exists "$restore_name"; then
         message_line "Exists: $restore_name"
-        sidebar_operation_set failed restore-exists
+        sidebar_operation_finish failed "$restore_operation_id" || true
         return 1
     fi
 
@@ -3989,7 +4064,8 @@ restore_archive()
     if [ -n "$metrics_restore_start" ]; then
         metrics_write "op=restore phase=complete operation_id=$metrics_restore_operation_id session=$restore_name duration_us=$(( $(metrics_now_us) - metrics_restore_start )) sidebar_mode=$SIDEBAR_ASYNC_RESTORE"
     fi
-    sidebar_operation_set idle "${metrics_restore_operation_id:-restore-complete}"
+    sidebar_operation_finish idle "$restore_operation_id" || true
+    trace_event "operation.complete operation_id=$restore_operation_id type=restore session=$restore_name"
 }
 
 wait_for_sidebar_transition()
@@ -4058,10 +4134,12 @@ restore_selected_archives()
 {
     debug_log "history restore selected index=$history_index file=${history_files[$history_index]:-none}"
     while IFS= read -r index; do
-        restore_archive "${history_files[$index]}" || message_line "Restore failed"
+        new_sidebar_operation_id
+        restore_archive "${history_files[$index]}" "$sidebar_operation_id_result" || message_line "Restore failed"
     done <<EOF
 $(archive_selected_indices)
 EOF
+    discard_pending_input
 }
 
 delete_selected_archives()
@@ -4149,8 +4227,10 @@ tui_delete_session()
             fi
             if [ "$deleting_current_session" = "true" ]; then
                 debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
+                discard_pending_input
                 exit 0
             fi
+            discard_pending_input
             selected_session="$current_session"
             ;;
         '')
@@ -4174,8 +4254,10 @@ tui_delete_session()
             fi
             if [ "$deleting_current_session" = "true" ]; then
                 debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
+                discard_pending_input
                 exit 0
             fi
+            discard_pending_input
             selected_session="$current_session"
             ;;
     esac
@@ -4301,6 +4383,19 @@ read_key()
             ;;
         *) key_result=other ;;
     esac
+}
+
+discard_pending_input()
+{
+    local key rest raw
+    while IFS= read -rsn1 -t 0.01 key; do
+        rest=""
+        if [ "$key" = $'\033' ]; then
+            IFS= read -rsn2 -t 0.01 rest || true
+        fi
+        raw="$key$rest"
+        trace_event "input.rejected action_id=${current_action_id:-none} key_name=pending key_hex=$(trace_key_hex "$raw") reason=operation-complete-drain"
+    done
 }
 
 toggle_history_mode()
@@ -4756,11 +4851,11 @@ main()
             return 0
             ;;
         --delete-session-after-archive)
-            delete_session_after_archive "${2:-}" "${3:-false}"
+            delete_session_after_archive "${2:-}" "${3:-false}" "${4:-}"
             return 0
             ;;
         --delete-all-sessions-after-archive)
-            delete_all_sessions_after_archive "${2:-false}"
+            delete_all_sessions_after_archive "${2:-false}" "${3:-}"
             return 0
             ;;
         --sidebar|"")

@@ -9,6 +9,26 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - 급속 archive/restore race 개선
+
+사용자 결정:
+- `d`/`o`/session 이동의 급속 입력 race를 우선 개선하고, operation 중 입력은
+  완료까지 차단합니다.
+- `feature/single-sidebar`에서만 구현·검증하며 `master`에는 반영하지 않습니다.
+
+작업 결과:
+- async worker마다 unique operation id를 전달하고 ownership 검증 후에만
+  idle/failed 상태를 기록하도록 했습니다.
+- operation 중 PTY에 버퍼링된 입력은 완료 후 drain/reject해 stale history restore나
+  잘못된 session switch로 이어지지 않게 했습니다.
+- 단일 archive 실패 시 session 삭제를 중단합니다.
+- attached PTY에서 delete/navigation 및 restore/navigation 급속 입력을 각각
+  3회 반복하는 stress 테스트가 PASS 했습니다.
+
+남은 범위:
+- 외부 tmux client가 동시에 archive/restore 대상 session을 변경하는 동시성은
+  별도 후속 검증입니다.
+
 ## 2026-07-25 - raw split/resize layout tracking
 
 사용자 결정:

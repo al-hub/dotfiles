@@ -34,6 +34,10 @@ to the newly active window while preserving its pane ID and process.
    move and rolls back instead of accepting a best-effort geometry.
 12. Direct tmux split/resize/layout mutations refresh the sidebar-inclusive
    layout snapshot through guarded runtime hooks before a later move or restore.
+13. Archive/delete/restore operations own a unique operation token; stale
+   asynchronous completion cannot overwrite a newer operation state.
+14. Input buffered while an operation is busy is rejected and drained before
+   the next TUI action is read.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -139,6 +143,10 @@ The scenario suite must verify:
 Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
 snapshot, restore-layout, focus, and transition rollback without leaving a
 duplicate sidebar or an unrecoverable operation state.
+
+Archive/delete/restore stress coverage must verify operation-token ownership,
+pending-input rejection, failed archive preservation, and final idle/failed
+state after rapid `d`, `o`, navigation, and Enter input.
 
 The split-cycle reproductions now pass: real PTY horizontal `Ctrl+a |` and
 vertical `Ctrl+a _` work splits preserve sidebar geometry and work topology

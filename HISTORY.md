@@ -8,6 +8,24 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - rapid archive/restore operation ownership
+
+변경:
+- archive/delete/restore 비동기 경로에 unique operation id ownership을 추가해
+  stale worker가 최신 operation 상태를 덮어쓰지 못하게 했습니다.
+- worker launch 실패와 archive 실패를 trace에 남기고, 단일 archive 실패 시
+  대상 session을 삭제하지 않도록 보강했습니다.
+- busy operation 중 PTY에 쌓인 `o`, 방향키, Enter 입력을 다음 action으로
+  잘못 처리하지 않고 drain/reject하며 trace에 기록합니다.
+- 0.4초 test delay를 사용하는 attached-PTY rapid stress 테스트를 추가해
+  delete/navigation 및 restore/navigation을 각각 3회 반복합니다.
+
+검증:
+- rapid archive/delete/restore E2E 3회 반복 PASS
+- 전체 keyboard E2E PASS
+- contract, managed-session, failure-injection, raw-layout 회귀 PASS
+- `master`는 변경하지 않았습니다.
+
 ## 2026-07-25 - direct tmux split/resize layout tracking
 
 변경:
