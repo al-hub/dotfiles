@@ -9,6 +9,22 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - archive v2와 transactional restore
+
+사용자 결정:
+- 실사용 side-effect가 남아 있으므로 `master`에는 반영하지 않고
+  `feature/single-sidebar`에서만 검증을 계속합니다.
+
+작업 결과:
+- archive v2에 pane identity/geometry/active metadata를 추가하고 restore 시
+  geometry 검증과 active pane focus 복원을 수행합니다.
+- restore layout/focus 실패는 부분 session과 client session을 rollback합니다.
+- 두 attached client의 non-owner toggle 차단을 별도 PTY 테스트로 검증했습니다.
+
+남은 검증:
+- 임의 pane topology에서 원본 process 상태와 완전한 pane identity를 재현하는
+  acceptance test, legacy v1 archive end-to-end fixture가 남아 있습니다.
+
 ## 2026-07-25 - active window와 managed d All 개선 적용
 
 작업 결과:

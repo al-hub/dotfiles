@@ -73,13 +73,20 @@ pre-existing sessions, or live installation are side-effect free.
 - The sidebar owner client is recorded in `@dotfiles_sidebar_owner_client`, and
   injected move failure preserves the source pane/window in a dedicated test.
 - Raw split archive smoke coverage now records a non-empty work-layout snapshot;
-  exact pane-ID/layout fidelity after every topology shape remains a follow-up.
+  version 2 now records pane IDs, geometry, active state, and window geometry;
+  restore verifies geometry and active-pane focus. Exact arbitrary-topology
+  identity remains a follow-up acceptance item.
+- A two-client PTY test confirms that a non-owner client cannot toggle the
+  shared sidebar.
+- Failure injection covers snapshot, move, client-switch, restore-layout,
+  sidebar-focus, and transition rollback boundaries.
 
 ## Next audit order
 
 1. Verify installer preservation against a live, pre-existing tmux server.
 2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action.
 3. Repeat active-window and rapid restore E2E at least three consecutive times.
-4. Add explicit operation failure injection tests for move, restore, and archive.
+4. Exercise version 2 archives against more arbitrary pane topologies and add
+   an end-to-end legacy version 1 archive fixture.
 
 Until these items are resolved, this branch remains unsuitable for `master`.

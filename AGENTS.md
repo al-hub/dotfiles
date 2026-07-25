@@ -14,6 +14,7 @@
 - session 전환 시 target sidebar 프로세스는 유지하고 refresh signal과 force-refresh polling fallback을 사용합니다. 운용 개선판의 live 측정은 0.75~0.83초이며, Bash `read -t` 경계로 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제입니다.
 - active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부합니다.
 - sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
+- archive는 version 2 pane identity/geometry/active metadata를 기록하고 restore에서 geometry와 focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, arbitrary topology의 완전한 process/identity 복원은 아직 후속 검증입니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
 
 ## 문서 역할

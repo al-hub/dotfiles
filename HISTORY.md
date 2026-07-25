@@ -8,6 +8,20 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - archive v2 geometry identity와 multi-client 검증
+
+변경:
+- archive를 version 2로 확장해 pane ID, 좌표/크기, active 상태, window geometry를 저장합니다.
+- restore가 저장 geometry를 검증하고 archive의 active pane을 다시 선택하도록 했습니다.
+- restore layout/focus 실패 시 부분 session을 정리하고 원래 client session으로 rollback합니다.
+- 두 client가 붙은 PTY에서 non-owner sidebar toggle 차단을 검증했습니다.
+
+검증:
+- raw split archive snapshot, failure injection, multi-client ownership PASS
+- keyboard PTY E2E 1회 PASS
+- version 1 archive 입력은 legacy parser 경로로 유지
+- arbitrary topology의 원본 pane process/정확한 identity 재현은 아직 master 승격 전 후속 검증입니다.
+
 ## 2026-07-25 - active window hook과 managed session 삭제 범위 구현
 
 변경:

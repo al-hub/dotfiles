@@ -26,6 +26,8 @@ to the newly active window while preserving its pane ID and process.
 6. Split shortcuts always target a work pane.
 7. A failed move does not complete the client switch.
 8. `master` behavior is unchanged until this branch is explicitly merged.
+9. New archives carry version 2 pane identity and geometry metadata; version 1
+   archives remain readable.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -81,6 +83,12 @@ session or window names.
 
 If the client switch itself fails after the pane move, move the sidebar back to
 the source window and restore the source work layout before reporting failure.
+
+Archive restore is transactional at the tmux topology boundary: layout and
+focus failures remove the partial restored session and switch the owning client
+back to its original session. Version 2 archives verify restored pane geometry
+and reselect the archived active pane. Paths and commands are restore inputs;
+the original running process state is not serialized.
 
 Window selection invokes the same move protocol through the runtime hook. A
 hook guard prevents recursive move events while the pane is being relocated.

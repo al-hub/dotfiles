@@ -30,11 +30,14 @@ for attempt in $(seq 1 100); do
 done
 archive_path="$(find "$RUN_DIR/history" -type f -name '*.tsv' -print -quit 2>/dev/null || true)"
 [ -f "$archive_path" ]
+[ "$(awk -F '\t' '$1 == "version" { print $2; exit }' "$archive_path")" = 2 ]
 window_line="$(awk -F '\t' '$1 == "window" { print; exit }' "$archive_path")"
 layout="$(printf '%s\n' "$window_line" | awk -F '\t' '{ print $5 }')"
 pane_records="$(awk '$1 == "window" { seen=1; next } seen && $1 == "pane" { count++ } seen && $1 == "endwindow" { print count + 0; exit }' "$archive_path")"
+v2_pane_fields="$(awk -F '\t' '$1 == "pane" { print NF; exit }' "$archive_path")"
 layout_records="$(printf '%s\n' "$layout" | awk '{ count=0; while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) { count++; $0=substr($0, RSTART+RLENGTH) } print count }')"
 [ -n "$layout" ]
 [ "$pane_records" -gt 1 ]
+[ "$v2_pane_fields" -ge 10 ]
 [ "$layout_records" -ge "$pane_records" ]
 printf 'PASS: raw split archive stores a non-empty layout with work-pane topology\n'
