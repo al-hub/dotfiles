@@ -51,6 +51,7 @@ METRICS_COMMAND_FILE="${METRICS_FILE:+${METRICS_FILE}.commands}"
 METRICS_RUN_ID="${TMUX_SESSION_LAUNCHER_METRICS_RUN_ID:-none}"
 METRICS_FLUSH_SECONDS="${TMUX_SESSION_LAUNCHER_METRICS_FLUSH_SECONDS:-2}"
 HISTORY_DIR="${TMUX_SESSION_HISTORY_DIR:-$HOME/.cache/dotfiles/tmux-session-history}"
+ARCHIVE_HISTORY_MARKER_SUFFIX=".history-imported"
 WORK_LAYOUT_OPTION="@dotfiles-session-work-layout"
 WORK_LAYOUT_PANES_OPTION="@dotfiles-session-work-pane-ids"
 WORK_LAYOUT_GENERATION_OPTION="@dotfiles-session-work-layout-generation"
@@ -371,10 +372,17 @@ sidebar_owner_client()
 
 claim_sidebar_owner()
 {
-    local client_tty
+    local client_tty owner
     client_tty="$(current_client_tty)"
     [ -n "$client_tty" ] || return 0
-    if [ -z "$(sidebar_owner_client)" ]; then
+    owner="$(sidebar_owner_client)"
+    if [ -n "$owner" ] && ! tmux list-clients -F '#{client_tty}' 2>/dev/null |
+        awk -v owner="$owner" '$0 == owner { found=1 } END { exit !found }'; then
+        trace_event "sidebar.owner.clear-stale client=$owner"
+        tmux set-option -gq "$SIDEBAR_OWNER_CLIENT_OPTION" "" 2>/dev/null || true
+        owner=""
+    fi
+    if [ -z "$owner" ]; then
         tmux set-option -gq "$SIDEBAR_OWNER_CLIENT_OPTION" "$client_tty" 2>/dev/null || true
         trace_event "sidebar.owner.claim client=$client_tty"
     fi
@@ -424,6 +432,10 @@ sync_active_window()
     local guard active_session active_window sidebar_pane sidebar_window owner current_client
     guard="$(tmux show-option -gqv "$SIDEBAR_HOOK_GUARD_OPTION" 2>/dev/null || true)"
     [ "$guard" = 1 ] && return 0
+    if sidebar_operation_busy; then
+        trace_event "sidebar.hook.sync.skip reason=operation-busy state=$(sidebar_operation_state)"
+        return 0
+    fi
     sidebar_pane="$(find_global_sidebar_pane || true)"
     [ -n "$sidebar_pane" ] || return 0
     owner="$(sidebar_owner_client)"
@@ -1260,6 +1272,7 @@ switch_session()
         metrics_switch_operation_id="$metrics_operation_id_result"
     fi
     trace_event "switch.begin session=$session_name"
+    sidebar_operation_set moving "${metrics_switch_operation_id:-switch-${BASHPID:-$$}}"
     if [ -n "$metrics_switch_start" ]; then
         metrics_switch_phase_start="$(metrics_now_us)"
     fi
@@ -1268,6 +1281,7 @@ switch_session()
     client_tty="$(sidebar_owner_client)"
     [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_client_tty_for_session "$owner_session")"
     if [ -z "$sidebar_pane" ] || [ -z "$owner_session" ] || [ -z "$client_tty" ]; then
+        sidebar_operation_set failed switch-client-unavailable
         message_line "session switch failed: active sidebar client is unavailable"
         trace_event "switch.abort reason=sidebar-client-unavailable session=$session_name"
         return 1
@@ -1279,6 +1293,7 @@ switch_session()
     trace_event "switch.sidebar.move.begin session=$session_name pane=$sidebar_pane"
     [ -n "$metrics_switch_start" ] && move_start="$(metrics_now_us)"
     if ! fault_injection move || ! sidebar_controller_move_to_session "$session_name"; then
+        sidebar_operation_set failed switch-move
         message_line "session switch failed: sidebar move was refused"
         trace_event "switch.abort reason=sidebar-move-failed session=$session_name pane=$sidebar_pane"
         return 1
@@ -1293,6 +1308,7 @@ switch_session()
     trace_client_state "before-client-switch" "$client_tty"
     if ! fault_injection client-switch || ! sidebar_tmux_switch_client "$client_tty" "$session_name" 2>/dev/null; then
         sidebar_controller_move_to_session "$owner_session" >/dev/null 2>&1 || true
+        sidebar_operation_set failed switch-client
         message_line "session switch failed: client switch was refused"
         trace_event "switch.abort reason=client-switch-failed session=$session_name pane=$sidebar_pane"
         return 1
@@ -1311,12 +1327,14 @@ switch_session()
     signal_sidebar_refresh "$session_name"
     trace_event "switch.force-refresh.final.end session=$session_name"
     if ! wait_for_sidebar_transition "$session_name" "$client_tty"; then
+        sidebar_operation_set failed switch-transition
         message_line "session switch failed: sidebar transition was not ready"
         trace_event "switch.abort reason=sidebar-transition-timeout session=$session_name pane=$sidebar_pane"
         return 1
     fi
     tmux select-pane -t "$sidebar_pane" 2>/dev/null || true
     tmux refresh-client -S -t "$client_tty" 2>/dev/null || true
+    sidebar_operation_set idle "${metrics_switch_operation_id:-switch-complete}"
     trace_event "switch.input-focus.reassert session=$session_name pane=$sidebar_pane client=$client_tty"
     trace_client_state "after-focus-reassert" "$client_tty"
     if [ -n "$metrics_switch_start" ]; then
@@ -3211,6 +3229,53 @@ append_archive_history()
     done < "$archive_path" >> "$history_file"
 }
 
+validate_archive_file()
+{
+    local archive_path_value="$1"
+    [ -s "$archive_path_value" ] || return 1
+    awk -F '\t' '
+        BEGIN { version = ""; session = 0; windows = 0; panes = 0; ends = 0; valid = 1 }
+        $1 == "version" { version = $2 }
+        $1 == "session" && $2 != "" { session = 1 }
+        $1 == "window" { windows++; if (NF < 5) valid = 0 }
+        $1 == "pane" {
+            panes++
+            if (version == "2" && NF < 10) valid = 0
+            if (version != "2" && NF < 3) valid = 0
+        }
+        $1 == "endwindow" { ends++ }
+        END {
+            if (version != "1" && version != "2") valid = 0
+            if (!session || windows == 0 || panes == 0 || windows != ends) valid = 0
+            exit(valid ? 0 : 1)
+        }
+    ' "$archive_path_value"
+}
+
+append_archive_history_once()
+{
+    local archive_path_value="$1" marker_path marker_tmp
+    marker_path="${archive_path_value}${ARCHIVE_HISTORY_MARKER_SUFFIX}"
+    [ -f "$marker_path" ] && return 0
+    marker_tmp="${marker_path}.pending-${BASHPID:-$$}"
+    if ! append_archive_history "$archive_path_value"; then
+        rm -f "$marker_tmp"
+        return 1
+    fi
+    if ! printf 'archive=%s\n' "$(basename "$archive_path_value")" > "$marker_tmp"; then
+        rm -f "$marker_tmp"
+        return 1
+    fi
+    if ! mv -n "$marker_tmp" "$marker_path" 2>/dev/null; then
+        if [ ! -f "$marker_path" ]; then
+            rm -f "$marker_tmp"
+            return 1
+        fi
+        rm -f "$marker_tmp"
+    fi
+    trace_event "restore.history.imported archive=$archive_path_value marker=$marker_path"
+}
+
 clear_restored_work_panes()
 {
     session_name="$1"
@@ -3308,9 +3373,12 @@ archive_session()
         metrics_archive_phase_start="$(metrics_now_us)"
     fi
 
-    mkdir -p "$HISTORY_DIR"
+    if ! mkdir -p "$HISTORY_DIR"; then
+        trace_event "archive.prepare.error session=$session_name reason=history-directory"
+        return 1
+    fi
     printf -v stamp '%(%Y%m%d-%H%M%S)T' -1
-    archive_base="${stamp}-$(safe_file_part "$session_name")"
+    archive_base="${stamp}-${BASHPID:-$$}-$(safe_file_part "$session_name")"
     archive_path="$HISTORY_DIR/${archive_base}-pending.tsv"
     trace_event "archive.snapshot.begin session=$session_name"
     archive_panes_snapshot="$(tmux list-panes -t "=$session_name:" \
@@ -3346,7 +3414,7 @@ archive_session()
     fi
 
     trace_event "archive.write.begin session=$session_name"
-    {
+    if ! {
         printf 'version\t2\n'
         printf 'session\t%s\n' "$session_name"
         printf -v archived_at '%(%s)T' -1
@@ -3372,7 +3440,11 @@ archive_session()
         done
         printf 'created\t%s\n' "$created_value"
         archive_shell_history
-    } > "$archive_path"
+    } > "$archive_path"; then
+        rm -f "$archive_path"
+        trace_event "archive.write.error session=$session_name"
+        return 1
+    fi
     trace_event "archive.write.end session=$session_name windows=$window_count"
     if [ -n "$metrics_archive_start" ]; then
         metrics_archive_write_us=$(( $(metrics_now_us) - metrics_archive_phase_start ))
@@ -3381,7 +3453,16 @@ archive_session()
 
     final_path="$HISTORY_DIR/${archive_base}-${window_count}w.tsv"
     trace_event "archive.rename.begin session=$session_name"
-    mv "$archive_path" "$final_path"
+    if ! validate_archive_file "$archive_path"; then
+        rm -f "$archive_path"
+        trace_event "archive.validation.error session=$session_name"
+        return 1
+    fi
+    if ! mv "$archive_path" "$final_path"; then
+        rm -f "$archive_path"
+        trace_event "archive.rename.error session=$session_name"
+        return 1
+    fi
     trace_event "archive.rename.end session=$session_name"
     if [ -n "$metrics_archive_start" ]; then
         metrics_archive_rename_us=$(( $(metrics_now_us) - metrics_archive_phase_start ))
@@ -3396,16 +3477,20 @@ archive_session()
 
 archive_all_sessions()
 {
-    should_archive="$1"
+    local should_archive="$1" session_name failed=0
 
     while IFS= read -r session_name; do
         [ -n "$session_name" ] || continue
         if [ "$should_archive" = "true" ]; then
-            archive_session "$session_name" >/dev/null || true
+            if ! archive_session "$session_name" >/dev/null; then
+                failed=1
+                trace_event "archive.all.error session=$session_name"
+            fi
         fi
     done <<EOF
 $(managed_session_names)
 EOF
+    return "$failed"
 }
 
 delete_all_sessions_after_archive()
@@ -3419,7 +3504,11 @@ delete_all_sessions_after_archive()
         return 0
     }
 
-    archive_all_sessions "$should_archive"
+    if [ "$should_archive" = "true" ] && ! archive_all_sessions "$should_archive"; then
+        sidebar_operation_set failed all-archive
+        trace_event "archive.all.abort reason=archive-failed"
+        return 1
+    fi
     while IFS= read -r session_name; do
         [ -n "$session_name" ] || continue
         tmux kill-session -t "=$session_name" 2>/dev/null || true
@@ -3615,6 +3704,11 @@ restore_archive()
         2) trace_event "restore.archive-format version=2" ;;
         *) archive_version=1; trace_event "restore.archive-format version=1 legacy" ;;
     esac
+    if [ "$archive_version" = 2 ] && ! validate_archive_file "$archive_path"; then
+        trace_event "restore.abort session=${restore_name:-unknown} reason=invalid-archive"
+        sidebar_operation_set failed restore-invalid-archive
+        return 1
+    fi
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
     if [ -n "$restore_client_tty" ]; then
@@ -3631,10 +3725,6 @@ restore_archive()
         sidebar_operation_set failed restore-exists
         return 1
     fi
-
-    trace_event "restore.history.begin session=$restore_name"
-    append_archive_history "$archive_path"
-    trace_event "restore.history.end session=$restore_name"
 
     created=false
     current_window=""
@@ -3818,6 +3908,12 @@ restore_archive()
         tmux refresh-client -S -t "$restore_client_tty" 2>/dev/null || true
         trace_event "restore.input-focus.reassert session=$restore_name client=$restore_client_tty"
     fi
+    trace_event "restore.history.begin session=$restore_name"
+    if ! append_archive_history_once "$archive_path"; then
+        restore_abort history-import
+        return 1
+    fi
+    trace_event "restore.history.end session=$restore_name"
     if [ -n "$metrics_restore_start" ]; then
         metrics_write "op=restore phase=complete operation_id=$metrics_restore_operation_id session=$restore_name duration_us=$(( $(metrics_now_us) - metrics_restore_start )) sidebar_mode=$SIDEBAR_ASYNC_RESTORE"
     fi

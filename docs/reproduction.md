@@ -57,6 +57,13 @@ Verify the active rendering state by capturing the full character grid including
 
 ## Standard Verification / Test Flow
 
+For archive safety, use a dedicated history directory and verify that a
+failed archive leaves every managed session alive. After a successful restore,
+repeat the same archive only after removing the restored session and confirm
+that the archive's history marker prevents duplicate history import. During
+both operations, capture `@dotfiles_sidebar_operation`, sidebar owner client,
+pane ID/PID, and the trace file before declaring the flow successful.
+
 To verify that session switches do not trigger false gradients, use this check:
 
 ```bash

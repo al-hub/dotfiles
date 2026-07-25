@@ -18,7 +18,7 @@ and tmux server are not modified.
 | P1 | `c` prompt | `c` entered `New:` mode but typed session name was not rendered because prompt input used `stty -echo`. | Isolated installed launcher capture | Fixed: modal prompt enables echo |
 | P1 | Split/layout | Direct tmux split/resize commands while sidebar is open are not fully tracked by the single-sidebar layout store. The supported wrapper bindings target a work pane, but arbitrary tmux split commands can leave the saved/restored work layout inconsistent. | `AGENTS.md`, single-sidebar design contract, controller layout ownership | Wrapper bindings fixed; arbitrary direct split remains limitation |
 | P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window hook test with pane ID/PID assertion | Fixed for active client window; multi-client behavior remains follow-up |
-| P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `run_session_delete`, `restore_archive`, `wait_for_sidebar_transition` | Remaining risk: restore critical tmux failures now abort with traceable reason |
+| P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `run_session_delete`, `restore_archive`, `wait_for_sidebar_transition` | Operation guard, completion state, rollback, and failure trace strengthened; rapid live E2E remains required |
 | P1 | Restore layout | A sidebar-side split followed by session movement can restore work panes but not the exact sidebar/work focus or layout expected by the user. | Horizontal/vertical PTY split-cycle tests | Fixed for tracked wrapper topology; metadata-missing multi-pane targets fail closed |
 | P2 | Destructive action | `d All` must not terminate unrelated tmux sessions. | Managed-session contract test | Fixed: only `@dotfiles_sidebar_managed` sessions are removed |
 | P2 | Installer/X | With `DISPLAY` set but no usable X server, installation previously invoked `xrdb -merge` and emitted an X connection error. | Isolated install with `DISPLAY=:0` | Fixed: `xrdb -query` must succeed first |
@@ -76,8 +76,13 @@ pre-existing sessions, or live installation are side-effect free.
   version 2 now records pane IDs, geometry, active state, and window geometry;
   restore verifies geometry and active-pane focus. Exact arbitrary-topology
   identity remains a follow-up acceptance item.
+- Archive output is now validated before rename, uses a process-unique filename,
+  and bulk archive failure prevents managed session deletion. Restore imports
+  shell history only after topology/client/sidebar success and records an
+  archive marker to avoid duplicate imports.
 - A two-client PTY test confirms that a non-owner client cannot toggle the
   shared sidebar.
+- Stale owner client metadata is cleared before a new sidebar owner is claimed.
 - Failure injection covers snapshot, move, client-switch, restore-layout,
   sidebar-focus, and transition rollback boundaries.
 

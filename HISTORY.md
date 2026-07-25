@@ -8,6 +8,30 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - archive transactional safety와 stale owner 정리
+
+변경:
+- archive를 최종 rename 전에 구조 검증하고, write/rename/history directory
+  실패를 성공으로 삼지 않도록 보강했습니다.
+- archive 파일명에 process 고유값을 포함해 같은 초 timestamp의 덮어쓰기를
+  방지했습니다.
+- bulk archive 중 하나라도 실패하면 managed session 삭제를 중단합니다.
+- restore topology/client/sidebar 성공 이후에만 shell history를 import하고,
+  archive별 marker로 중복 import를 방지합니다.
+- sidebar owner client가 종료된 stale client를 새 owner claim 전에 정리합니다.
+- session switch/restore 중 active-window hook이 동시에 layout을 덮어쓰지 않도록
+  operation busy guard를 적용하고, switch 실패 상태를 명시적으로 기록합니다.
+
+검증:
+- archive validation, restore history import 위치, stale owner 경로 정적 검사 PASS
+- 기존 contract, managed-session, multi-client, failure-injection,
+  raw-layout 테스트 PASS
+- 전용 tmux socket 접근은 sandbox 제한으로 승격 실행했습니다.
+
+후속 주의:
+- 비동기 archive/restore의 실제 사용자 급속 입력과 임의 topology는 기존
+  실환경 acceptance 범위로 계속 추적합니다.
+
 ## 2026-07-25 - archive v2 geometry identity와 multi-client 검증
 
 변경:
