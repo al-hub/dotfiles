@@ -25,6 +25,21 @@
 - 임의 pane topology에서 원본 process 상태와 완전한 pane identity를 재현하는
   acceptance test, legacy v1 archive end-to-end fixture가 남아 있습니다.
 
+## 2026-07-25 - horizontal split round-trip bug reproduction
+
+사용자 보고:
+- session을 가로 split한 뒤 다른 session으로 이동했다가 돌아오면 sidebar
+  형태가 무너집니다.
+
+작업 결과:
+- 실제 attached PTY 키보드 입력으로 해당 시나리오를 재현하는
+  `test-keyboard-e2e-split-cycle.sh`를 추가했습니다.
+- 현재 결과는 RED이며 sidebar width가 35에서 1로 감소하고 work pane 수는
+  2개로 유지됩니다.
+- 분석상 session 이동 controller가 multi-pane target에 sidebar를 다시
+  `move-pane`할 때 geometry/topology 보존 없이 삽입하는 것이 핵심 원인입니다.
+- 요청에 따라 production code는 수정하지 않았습니다.
+
 ## 2026-07-25 - active window와 managed d All 개선 적용
 
 작업 결과:

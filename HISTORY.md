@@ -22,6 +22,22 @@
 - version 1 archive 입력은 legacy parser 경로로 유지
 - arbitrary topology의 원본 pane process/정확한 identity 재현은 아직 master 승격 전 후속 검증입니다.
 
+## 2026-07-25 - horizontal split session round-trip RED reproduction
+
+변경:
+- 실사용 PTY 입력으로 session 3개 생성 → 특정 session `Ctrl+a |` 가로 split
+  → 다른 session 이동 → 원래 session 복귀 시나리오를 추가했습니다.
+- split 전후 sidebar count/width, work pane 수, window layout을 비교하고 실패 시
+  실제 geometry를 출력합니다.
+
+검증:
+- 재현 테스트는 현재 branch에서 의도적으로 RED입니다.
+- 관측 결과 sidebar width가 `35`에서 `1`로 줄고 work pane 수는 유지됩니다.
+- 원인은 `sidebar_controller_move_to_session`의 다중 work-pane 대상 `move-pane`
+  재삽입 과정이 pane ID/count는 유지하지만 sidebar geometry/topology를 보존하지
+  못하는 경로로 분석했습니다.
+- 이번 변경에는 production code 수정이 없습니다.
+
 ## 2026-07-25 - active window hook과 managed session 삭제 범위 구현
 
 변경:

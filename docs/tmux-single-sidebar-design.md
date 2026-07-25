@@ -130,3 +130,8 @@ The scenario suite must verify:
 Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
 snapshot, restore-layout, focus, and transition rollback without leaving a
 duplicate sidebar or an unrecoverable operation state.
+
+The split-cycle reproduction is currently RED: a real PTY creates a horizontal
+work split, switches away, and returns; the sidebar remains unique but its
+width/topology changes. This is a known acceptance failure and must be fixed
+before any `master` promotion.

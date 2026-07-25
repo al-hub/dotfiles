@@ -89,4 +89,33 @@ pre-existing sessions, or live installation are side-effect free.
 4. Exercise version 2 archives against more arbitrary pane topologies and add
    an end-to-end legacy version 1 archive fixture.
 
+## 2026-07-25 split-cycle reproduction
+
+The real-PTY reproduction is `tests/tmux-single-sidebar/test-keyboard-e2e-split-cycle.sh`.
+It performs the user sequence:
+
+1. Open/focus the sidebar and create `split-cycle-1` through `split-cycle-3`.
+2. Select `split-cycle-1` and press `Ctrl+a |` to create the configured
+   horizontal work split.
+3. Return focus to the sidebar with the standard tmux `Ctrl+a o` pane rotation.
+4. Select `split-cycle-2`, then return to `split-cycle-1`.
+5. Compare sidebar count/width, work-pane count, and window layout before and
+   after the round trip.
+
+Current result is intentionally RED:
+
+```text
+before: sidebars=1 work_panes=2 sidebar_width=35
+after:  sidebars=1 work_panes=2 sidebar_width=1
+```
+
+The layout changes from a 35-column sidebar plus two work panes to a 1-column
+sidebar plus resized work panes. The failure occurs during the existing
+single-sidebar move path: `sidebar_controller_move_to_session` snapshots only
+the selected target work pane, then `move-pane -b -h -l <sidebar-width>` inserts
+the shared sidebar into a target window that already has a multi-pane layout.
+The move preserves pane count and pane ID but does not preserve the sidebar
+geometry/topology. This is an analysis finding only; no production fix is
+included in this change.
+
 Until these items are resolved, this branch remains unsuitable for `master`.

@@ -123,9 +123,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal) ;;
+    full|minimal|split-cycle) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full or minimal\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, or split-cycle\n' >&2
         exit 2
         ;;
 esac
@@ -276,6 +276,114 @@ wait_for_sidebar_input_ready()
     wait_until 'sidebar input readiness' true sidebar_input_ready
 }
 
+work_pane_count()
+{
+    local session_name="$1"
+    tmuxc list-panes -t "=$session_name:" -F '#{pane_title}' 2>/dev/null |
+        awk '$0 != "dotfiles-session-sidebar" { count++ } END { print count + 0 }'
+}
+
+session_window_layout()
+{
+    tmuxc display-message -p -t "=$1:" '#{window_layout}' 2>/dev/null || true
+}
+
+session_sidebar_width()
+{
+    tmuxc list-panes -t "=$1:" -F '#{pane_title}|#{pane_width}' 2>/dev/null |
+        awk -F '|' '$1 == "dotfiles-session-sidebar" { print $2; exit }'
+}
+
+run_split_cycle_reproduction()
+{
+    local target_layout_before target_layout_after target_sidebar_width
+
+    # Match the normal user setup: focus the sidebar after the initial pane
+    # split so that all following actions are physical PTY keyboard input.
+    send_keys $'\001s'
+    wait_until 'split-cycle sidebar toggle off' 0 count_sidebars
+    send_keys $'\001s'
+    wait_until 'split-cycle sidebar toggle on' 1 count_sidebars
+    wait_for_sidebar_input_ready
+
+    # Create three sessions exactly as a user does from the sidebar.
+    for index in 1 2 3; do
+        before_generation="$(action_generation)"
+        send_keys 'c'
+        wait_for_prompt_ready
+        printf -v session_input 'split-cycle-%s' "$index"
+        send_keys "$session_input"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sessions $((index + 1)) "split-cycle session $index creation"
+    done
+    wait_for_sessions 4 'split-cycle sessions'
+
+    # The cursor is on split-cycle-3. Move to split-cycle-1 and select it.
+    for ignored in 1 2; do
+        before_generation="$(action_generation)"
+        send_keys $'\033[B'
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sidebar_input_ready
+    done
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'split-cycle target session' split-cycle-1 client_session
+    wait_for_sidebar_input_ready
+
+    # User action: Ctrl+a | (configured horizontal work-pane split).
+    send_keys $'\001|'
+    wait_until 'horizontal split in target session' 2 work_pane_count split-cycle-1
+    # The split binding leaves focus in the newly-created work pane. In a
+    # real terminal the user returns focus to the sidebar before navigating;
+    # the standard tmux prefix-o pane rotation returns focus to the sidebar
+    # without using tmux send-keys.
+    send_keys $'\001o'
+    wait_for_sidebar_input_ready
+    target_sidebar_width="$(session_sidebar_width split-cycle-1)"
+    target_layout_before="$(session_window_layout split-cycle-1)"
+    test_log "split-cycle.after-split session=split-cycle-1 sidebar_width=$target_sidebar_width layout=$target_layout_before"
+
+    # User action: select another session, then return to the split session.
+    before_generation="$(action_generation)"
+    send_keys $'\033[B'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'split-cycle second session' split-cycle-2 client_session
+    wait_for_sidebar_input_ready
+
+    before_generation="$(action_generation)"
+    send_keys $'\033[A'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'split-cycle return session' split-cycle-1 client_session
+    wait_for_sidebar_input_ready
+
+    target_layout_after="$(session_window_layout split-cycle-1)"
+    test_log "split-cycle.after-return session=split-cycle-1 sidebar_width=$(session_sidebar_width split-cycle-1) layout=$target_layout_after"
+    if [ "$(count_sidebars)" != 1 ] ||
+        [ "$(work_pane_count split-cycle-1)" != 2 ] ||
+        [ "$(session_sidebar_width split-cycle-1)" != "$target_sidebar_width" ] ||
+        [ "$target_layout_after" != "$target_layout_before" ]; then
+        printf 'ERROR: split-cycle layout changed after leaving and returning to horizontally split session\n' >&2
+        printf 'before: sidebars=%s work_panes=2 sidebar_width=%s layout=%s\n' \
+            "$(count_sidebars)" "$target_sidebar_width" "$target_layout_before" >&2
+        printf 'after:  sidebars=%s work_panes=%s sidebar_width=%s layout=%s\n' \
+            "$(count_sidebars)" "$(work_pane_count split-cycle-1)" \
+            "$(session_sidebar_width split-cycle-1)" "$target_layout_after" >&2
+        return 1
+    fi
+    printf 'PASS: split-cycle preserved horizontal work split and sidebar geometry\n'
+}
+
 wait_for_action_generation_change()
 {
     local previous="$1" deadline=$(( $(date +%s) + 20 ))
@@ -386,6 +494,11 @@ observer_read_loop &
 OBSERVER_LOG_PID=$!
 sleep 0.1
 test_log "observer.started pid=$OBSERVER_PID"
+
+if [ "$SCENARIO" = split-cycle ]; then
+    run_split_cycle_reproduction
+    exit 0
+fi
 
 if [ "$SCENARIO" = minimal ]; then
     # Isolate the first post-switch Down from the longer workflow. This must
