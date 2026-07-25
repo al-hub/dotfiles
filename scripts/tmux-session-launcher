@@ -478,6 +478,9 @@ EOF
                 return 0
             fi
         fi
+        # Direct tmux split/resize can invalidate the cached work-only layout.
+        # Never archive a stale layout or a layout containing the sidebar.
+        trace_event "archive.layout-stale session=$target window=$window_index work_panes=$work_pane_count cached_panes=${layout_pane_count_value:-0}"
         printf '\n'
         return 0
     fi
@@ -2773,7 +2776,9 @@ prompt_line()
     # modal line inputs, so use the terminal line discipline to block until a
     # real Enter byte arrives instead of treating an empty raw read as Enter.
     prompt_stty_state="$(stty -g 2>/dev/null || true)"
-    stty -echo icanon icrnl 2>/dev/null || true
+    # Modal line input must echo the text being entered. The main event loop
+    # restores its raw mode after this prompt returns.
+    stty echo icanon icrnl 2>/dev/null || true
 
     move_cursor "$height" 1
     clear_line
@@ -2956,8 +2961,14 @@ apply_restored_window_layout()
 
     trace_event "restore.layout.begin target=$target panes=${pane_ids:-none}"
     restored_layout="$(layout_with_pane_ids "$layout" "$pane_ids")"
-    tmux select-layout -t "$target" "$restored_layout" >/dev/null 2>&1 || true
-    tmux set-option -wq -t "$target" "$WORK_LAYOUT_OPTION" "$restored_layout" 2>/dev/null || true
+    if ! tmux select-layout -t "$target" "$restored_layout" >/dev/null 2>&1; then
+        trace_event "restore.layout.error target=$target reason=select-layout"
+        return 1
+    fi
+    if ! tmux set-option -wq -t "$target" "$WORK_LAYOUT_OPTION" "$restored_layout" 2>/dev/null; then
+        trace_event "restore.layout.error target=$target reason=save-layout"
+        return 1
+    fi
     trace_event "restore.layout.end target=$target"
 }
 
@@ -3283,7 +3294,10 @@ restore_archive()
         case "$record" in
             window)
                 if [ "$first_window" = "false" ] && [ -n "$current_window_target" ]; then
-                    apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"
+                    if ! apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"; then
+                        trace_event "restore.abort session=$restore_name window=$current_window reason=layout"
+                        return 1
+                    fi
                 fi
                 window_index="$a"
                 window_name="$b"
@@ -3332,7 +3346,10 @@ restore_archive()
                 ;;
             endwindow)
                 if [ -n "$current_window_target" ]; then
-                    apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"
+                    if ! apply_restored_window_layout "$current_window_target" "$window_layout" "$current_window_pane_ids"; then
+                        trace_event "restore.abort session=$restore_name window=$current_window reason=layout"
+                        return 1
+                    fi
                 fi
                 current_window=""
                 current_window_target=""
@@ -3348,7 +3365,10 @@ restore_archive()
 
     if [ -n "$active_window" ]; then
         trace_event "restore.select-window.begin session=$restore_name"
-        tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1 || true
+        if ! tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1; then
+            trace_event "restore.abort session=$restore_name reason=select-window"
+            return 1
+        fi
         trace_event "restore.select-window.end session=$restore_name"
     fi
     selected_session="$restore_name"
@@ -3369,18 +3389,30 @@ restore_archive()
     trace_event "restore.target-pane.end session=$restore_name window=$restore_target_window pane=$restore_target_pane"
     if [ -n "$restore_target_pane" ]; then
         trace_event "restore.sidebar.begin session=$restore_name pane=$restore_target_pane"
-        open_sidebar "$restore_target_pane" false "$width" "" true || true
+        if ! open_sidebar "$restore_target_pane" false "$width" "" true; then
+            trace_event "restore.abort session=$restore_name reason=open-sidebar"
+            return 1
+        fi
         trace_event "restore.sidebar.end session=$restore_name pane=$restore_target_pane"
     else
         trace_event "restore.sidebar.ensure.begin session=$restore_name"
-        ensure_sidebar_for_session "$restore_name" || true
+        if ! ensure_sidebar_for_session "$restore_name"; then
+            trace_event "restore.abort session=$restore_name reason=ensure-sidebar"
+            return 1
+        fi
         trace_event "restore.sidebar.ensure.end session=$restore_name"
     fi
     trace_event "restore.switch-client.begin session=$restore_name client=$restore_client_tty"
     if [ -n "$restore_client_tty" ]; then
-        sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null || true
+        if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
+            trace_event "restore.abort session=$restore_name reason=switch-client"
+            return 1
+        fi
     else
-        tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null || true
+        if ! tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
+            trace_event "restore.abort session=$restore_name reason=switch-client"
+            return 1
+        fi
     fi
     trace_event "restore.switch-client.end session=$restore_name"
     trace_event "restore.force-refresh.begin session=$restore_name"
@@ -3394,7 +3426,11 @@ restore_archive()
         return 1
     }
     if [ -n "$restore_client_tty" ]; then
-        tmux select-pane -t "$(find_global_sidebar_pane || true)" 2>/dev/null || true
+        restore_sidebar_pane="$(find_global_sidebar_pane || true)"
+        if [ -z "$restore_sidebar_pane" ] || ! tmux select-pane -t "$restore_sidebar_pane" 2>/dev/null; then
+            trace_event "restore.abort session=$restore_name reason=focus-sidebar"
+            return 1
+        fi
         tmux refresh-client -S -t "$restore_client_tty" 2>/dev/null || true
         trace_event "restore.input-focus.reassert session=$restore_name client=$restore_client_tty"
     fi

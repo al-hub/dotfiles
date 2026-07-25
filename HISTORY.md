@@ -8,6 +8,24 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - installer 안전성과 sidebar prompt/restore 오류 처리 보강
+
+변경:
+- 설치 중 기존 tmux server/session을 종료하지 않고 보존하도록 변경했습니다.
+- OpenCode CLI 원격 설치를 `DOTFILES_INSTALL_OPENCODE_CLI=true` 명시 방식으로 제한했습니다.
+- 사용 가능한 X display를 확인한 뒤에만 `xrdb -merge`를 실행합니다.
+- sidebar의 `New:`/rename 입력에서 사용자가 입력한 문자를 볼 수 있도록 echo를 복구했습니다.
+- restore의 layout, window, sidebar, client 전환 및 focus 복구 실패를 숨기지 않고 중단·trace하도록 보강했습니다.
+
+검증:
+- `bash -n install.sh`
+- `bash -n scripts/tmux-session-launcher`
+- single-sidebar contract test PASS
+- 강화된 PTY keyboard E2E 단일 run PASS: `c` 입력 echo, 6회 session 전환,
+  삭제/archiving, 6회 restore, `d All` 종료
+- 2회 반복 중 1회는 restore 직후 action-generation timeout이 남아 반복 안정성은
+  후속 관찰 대상으로 유지합니다.
+
 ## 2026-07-25 - 실사용 side-effect 및 bug audit 문서화
 
 요약:

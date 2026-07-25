@@ -189,6 +189,12 @@ sidebar_is_active()
     fi
 }
 
+sidebar_pane_id()
+{
+    tmuxc list-panes -a -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }'
+}
+
 wait_until()
 {
     local description="$1" expected="$2" command_name="$3" deadline=$(( $(date +%s) + 20 ))
@@ -250,6 +256,19 @@ wait_for_prompt_ready()
 wait_for_prompt_complete()
 {
     wait_until 'prompt completion' 0 prompt_ready
+}
+
+wait_for_prompt_text()
+{
+    local expected="$1" deadline=$(( $(date +%s) + 20 )) capture
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        capture="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null || true)"
+        printf '%s\n' "$capture" | grep -F --quiet "$expected" && return 0
+        sleep 0.05
+    done
+    test_log "wait.prompt-text.timeout expected=$expected state=$(tmux_state_snapshot)"
+    printf 'ERROR: timeout waiting for prompt text (%s)\n' "$expected" >&2
+    return 1
 }
 
 wait_for_sidebar_input_ready()
@@ -405,8 +424,14 @@ for index in 1 2 3 4 5 6; do
     before_generation="$(action_generation)"
     send_keys 'c'
     wait_for_prompt_ready
-    printf -v session_input 'keyboard-%s\r' "$index"
+    printf -v session_input 'keyboard-%s' "$index"
     send_keys "$session_input"
+    if [ "$index" -eq 1 ]; then
+        prompt_capture="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)")"
+        printf '%s\n' "$prompt_capture" | grep -F --quiet "New: $session_input"
+        printf 'PASS: c visibly echoes the typed session name\n'
+    fi
+    send_keys $'\r'
     wait_for_prompt_complete
     wait_for_action_generation_change "$before_generation"
     wait_for_sessions $((index + 1)) "keyboard session $index creation"
@@ -525,8 +550,7 @@ wait_for_sidebar_input_ready
 send_keys 'd'
 wait_for_prompt_ready
 send_keys $'All\r'
-wait_for_prompt_complete
-wait_for_prompt_ready
+wait_for_prompt_text 'Save Session?'
 send_keys $'y\r'
 # The final confirmation terminates the tmux server, so the sidebar option
 # disappears before a prompt-complete poll can observe the value 0.

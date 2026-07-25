@@ -3,6 +3,7 @@ set -euo pipefail
 
 DOTFILES_STABLE_VERSION="v0.1"
 DOTFILES_VERSION="${DOTFILES_VERSION:-master}"
+DOTFILES_INSTALL_OPENCODE_CLI="${DOTFILES_INSTALL_OPENCODE_CLI:-false}"
 REPO_RAW_BASE_URL="${REPO_RAW_BASE_URL:-https://raw.githubusercontent.com/al-hub/dotfiles}"
 REPO_RAW_URL="${REPO_RAW_URL:-}"
 INSTALL_TOML_URL="${INSTALL_TOML_URL:-}"
@@ -36,6 +37,7 @@ Environment:
   DOTFILES_VERSION       Version or branch to install when --v is not provided.
   REPO_RAW_URL           Override the raw file base URL.
   INSTALL_TOML_URL       Override the install.toml URL.
+  DOTFILES_INSTALL_OPENCODE_CLI  Set to true to install the OpenCode CLI remotely.
 EOF
 }
 
@@ -372,8 +374,7 @@ cleanup_tmux_runtime()
     command_exists tmux || return 0
 
     if tmux has-session >/dev/null 2>&1; then
-        log "Stopping existing tmux server so the new tmux config is used."
-        tmux kill-server >/dev/null 2>&1 || true
+        log "Existing tmux server detected; preserving its sessions. Restart tmux manually to apply the new config."
     fi
 }
 
@@ -442,7 +443,7 @@ load_xresources()
 
     [ -f "$target_path" ] || return 0
 
-    if [ -n "${DISPLAY:-}" ] && command_exists xrdb; then
+    if [ -n "${DISPLAY:-}" ] && command_exists xrdb && xrdb -query >/dev/null 2>&1; then
         if xrdb -merge "$target_path"; then
             log "Loaded X resources from $target_path"
         else
@@ -462,8 +463,10 @@ after_install_item()
         opencode)
             if opencode_cli_exists; then
                 log "OpenCode CLI already installed; updating config only."
-            else
+            elif [ "$DOTFILES_INSTALL_OPENCODE_CLI" = "true" ]; then
                 install_opencode_cli
+            else
+                log "OpenCode CLI not found; config installed without remote CLI installation. Set DOTFILES_INSTALL_OPENCODE_CLI=true to install it."
             fi
             ;;
         tmux) cleanup_tmux_runtime ;;

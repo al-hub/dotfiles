@@ -9,6 +9,23 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - 실사용 side-effect 수정 1차 적용
+
+사용자 결정:
+- `feature/single-sidebar`에서만 구현하며 `master` 반영은 보류합니다.
+
+작업 결과:
+- 설치 시 기존 tmux server를 종료하지 않도록 변경했습니다.
+- OpenCode CLI 원격 설치를 명시적 opt-in으로 변경했습니다.
+- `c`/rename prompt 입력 echo를 복구했습니다.
+- restore 핵심 단계의 오류를 숨기지 않고 중단·trace하도록 변경했습니다.
+
+남은 검증:
+- 실제 PTY에서 입력 표시와 split/archive/restore를 반복 검증합니다.
+- session/window 이동 후 sidebar ownership invariant를 확인합니다.
+- 단일 full keyboard E2E와 contract는 PASS했지만 반복 실행에서 restore 직후
+  action-generation timeout이 1회 관찰되어 안정성 추적을 계속합니다.
+
 ## 2026-07-24 - 최종 원인 확정을 위한 PTY 관측 보강
 
 사용자 요청:
