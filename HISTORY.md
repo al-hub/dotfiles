@@ -8,6 +8,25 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - external tmux client conflict handling
+
+변경:
+- archive/delete/restore operation 시작 시 session identity, 대상 client set,
+  owner client tty/session/window fingerprint를 저장하고 destructive/client
+  switch 직전에 재검증하도록 했습니다.
+- non-owner client의 session/window hook은 sidebar를 이동하지 않고
+  `external.client-change` trace만 기록합니다.
+- 외부 client attach, 대상 session 삭제, restore 이름 선점이 감지되면 operation을
+  conflict 실패 처리하고 외부 session을 보존합니다.
+- restore 중 생성한 session의 identity가 변경된 경우 해당 session만 안전하게
+  정리하고, 외부가 선점한 session은 제거하지 않습니다.
+- 전용 multi-client conflict attached-session 테스트를 추가했습니다.
+
+검증:
+- external attach/delete/restore-name collision conflict 테스트 PASS
+- 전체 keyboard E2E, split/direct layout, multi-client ownership 회귀 PASS
+- `master`는 변경하지 않았습니다.
+
 ## 2026-07-25 - rapid archive/restore operation ownership
 
 변경:

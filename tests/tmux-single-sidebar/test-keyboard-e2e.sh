@@ -508,6 +508,7 @@ run_rapid_operations_reproduction()
 
         previous_session_count="$(count_sessions)"
         trace_before="$(grep -c 'input.rejected.*reason=operation-complete-drain' "$RUN_DIR/trace.log" 2>/dev/null || true)"
+        trace_before="${trace_before:-0}"
         before_generation="$(action_generation)"
         send_keys 'd'
         wait_for_prompt_ready
@@ -524,6 +525,7 @@ run_rapid_operations_reproduction()
         wait_for_operation_quiet
         wait_for_sidebar_input_ready
         trace_rejected="$(grep -c 'input.rejected.*reason=operation-complete-drain' "$RUN_DIR/trace.log" 2>/dev/null || true)"
+        trace_rejected="${trace_rejected:-0}"
         [ "$trace_rejected" -gt "$trace_before" ] || {
             printf 'ERROR: rapid delete input was not rejected (iteration %s)\n' "$iteration" >&2
             return 1

@@ -38,6 +38,12 @@ to the newly active window while preserving its pane ID and process.
    asynchronous completion cannot overwrite a newer operation state.
 14. Input buffered while an operation is busy is rejected and drained before
    the next TUI action is read.
+15. Non-owner client hooks cannot move or claim the sidebar; owner operations
+   revalidate session identity, client attachment, and owner client state before
+   destructive or client-switch phases.
+16. An external conflict fails the operation, preserves externally created
+   sessions, removes only matching partial restore state, and restores the owner
+   client/sidebar when safe.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -147,6 +153,10 @@ duplicate sidebar or an unrecoverable operation state.
 Archive/delete/restore stress coverage must verify operation-token ownership,
 pending-input rejection, failed archive preservation, and final idle/failed
 state after rapid `d`, `o`, navigation, and Enter input.
+
+Multi-client conflict coverage must verify external client attachment, target
+session deletion, restore-name collision, and owner session/window changes
+without creating a duplicate sidebar or deleting an external session.
 
 The split-cycle reproductions now pass: real PTY horizontal `Ctrl+a |` and
 vertical `Ctrl+a _` work splits preserve sidebar geometry and work topology

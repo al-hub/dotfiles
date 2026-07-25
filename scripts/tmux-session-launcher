@@ -405,6 +405,107 @@ current_client_tty()
     tmux display-message -p '#{client_tty}' 2>/dev/null || true
 }
 
+session_identity_fingerprint()
+{
+    local session_name_value="$1"
+    tmux display-message -p -t "=$session_name_value:" '#{session_id}|#{session_created}' 2>/dev/null || true
+}
+
+session_client_fingerprint()
+{
+    local session_name_value="$1"
+    tmux list-clients -F '#{client_control_mode}|#{client_tty}|#{session_name}' 2>/dev/null |
+        awk -F '|' -v session_name="$session_name_value" '$1 != 1 && $3 == session_name { print $2 }' |
+        sort | paste -sd, -
+}
+
+owner_client_fingerprint()
+{
+    local owner="${1:-}" client_state
+    [ -n "$owner" ] || owner="$(sidebar_owner_client)"
+    [ -n "$owner" ] || {
+        printf '%s\n' none
+        return 0
+    }
+    client_state="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}|#{session_name}|#{window_id}' 2>/dev/null |
+        awk -F '|' -v owner="$owner" '$1 != 1 && $2 == owner { print $2 "|" $3 "|" $4; exit }')"
+    printf '%s\n' "${client_state:-missing}"
+}
+
+operation_conflict()
+{
+    local operation_id="$1" kind="$2" phase="$3" reason="$4"
+    trace_event "operation.conflict operation_id=$operation_id kind=$kind phase=$phase reason=$reason"
+    sidebar_operation_finish failed "$operation_id" || true
+    return 1
+}
+
+check_delete_precondition()
+{
+    local session_name_value="$1" operation_id="$2" expected_identity="$3" expected_clients="$4" expected_owner="$5" phase="$6"
+    local actual_identity actual_clients actual_owner
+    actual_identity="$(session_identity_fingerprint "$session_name_value")"
+    [ -n "$actual_identity" ] || {
+        operation_conflict "$operation_id" delete "$phase" session-missing
+        return 1
+    }
+    [ "$actual_identity" = "$expected_identity" ] || {
+        operation_conflict "$operation_id" delete "$phase" session-identity-changed
+        return 1
+    }
+    actual_clients="$(session_client_fingerprint "$session_name_value")"
+    [ "$actual_clients" = "$expected_clients" ] || {
+        operation_conflict "$operation_id" delete "$phase" client-set-changed
+        return 1
+    }
+    actual_owner="$(owner_client_fingerprint)"
+    [ "$actual_owner" = "$expected_owner" ] || {
+        operation_conflict "$operation_id" delete "$phase" owner-client-changed
+        return 1
+    }
+}
+
+check_restore_precondition()
+{
+    local operation_id="$1" phase="$2" expected_owner="$3" original_session="$4" expected_original_identity="$5" restore_name_value="$6"
+    local actual_owner actual_identity
+    actual_owner="$(owner_client_fingerprint)"
+    if [ "$actual_owner" = none ] && [ "$expected_owner" != none ]; then
+        actual_owner="$(owner_client_fingerprint "${expected_owner%%|*}")"
+    fi
+    trace_event "operation.precondition operation_id=$operation_id kind=restore phase=$phase expected-owner=$expected_owner actual-owner=$actual_owner target=$restore_name_value"
+    if [ "$expected_owner" != none ] && [ "$actual_owner" != "$expected_owner" ]; then
+        case "$actual_owner" in
+            *"|$restore_name_value|"*)
+                # Creating/opening the restore target can legitimately move
+                # the owner client before the explicit switch-client step.
+                trace_event "operation.precondition operation_id=$operation_id kind=restore phase=$phase owner-transition=internal target=$restore_name_value"
+                ;;
+            *)
+                operation_conflict "$operation_id" restore "$phase" owner-client-changed
+                return 1
+                ;;
+        esac
+    fi
+    if [ -n "$original_session" ] && [ -n "$expected_original_identity" ]; then
+        actual_identity="$(session_identity_fingerprint "$original_session")"
+        [ "$actual_identity" = "$expected_original_identity" ] || {
+            operation_conflict "$operation_id" restore "$phase" source-session-changed
+            return 1
+        }
+    fi
+    if [ "${created:-false}" = true ] && [ -n "${restore_created_identity:-}" ]; then
+        actual_identity="$(session_identity_fingerprint "$restore_name_value")"
+        [ "$actual_identity" = "$restore_created_identity" ] || {
+            operation_conflict "$operation_id" restore "$phase" restored-session-changed
+            return 1
+        }
+    elif session_exists "$restore_name_value"; then
+        operation_conflict "$operation_id" restore "$phase" restore-name-collision
+        return 1
+    fi
+}
+
 sidebar_owner_client()
 {
     tmux show-option -gqv "$SIDEBAR_OWNER_CLIENT_OPTION" 2>/dev/null || true
@@ -463,8 +564,8 @@ install_sidebar_hooks()
 {
     local quoted_script
     quoted_script="$(shell_quote "$SCRIPT_PATH")"
-    tmux set-hook -g client-session-changed "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
-    tmux set-hook -g after-select-window "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
+    tmux set-hook -g client-session-changed "run-shell -b '$quoted_script --sync-active-window #{hook_client}'" 2>/dev/null || true
+    tmux set-hook -g after-select-window "run-shell -b '$quoted_script --sync-active-window #{hook_client}'" 2>/dev/null || true
     tmux set-hook -g after-split-window "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
     tmux set-hook -g after-resize-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
     tmux set-hook -g after-select-layout "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
@@ -535,7 +636,7 @@ sync_sidebar_focus()
 
 sync_active_window()
 {
-    local guard active_session active_window sidebar_pane sidebar_window owner current_client
+    local guard active_session active_window sidebar_pane sidebar_window owner current_client hook_client="${1:-}"
     guard="$(tmux show-option -gqv "$SIDEBAR_HOOK_GUARD_OPTION" 2>/dev/null || true)"
     [ "$guard" = 1 ] && return 0
     if sidebar_operation_busy; then
@@ -545,13 +646,14 @@ sync_active_window()
     sidebar_pane="$(find_global_sidebar_pane || true)"
     [ -n "$sidebar_pane" ] || return 0
     owner="$(sidebar_owner_client)"
-    current_client="$(current_client_tty)"
+    current_client="${hook_client:-$(current_client_tty)}"
     if [ -n "$owner" ] && [ "$owner" != "$current_client" ]; then
+        trace_event "external.client-change owner=$owner client=${current_client:-none} action=ignored"
         trace_event "sidebar.hook.sync.skip reason=non-owner owner=$owner client=${current_client:-none}"
         return 0
     fi
-    active_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    active_window="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
+    active_session="$(tmux display-message -p -c "$current_client" '#S' 2>/dev/null || tmux display-message -p '#S' 2>/dev/null || true)"
+    active_window="$(tmux display-message -p -c "$current_client" '#{window_id}' 2>/dev/null || tmux display-message -p '#{window_id}' 2>/dev/null || true)"
     sidebar_window="$(sidebar_tmux_pane_window "$sidebar_pane" 2>/dev/null || true)"
     [ -n "$active_session" ] && [ -n "$active_window" ] || return 1
     [ "$active_window" = "$sidebar_window" ] && {
@@ -3574,6 +3676,7 @@ archive_session()
         trace_event "archive.rename.error session=$session_name"
         return 1
     fi
+    archive_path_result="$final_path"
     trace_event "archive.rename.end session=$session_name"
     if [ -n "$metrics_archive_start" ]; then
         metrics_archive_rename_us=$(( $(metrics_now_us) - metrics_archive_phase_start ))
@@ -3607,6 +3710,8 @@ EOF
 delete_all_sessions_after_archive()
 {
     local should_archive="${1:-false}" operation_id="${2:-}" managed_sessions session_name
+    local expected_owner actual_owner expected_identity expected_clients
+    declare -A expected_identities=() expected_client_sets=()
 
     trace_event "operation.worker.begin operation_id=$operation_id type=delete-all archive=$should_archive worker=${BASHPID:-$$}"
     operation_test_delay "$operation_id"
@@ -3616,12 +3721,36 @@ delete_all_sessions_after_archive()
         sidebar_operation_finish idle "$operation_id" || true
         return 0
     }
+    expected_owner="$(owner_client_fingerprint)"
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        expected_identities["$session_name"]="$(session_identity_fingerprint "$session_name")"
+        expected_client_sets["$session_name"]="$(session_client_fingerprint "$session_name")"
+    done <<< "$managed_sessions"
 
     if [ "$should_archive" = "true" ] && ! archive_all_sessions "$should_archive"; then
         trace_event "archive.all.abort reason=archive-failed"
         sidebar_operation_finish failed "$operation_id" || true
         return 1
     fi
+    actual_owner="$(owner_client_fingerprint)"
+    [ "$actual_owner" = "$expected_owner" ] || {
+        operation_conflict "$operation_id" delete-all before-kill owner-client-changed
+        return 1
+    }
+    while IFS= read -r session_name; do
+        [ -n "$session_name" ] || continue
+        expected_identity="${expected_identities[$session_name]:-}"
+        expected_clients="${expected_client_sets[$session_name]:-}"
+        [ "$(session_identity_fingerprint "$session_name")" = "$expected_identity" ] || {
+            operation_conflict "$operation_id" delete-all before-kill session-identity-changed
+            return 1
+        }
+        [ "$(session_client_fingerprint "$session_name")" = "$expected_clients" ] || {
+            operation_conflict "$operation_id" delete-all before-kill client-set-changed
+            return 1
+        }
+    done <<< "$managed_sessions"
     while IFS= read -r session_name; do
         [ -n "$session_name" ] || continue
         tmux kill-session -t "=$session_name" 2>/dev/null || true
@@ -3648,6 +3777,7 @@ delete_session_after_archive()
     local session_name="$1"
     local should_archive="${2:-false}"
     local operation_id="${3:-}"
+    local expected_identity="${4:-}" expected_clients="${5:-}" expected_owner="${6:-}"
     local current_client_session="" target_clients="" target_has_clients=false
     local next_session="" archive_fast_path=false
     local metrics_delete_start="" metrics_delete_operation_id=""
@@ -3656,6 +3786,7 @@ delete_session_after_archive()
 
     trace_event "operation.worker.begin operation_id=$operation_id type=delete-session session=$session_name archive=$should_archive worker=${BASHPID:-$$}"
     operation_test_delay "$operation_id"
+    check_delete_precondition "$session_name" "$operation_id" "$expected_identity" "$expected_clients" "$expected_owner" worker-start || return 1
 
     # archive_session performs the authoritative existence check.  The
     # archive fast path can therefore avoid a duplicate tmux has-session IPC;
@@ -3737,6 +3868,14 @@ delete_session_after_archive()
         trace_event "archive.delete-wrapper.end session=$session_name"
     fi
 
+    if ! check_delete_precondition "$session_name" "$operation_id" "$expected_identity" "$expected_clients" "$expected_owner" before-kill; then
+        if [ -n "${archive_path_result:-}" ]; then
+            rm -f "$archive_path_result" "${archive_path_result}${ARCHIVE_HISTORY_MARKER_SUFFIX}" 2>/dev/null || true
+            trace_event "operation.conflict.archive-preserved operation_id=$operation_id path=$archive_path_result"
+        fi
+        return 1
+    fi
+
     if [ "$archive_fast_path" = true ]; then
         debug_log "delete_session_after_archive kill-session fast path session=$session_name"
         tmux kill-session -t "=$session_name" 2>/dev/null || true
@@ -3759,19 +3898,25 @@ delete_session_after_archive()
 
 run_session_delete()
 {
-    session_name="$1"
-    should_archive="$2"
+    local session_name="$1" should_archive="$2"
+    local expected_identity expected_clients expected_owner
     new_sidebar_operation_id
-    operation_id="$sidebar_operation_id_result"
-    quoted_script="$(shell_quote "$SCRIPT_PATH")"
-    quoted_session="$(shell_quote "$session_name")"
-    quoted_archive="$(shell_quote "$should_archive")"
-    quoted_operation="$(shell_quote "$operation_id")"
+    local operation_id="$sidebar_operation_id_result"
+    expected_identity="$(session_identity_fingerprint "$session_name")"
+    expected_clients="$(session_client_fingerprint "$session_name")"
+    expected_owner="$(owner_client_fingerprint)"
+    local quoted_script="$(shell_quote "$SCRIPT_PATH")"
+    local quoted_session="$(shell_quote "$session_name")"
+    local quoted_archive="$(shell_quote "$should_archive")"
+    local quoted_operation="$(shell_quote "$operation_id")"
+    local quoted_identity="$(shell_quote "$expected_identity")"
+    local quoted_clients="$(shell_quote "$expected_clients")"
+    local quoted_owner="$(shell_quote "$expected_owner")"
 
     debug_log "run_session_delete session=$session_name should_archive=$should_archive operation_id=$operation_id"
     trace_event "operation.begin operation_id=$operation_id type=delete-session session=$session_name archive=$should_archive"
     sidebar_operation_set deleting "$operation_id"
-    if ! tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive $quoted_operation"; then
+    if ! tmux run-shell -b "$quoted_script --delete-session-after-archive $quoted_session $quoted_archive $quoted_operation $quoted_identity $quoted_clients $quoted_owner"; then
         sidebar_operation_finish failed "$operation_id" || true
         trace_event "operation.launch.error operation_id=$operation_id type=delete-session session=$session_name"
         return 1
@@ -3821,8 +3966,11 @@ restore_abort()
         session_exists "$restore_original_session"; then
         tmux switch-client -c "$restore_client_tty" -t "=$restore_original_session" 2>/dev/null || true
     fi
-    if [ -n "${restore_name:-}" ] && session_exists "$restore_name"; then
+    if [ "${created:-false}" = true ] && [ -n "${restore_name:-}" ] &&
+        [ "$(session_identity_fingerprint "$restore_name")" = "${restore_created_identity:-}" ]; then
         tmux kill-session -t "=$restore_name" 2>/dev/null || true
+    elif [ "${created:-false}" = true ] && [ -n "${restore_name:-}" ]; then
+        trace_event "operation.conflict.restore-preserved operation_id=${restore_operation_id:-none} session=$restore_name"
     fi
     sidebar_operation_finish failed "${restore_operation_id:-${metrics_restore_operation_id:-restore-$reason}}" || true
     return 1
@@ -3834,6 +3982,7 @@ restore_archive()
     [ -f "$archive_path" ] || return 1
     local metrics_restore_start="" metrics_restore_operation_id="" restore_operation_id="${2:-}"
     local restore_client_tty="" restore_original_session="" sidebar_pane_before="" sidebar_pid_before=""
+    local restore_original_identity="" restore_owner_identity="" restore_created_identity=""
     if [ -z "$restore_operation_id" ]; then
         new_sidebar_operation_id
         restore_operation_id="$sidebar_operation_id_result"
@@ -3856,7 +4005,8 @@ restore_archive()
         sidebar_operation_finish failed "$restore_operation_id" || true
         return 1
     fi
-    restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
+    restore_client_tty="$(sidebar_owner_client)"
+    [ -n "$restore_client_tty" ] || restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
     if [ -n "$restore_client_tty" ]; then
         restore_original_session="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}|#{session_name}' 2>/dev/null |
@@ -3867,6 +4017,8 @@ restore_archive()
     [ -n "$original_name" ] || original_name="restored"
 
     restore_name="$original_name"
+    restore_original_identity="$(session_identity_fingerprint "$restore_original_session")"
+    restore_owner_identity="$(owner_client_fingerprint "$restore_client_tty")"
     if session_exists "$restore_name"; then
         message_line "Exists: $restore_name"
         sidebar_operation_finish failed "$restore_operation_id" || true
@@ -3979,6 +4131,12 @@ restore_archive()
     done < "$archive_path"
     trace_event "restore.panes.end session=$restore_name created=$created"
 
+    restore_created_identity="$(session_identity_fingerprint "$restore_name")"
+    check_restore_precondition "$restore_operation_id" after-create "$restore_owner_identity" "$restore_original_session" "$restore_original_identity" "$restore_name" || {
+        restore_abort external-conflict
+        return 1
+    }
+
     if [ "$created" = "false" ]; then
         tmux new-session -d -s "$restore_name" -c "$HOME"
     fi
@@ -4014,7 +4172,7 @@ restore_archive()
             restore_abort open-sidebar
             return 1
         fi
-        trace_event "restore.sidebar.end session=$restore_name pane=$restore_target_pane"
+    trace_event "restore.sidebar.end session=$restore_name pane=$restore_target_pane"
     else
         trace_event "restore.sidebar.ensure.begin session=$restore_name"
         if ! ensure_sidebar_for_session "$restore_name"; then
@@ -4023,6 +4181,10 @@ restore_archive()
         fi
         trace_event "restore.sidebar.ensure.end session=$restore_name"
     fi
+    check_restore_precondition "$restore_operation_id" before-client-switch "$restore_owner_identity" "$restore_original_session" "$restore_original_identity" "$restore_name" || {
+        restore_abort external-conflict
+        return 1
+    }
     trace_event "restore.switch-client.begin session=$restore_name client=$restore_client_tty"
     if [ -n "$restore_client_tty" ]; then
         if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
@@ -4851,12 +5013,16 @@ main()
             return 0
             ;;
         --delete-session-after-archive)
-            delete_session_after_archive "${2:-}" "${3:-false}" "${4:-}"
+            delete_session_after_archive "${2:-}" "${3:-false}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"
             return 0
             ;;
         --delete-all-sessions-after-archive)
             delete_all_sessions_after_archive "${2:-false}" "${3:-}"
             return 0
+            ;;
+        --restore-archive)
+            restore_archive "${2:-}" "${3:-}"
+            return $?
             ;;
         --sidebar|"")
             ;;

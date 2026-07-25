@@ -17,8 +17,8 @@ and tmux server are not modified.
 | P0 | Installer | Installing the `tmux` item previously terminated the default tmux server. | `install.sh:after_install_item/cleanup_tmux_runtime` | Fixed: existing server is preserved and restart is user-controlled |
 | P1 | `c` prompt | `c` entered `New:` mode but typed session name was not rendered because prompt input used `stty -echo`. | Isolated installed launcher capture | Fixed: modal prompt enables echo |
 | P1 | Split/layout | Direct tmux split/resize commands while sidebar is open must update the sidebar-inclusive layout metadata before a later session move/archive/restore. | `test-keyboard-e2e-direct-layout.sh`, layout hook trace | Fixed on this branch: after-command and resize hooks save full layout metadata; sync is guarded and does not enter user operation-busy state |
-| P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window hook test with pane ID/PID assertion | Fixed for active client window; multi-client behavior remains follow-up |
-| P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `test-keyboard-e2e-rapid-operations.sh`, operation trace | Fixed for buffered keyboard input on this branch: unique operation ownership, pending-input drain, stale completion protection, and archive-failure preservation; external concurrent tmux clients remain follow-up |
+| P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window and multi-client conflict tests | Fixed for owner client; non-owner hooks are observation-only and external owner-operation conflicts fail closed |
+| P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. External client changes can race with archive completion or restore client switching. | `test-multi-client-operation-conflict.sh`, operation trace | Fixed for detected external attachment/deletion/name-collision changes: operation fails closed, external sessions are preserved, and matching partial restore is rolled back |
 | P1 | Restore layout | A sidebar-side split followed by session movement can restore work panes but not the exact sidebar/work focus or layout expected by the user. | Horizontal/vertical PTY split-cycle tests | Fixed for tracked wrapper topology; metadata-missing multi-pane targets fail closed |
 | P2 | Destructive action | `d All` must not terminate unrelated tmux sessions. | Managed-session contract test | Fixed: only `@dotfiles_sidebar_managed` sessions are removed |
 | P2 | Installer/X | With `DISPLAY` set but no usable X server, installation previously invoked `xrdb -merge` and emitted an X connection error. | Isolated install with `DISPLAY=:0` | Fixed: `xrdb -query` must succeed first |
@@ -88,13 +88,16 @@ pre-existing sessions, or live installation are side-effect free.
 - Async archive/delete/restore now use unique operation IDs. Workers verify
   ownership before finalizing state; pending PTY input is drained after a busy
   operation and logged as rejected.
+- Non-owner `client-session-changed`/window hooks now record
+  `external.client-change` without moving the shared sidebar. Archive/delete/
+  restore revalidate session identity, client set, and owner tty/session/window
+  before destructive or client-switch phases.
 
 ## Next audit order
 
 1. Verify installer preservation against a live, pre-existing tmux server.
 2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action. The direct split/resize hook path is now implemented; arbitrary pane identity restoration remains a follow-up topology test.
-3. Repeat active-window and rapid restore E2E at least three consecutive times.
-4. Exercise version 2 archives against more arbitrary pane topologies and add
+3. Exercise version 2 archives against more arbitrary pane topologies and add
    an end-to-end legacy version 1 archive fixture.
 
 ## 2026-07-25 split-cycle reproduction
@@ -168,3 +171,21 @@ PASS: rapid restore→navigation input is rejected during restore (3 iterations)
 The trace records `operation.begin`, worker PID/id, `input.rejected`, ownership
 mismatch, and final completion/failure. A failed single-session archive now
 leaves the session intact instead of deleting it after an unsuccessful archive.
+
+## 2026-07-25 multi-client operation conflict reproduction
+
+`tests/tmux-single-sidebar/test-multi-client-operation-conflict.sh` runs on a
+dedicated tmux socket with an owner attached client and an external client. It
+deliberately changes the topology during delayed operations:
+
+```text
+PASS: external client attach during delete causes conflict and preserves target
+PASS: external target deletion is detected without follow-up kill
+PASS: restore name collision preserves externally created session
+PASS: conflict trace contains operation identity and reason
+```
+
+The owner fingerprint intentionally excludes the active pane id because moving
+the shared sidebar can legitimately change that pane. It includes owner tty,
+session, and window; session identity and client attachment sets are checked
+separately for the operation target.

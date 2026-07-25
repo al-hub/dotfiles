@@ -9,6 +9,25 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - 외부 tmux client 동시 변경 conflict 처리
+
+사용자 결정:
+- owner client의 archive/delete/restore 중 외부 client가 session을 변경하면
+  sidebar operation을 실패·rollback하고 외부 변경은 강제로 되돌리지 않습니다.
+- owner 작업과 외부 client의 attach/delete/restore name collision을 우선 검증합니다.
+
+작업 결과:
+- session identity, target client attachment set, owner client tty/session/window을
+  operation precondition으로 저장하고 주요 단계에서 재검증합니다.
+- non-owner hook은 sidebar를 움직이지 않고 외부 변경 trace만 기록합니다.
+- 외부 attach 또는 target 삭제는 delete를 중단하고, restore 이름 선점은 외부
+  session을 보존한 채 restore를 중단합니다.
+- 전용 conflict 테스트에서 세 시나리오와 trace 검증이 PASS 했습니다.
+
+남은 범위:
+- 임의 pane topology의 process identity 완전 복원과 latency refactoring은
+  별도 후속 과제입니다.
+
 ## 2026-07-25 - 급속 archive/restore race 개선
 
 사용자 결정:
