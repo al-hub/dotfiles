@@ -40,6 +40,17 @@
   `move-pane`할 때 geometry/topology 보존 없이 삽입하는 것이 핵심 원인입니다.
 - 요청에 따라 production code는 수정하지 않았습니다.
 
+## 2026-07-25 - vertical split round-trip 추가
+
+작업 결과:
+- 동일한 실제 PTY 흐름에서 `Ctrl+a _` 세로 split을 수행하는 재현 테스트를
+  추가했습니다.
+- vertical도 RED이며 sidebar 폭은 유지되지만 full-height 배치가 lower-half로
+  바뀝니다.
+- horizontal/vertical 모두 session 이동 후 sidebar geometry/topology가 보존되지
+  않는 공통 구조를 확인했습니다.
+- 이번 변경에도 production code 수정은 없습니다.
+
 ## 2026-07-25 - active window와 managed d All 개선 적용
 
 작업 결과:

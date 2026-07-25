@@ -32,6 +32,7 @@ INPUT_SEQUENCE=0
 TRANSPORT="${TMUX_KEYBOARD_E2E_TRANSPORT:-bridge}"
 SYSCALL_TRACE="${TMUX_KEYBOARD_E2E_SYSCALL_TRACE:-auto}"
 SCENARIO="${TMUX_KEYBOARD_E2E_SCENARIO:-full}"
+SPLIT_DIRECTION="${TMUX_KEYBOARD_E2E_SPLIT_DIRECTION:-horizontal}"
 
 tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" "$@"; }
 
@@ -126,6 +127,13 @@ case "$SCENARIO" in
     full|minimal|split-cycle) ;;
     *)
         printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, or split-cycle\n' >&2
+        exit 2
+        ;;
+esac
+case "$SPLIT_DIRECTION" in
+    horizontal|vertical) ;;
+    *)
+        printf 'TMUX_KEYBOARD_E2E_SPLIT_DIRECTION must be horizontal or vertical\n' >&2
         exit 2
         ;;
 esac
@@ -296,7 +304,15 @@ session_sidebar_width()
 
 run_split_cycle_reproduction()
 {
-    local target_layout_before target_layout_after target_sidebar_width
+    local target_layout_before target_layout_after target_sidebar_width split_key split_label split_input
+
+    if [ "$SPLIT_DIRECTION" = vertical ]; then
+        split_key='_'
+        split_label='vertical'
+    else
+        split_key='|'
+        split_label='horizontal'
+    fi
 
     # Match the normal user setup: focus the sidebar after the initial pane
     # split so that all following actions are physical PTY keyboard input.
@@ -333,9 +349,10 @@ run_split_cycle_reproduction()
     wait_until 'split-cycle target session' split-cycle-1 client_session
     wait_for_sidebar_input_ready
 
-    # User action: Ctrl+a | (configured horizontal work-pane split).
-    send_keys $'\001|'
-    wait_until 'horizontal split in target session' 2 work_pane_count split-cycle-1
+    # User action: Ctrl+a | or Ctrl+a _ (configured work-pane split).
+    split_input=$'\001'"$split_key"
+    send_keys "$split_input"
+    wait_until "$split_label split in target session" 2 work_pane_count split-cycle-1
     # The split binding leaves focus in the newly-created work pane. In a
     # real terminal the user returns focus to the sidebar before navigating;
     # the standard tmux prefix-o pane rotation returns focus to the sidebar
@@ -373,7 +390,7 @@ run_split_cycle_reproduction()
         [ "$(work_pane_count split-cycle-1)" != 2 ] ||
         [ "$(session_sidebar_width split-cycle-1)" != "$target_sidebar_width" ] ||
         [ "$target_layout_after" != "$target_layout_before" ]; then
-        printf 'ERROR: split-cycle layout changed after leaving and returning to horizontally split session\n' >&2
+        printf 'ERROR: split-cycle layout changed after leaving and returning to %s split session\n' "$split_label" >&2
         printf 'before: sidebars=%s work_panes=2 sidebar_width=%s layout=%s\n' \
             "$(count_sidebars)" "$target_sidebar_width" "$target_layout_before" >&2
         printf 'after:  sidebars=%s work_panes=%s sidebar_width=%s layout=%s\n' \
@@ -381,7 +398,7 @@ run_split_cycle_reproduction()
             "$(session_sidebar_width split-cycle-1)" "$target_layout_after" >&2
         return 1
     fi
-    printf 'PASS: split-cycle preserved horizontal work split and sidebar geometry\n'
+    printf 'PASS: split-cycle preserved %s work split and sidebar geometry\n' "$split_label"
 }
 
 wait_for_action_generation_change()

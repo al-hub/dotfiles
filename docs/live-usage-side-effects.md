@@ -118,4 +118,17 @@ The move preserves pane count and pane ID but does not preserve the sidebar
 geometry/topology. This is an analysis finding only; no production fix is
 included in this change.
 
+The vertical variant is `tests/tmux-single-sidebar/test-keyboard-e2e-split-cycle-vertical.sh`.
+It uses `Ctrl+a _` and is also RED:
+
+```text
+before: sidebar spans the full height beside two stacked work panes
+after:  sidebar is placed in the lower half of the window
+```
+
+The vertical case keeps the sidebar width at 35 columns but loses its full-height
+placement. Therefore the defect is not limited to horizontal work splits; the
+shared sidebar loses its geometry/topology when reinserted into a multi-pane
+target window.
+
 Until these items are resolved, this branch remains unsuitable for `master`.

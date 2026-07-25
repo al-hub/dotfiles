@@ -38,6 +38,19 @@
   못하는 경로로 분석했습니다.
 - 이번 변경에는 production code 수정이 없습니다.
 
+## 2026-07-25 - vertical split cycle RED reproduction
+
+변경:
+- `Ctrl+a _` 세로 split을 사용하는 동일한 실환경 PTY 재현 테스트를 추가했습니다.
+- horizontal/vertical 방향을 기존 keyboard harness에서 분리 실행할 수 있게 했습니다.
+
+검증:
+- vertical 재현도 RED입니다.
+- sidebar 폭은 35를 유지하지만 full-height 배치가 lower-half 배치로 바뀝니다.
+- horizontal은 sidebar 폭이 35에서 1로 감소하고, vertical은 sidebar 위치/높이가
+  변경되어 두 방향 모두 multi-pane geometry 보존 문제가 확인됩니다.
+- production code는 수정하지 않았습니다.
+
 ## 2026-07-25 - active window hook과 managed session 삭제 범위 구현
 
 변경:

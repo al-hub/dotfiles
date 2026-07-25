@@ -135,3 +135,6 @@ The split-cycle reproduction is currently RED: a real PTY creates a horizontal
 work split, switches away, and returns; the sidebar remains unique but its
 width/topology changes. This is a known acceptance failure and must be fixed
 before any `master` promotion.
+The corresponding vertical `Ctrl+a _` reproduction is RED as well: width is
+preserved, but the sidebar loses its full-height placement beside stacked work
+panes.
