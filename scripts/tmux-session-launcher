@@ -43,6 +43,7 @@ SIDEBAR_PROMPT_READY_OPTION="@dotfiles_sidebar_prompt_ready"
 SIDEBAR_OPERATION_OPTION="@dotfiles_sidebar_operation"
 SIDEBAR_MANAGED_OPTION="@dotfiles_sidebar_managed"
 SIDEBAR_HOOK_GUARD_OPTION="@dotfiles_sidebar_hook_guard"
+SIDEBAR_LAYOUT_HOOK_GUARD_OPTION="@dotfiles_sidebar_layout_hook_guard"
 SIDEBAR_OWNER_CLIENT_OPTION="@dotfiles_sidebar_owner_client"
 FAIL_STEP="${TMUX_SESSION_LAUNCHER_FAIL_STEP:-}"
 SIDEBAR_ASYNC_RESTORE="${TMUX_SESSION_SIDEBAR_ASYNC_RESTORE:-true}"
@@ -425,6 +426,72 @@ install_sidebar_hooks()
     quoted_script="$(shell_quote "$SCRIPT_PATH")"
     tmux set-hook -g client-session-changed "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
     tmux set-hook -g after-select-window "run-shell -b '$quoted_script --sync-active-window'" 2>/dev/null || true
+    tmux set-hook -g after-split-window "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-resize-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-select-layout "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-join-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-break-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-kill-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-rotate-window "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g after-swap-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g window-resized "run-shell -b '$quoted_script --sync-sidebar-layout #{hook_window}'" 2>/dev/null || true
+    tmux set-hook -g window-pane-changed "run-shell -b '$quoted_script --sync-sidebar-focus #{hook_window}'" 2>/dev/null || true
+}
+
+sidebar_layout_hook_guard_active()
+{
+    local guard now
+    guard="$(tmux show-option -gqv "$SIDEBAR_LAYOUT_HOOK_GUARD_OPTION" 2>/dev/null || true)"
+    case "$guard" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    now="$(date +%s%N)"
+    if [ "$guard" -gt "$now" ]; then
+        return 0
+    fi
+    tmux set-option -gq "$SIDEBAR_LAYOUT_HOOK_GUARD_OPTION" 0 2>/dev/null || true
+    return 1
+}
+
+sync_sidebar_layout()
+{
+    local window_id="$1" sidebar_pane sidebar_count
+    [ -n "$window_id" ] || return 0
+    sidebar_layout_hook_guard_active && return 0
+    sidebar_operation_busy && {
+        trace_event "sidebar.layout.sync.skip window=$window_id reason=operation-busy state=$(sidebar_operation_state)"
+        return 0
+    }
+    sidebar_pane="$(find_sidebar_pane "$window_id" || true)"
+    [ -n "$sidebar_pane" ] || return 0
+    [ "$(tmux show-option -gqv "$SIDEBAR_INPUT_READY_OPTION" 2>/dev/null || true)" = 1 ] || return 0
+    sidebar_count="$(tmux list-panes -t "$window_id" -F '#{pane_title}' 2>/dev/null |
+        awk -v title="$SIDEBAR_TITLE" '$0 == title { count++ } END { print count + 0 }')"
+    if [ "$sidebar_count" -ne 1 ]; then
+        trace_event "sidebar.layout.sync.abort window=$window_id reason=sidebar-count count=$sidebar_count"
+        return 1
+    fi
+
+    tmux set-option -gq "$SIDEBAR_LAYOUT_HOOK_GUARD_OPTION" "$(( $(date +%s%N) + 500000000 ))" 2>/dev/null || true
+    sleep "${TMUX_SESSION_SIDEBAR_LAYOUT_DEBOUNCE:-0.05}"
+    if ! save_sidebar_layout "$window_id"; then
+        trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
+        return 1
+    else
+        trace_event "sidebar.layout.sync.end window=$window_id pane=$sidebar_pane result=ok"
+    fi
+}
+
+sync_sidebar_focus()
+{
+    local window_id="$1"
+    [ -n "$window_id" ] || return 0
+    sidebar_layout_hook_guard_active && return 0
+    sidebar_operation_busy && return 0
+    find_sidebar_pane "$window_id" >/dev/null || return 0
+    [ "$(tmux show-option -gqv "$SIDEBAR_INPUT_READY_OPTION" 2>/dev/null || true)" = 1 ] || return 0
+    save_sidebar_layout "$window_id" || true
+    trace_event "sidebar.layout.focus window=$window_id"
 }
 
 sync_active_window()
@@ -981,6 +1048,9 @@ open_sidebar()
     target_window="$(window_target "$target")"
     trace_event "sidebar.window-lookup.end target=${target:-current} window=${target_window:-none}"
     before_panes="$(list_window_panes "$target_window")"
+    # Existing layout hooks may still be installed while a new sidebar pane
+    # is starting. Keep those hooks from snapshotting a half-initialized TUI.
+    tmux set-option -gq "$SIDEBAR_INPUT_READY_OPTION" 0 2>/dev/null || true
 
     if [ -n "$target" ]; then
         [ -n "$pane_path" ] || pane_path="$(target_pane_path "$target")"
@@ -1068,6 +1138,7 @@ toggle_current_sidebar()
             return 1
         fi
         remember_sidebar_width
+        snapshot_work_layout_transaction "$target_window" >/dev/null 2>&1 || true
         tmux kill-pane -t "$existing_pane"
         restore_work_layout "$target_window"
         tmux set-option -gq "$SIDEBAR_OWNER_CLIENT_OPTION" "" 2>/dev/null || true
@@ -1088,6 +1159,7 @@ toggle_sidebar_for_session()
         if [ "$(sidebar_tmux_pane_session "$existing_pane")" = "$session_name_value" ]; then
             remember_sidebar_width
             target_window="$(window_target "$existing_pane")"
+            snapshot_work_layout_transaction "$target_window" >/dev/null 2>&1 || true
             tmux kill-pane -t "$existing_pane"
             restore_work_layout "$target_window"
         fi
@@ -4654,6 +4726,14 @@ main()
             ;;
         --sync-active-window)
             sync_active_window
+            return 0
+            ;;
+        --sync-sidebar-layout)
+            sync_sidebar_layout "${2:-}"
+            return $?
+            ;;
+        --sync-sidebar-focus)
+            sync_sidebar_focus "${2:-}"
             return 0
             ;;
         --list-sessions)

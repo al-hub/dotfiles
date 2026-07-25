@@ -124,9 +124,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle) ;;
+    full|minimal|split-cycle|direct-layout) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, or split-cycle\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, or direct-layout\n' >&2
         exit 2
         ;;
 esac
@@ -349,9 +349,22 @@ run_split_cycle_reproduction()
     wait_until 'split-cycle target session' split-cycle-1 client_session
     wait_for_sidebar_input_ready
 
-    # User action: Ctrl+a | or Ctrl+a _ (configured work-pane split).
-    split_input=$'\001'"$split_key"
-    send_keys "$split_input"
+    # The wrapper split is the normal path. direct-layout deliberately uses
+    # the raw tmux command path to reproduce a user invoking tmux directly.
+    if [ "$SCENARIO" = direct-layout ]; then
+        direct_work_pane="$(tmuxc list-panes -t '=split-cycle-1:' -F '#{pane_id}|#{pane_title}' |
+            awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }')"
+        if [ "$SPLIT_DIRECTION" = vertical ]; then
+            tmuxc split-window -t "$direct_work_pane" -v -c "$REPO_ROOT"
+            tmuxc resize-pane -t "$direct_work_pane" -D 2
+        else
+            tmuxc split-window -t "$direct_work_pane" -h -c "$REPO_ROOT"
+            tmuxc resize-pane -t "$direct_work_pane" -R 2
+        fi
+    else
+        split_input=$'\001'"$split_key"
+        send_keys "$split_input"
+    fi
     wait_until "$split_label split in target session" 2 work_pane_count split-cycle-1
     # The split binding leaves focus in the newly-created work pane. In a
     # real terminal the user returns focus to the sidebar before navigating;
@@ -512,7 +525,7 @@ OBSERVER_LOG_PID=$!
 sleep 0.1
 test_log "observer.started pid=$OBSERVER_PID"
 
-if [ "$SCENARIO" = split-cycle ]; then
+if [ "$SCENARIO" = split-cycle ] || [ "$SCENARIO" = direct-layout ]; then
     run_split_cycle_reproduction
     exit 0
 fi

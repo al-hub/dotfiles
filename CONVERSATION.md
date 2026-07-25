@@ -9,6 +9,27 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-25 - raw split/resize layout tracking
+
+사용자 결정:
+- sidebar가 열린 상태에서 사용자가 직접 tmux split/resize를 수행하는 실사용
+  경로를 우선 개선하되 `master`에는 반영하지 않습니다.
+
+작업 결과:
+- after-command, window-resized, window-pane-changed hook으로 full layout
+  metadata를 갱신하고, re-entry guard를 추가했습니다.
+- layout sync가 archive/move의 일반 busy 상태를 점유하지 않도록 분리해 raw
+  split 직후 sidebar 입력이 멈추는 side-effect를 제거했습니다.
+- attached PTY에서 raw horizontal/vertical split→session 이동→복귀를 각각
+  재현하는 direct-layout 테스트가 PASS 했습니다.
+- direct 테스트에서 `split-window -d`를 사용하면 실제 keyboard split 직후의
+  active pane 상태와 달라지는 것을 확인해, 재현은 active pane을 유지하는 raw
+  tmux 명령으로 교정했습니다.
+
+남은 검증:
+- 임의 pane topology에서 process identity까지 완전 복원하는 archive fixture는
+  후속 범위입니다.
+
 ## 2026-07-25 - archive v2와 transactional restore
 
 사용자 결정:

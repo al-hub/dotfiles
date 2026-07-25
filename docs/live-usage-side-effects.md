@@ -16,7 +16,7 @@ and tmux server are not modified.
 | --- | --- | --- | --- | --- |
 | P0 | Installer | Installing the `tmux` item previously terminated the default tmux server. | `install.sh:after_install_item/cleanup_tmux_runtime` | Fixed: existing server is preserved and restart is user-controlled |
 | P1 | `c` prompt | `c` entered `New:` mode but typed session name was not rendered because prompt input used `stty -echo`. | Isolated installed launcher capture | Fixed: modal prompt enables echo |
-| P1 | Split/layout | Direct tmux split/resize commands while sidebar is open are not fully tracked by the single-sidebar layout store. The supported wrapper bindings target a work pane, but arbitrary tmux split commands can leave the saved/restored work layout inconsistent. | `AGENTS.md`, single-sidebar design contract, controller layout ownership | Wrapper bindings fixed; arbitrary direct split remains limitation |
+| P1 | Split/layout | Direct tmux split/resize commands while sidebar is open must update the sidebar-inclusive layout metadata before a later session move/archive/restore. | `test-keyboard-e2e-direct-layout.sh`, layout hook trace | Fixed on this branch: after-command and resize hooks save full layout metadata; sync is guarded and does not enter user operation-busy state |
 | P1 | Session move | Sidebar ownership must follow the active client window without duplicating the pane. | Attached-client active-window hook test with pane ID/PID assertion | Fixed for active client window; multi-client behavior remains follow-up |
 | P1 | Archive/restore | `d` uses asynchronous `tmux run-shell -b` deletion/archive. Immediate `o`, session movement, or focus changes can race with archive completion. | `run_session_delete`, `restore_archive`, `wait_for_sidebar_transition` | Operation guard, completion state, rollback, and failure trace strengthened; rapid live E2E remains required |
 | P1 | Restore layout | A sidebar-side split followed by session movement can restore work panes but not the exact sidebar/work focus or layout expected by the user. | Horizontal/vertical PTY split-cycle tests | Fixed for tracked wrapper topology; metadata-missing multi-pane targets fail closed |
@@ -62,8 +62,8 @@ pre-existing sessions, or live installation are side-effect free.
 - Single-sidebar contract and one complete keyboard E2E pass.
 - Earlier two-run E2E observed one restore-adjacent action-generation timeout;
   the operation guard and prompt-state test were strengthened afterward.
-- The current three-run PTY E2E is PASS, but raw split/restore layout fidelity
-  remains a separate acceptance item.
+- The current repeated keyboard E2E and direct-layout PTY E2E are PASS; raw
+  direct split/resize is now covered separately from the wrapper shortcut path.
 - Runtime active-window hooks now move the existing sidebar pane and preserve
   pane ID/PID; a dedicated attached-client test passes.
 - `d All` now targets sessions marked `@dotfiles_sidebar_managed` and preserves
@@ -89,7 +89,7 @@ pre-existing sessions, or live installation are side-effect free.
 ## Next audit order
 
 1. Verify installer preservation against a live, pre-existing tmux server.
-2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action.
+2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action. The direct split/resize hook path is now implemented; arbitrary pane identity restoration remains a follow-up topology test.
 3. Repeat active-window and rapid restore E2E at least three consecutive times.
 4. Exercise version 2 archives against more arbitrary pane topologies and add
    an end-to-end legacy version 1 archive fixture.
@@ -128,5 +128,24 @@ PASS: split-cycle preserved vertical work split and sidebar geometry
 The controller now preserves the full-height sidebar placement beside the
 stacked work panes. If a multi-pane target has no compatible saved sidebar
 layout metadata, the move fails closed and rolls back.
+
+## 2026-07-25 direct split/resize reproduction
+
+`tests/tmux-single-sidebar/test-keyboard-e2e-direct-layout.sh` runs the same
+attached-PTY session creation, navigation, and session round-trip while the
+work pane is changed through raw tmux `split-window` and `resize-pane` commands.
+Both directions are covered:
+
+```text
+PASS: split-cycle preserved horizontal work split and sidebar geometry
+PASS: split-cycle preserved vertical work split and sidebar geometry
+```
+
+The runtime installs `after-split-window`, `after-resize-pane`, layout/pane
+mutation hooks, `window-resized`, and `window-pane-changed`. Layout sync writes
+only the sidebar-inclusive snapshot and uses a short global re-entry guard; it
+does not mark the user-facing archive/move operation busy. This prevents a raw
+split from disabling the sidebar TUI while preserving the metadata needed by a
+later session move.
 
 Until these items are resolved, this branch remains unsuitable for `master`.

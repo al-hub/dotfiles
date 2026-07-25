@@ -31,7 +31,9 @@ to the newly active window while preserving its pane ID and process.
 10. A session move snapshots the sidebar-inclusive window layout and reapplies
     it after moving the same pane into the target window.
 11. A multi-pane target without compatible sidebar layout metadata rejects the
-    move and rolls back instead of accepting a best-effort geometry.
+   move and rolls back instead of accepting a best-effort geometry.
+12. Direct tmux split/resize/layout mutations refresh the sidebar-inclusive
+   layout snapshot through guarded runtime hooks before a later move or restore.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -131,6 +133,8 @@ The scenario suite must verify:
 - `d All` removes only sessions marked as sidebar-managed and preserves external sessions;
 - current behavior on `master` remains untouched.
 - a multi-pane target without a saved sidebar layout fails closed and preserves the source sidebar;
+- raw horizontal and vertical split/resize followed by session movement preserves
+  work-pane count, sidebar geometry, and the attached PTY sidebar process;
 
 Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
 snapshot, restore-layout, focus, and transition rollback without leaving a

@@ -8,6 +8,26 @@
 - 새 항목은 위에 추가합니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
 
+## 2026-07-25 - direct tmux split/resize layout tracking
+
+변경:
+- sidebar가 열린 상태의 raw `split-window`, `resize-pane`, layout/pane mutation과
+  window resize를 runtime hook으로 감지해 sidebar-inclusive layout metadata를
+  갱신하도록 했습니다.
+- hook sync에는 짧은 global re-entry guard를 두고, sidebar TUI를 막는 일반
+  operation busy 상태에는 들어가지 않도록 분리했습니다.
+- direct horizontal/vertical split 후 session 이동·복귀를 실제 attached PTY로
+  재현하는 `test-keyboard-e2e-direct-layout.sh`를 추가했습니다.
+- 새 sidebar 초기화 중에는 layout hook이 반쯤 준비된 TUI를 snapshot하지 않도록
+  input-ready 경계를 유지했습니다.
+
+검증:
+- direct horizontal/vertical split-layout E2E PASS
+- wrapper horizontal/vertical split-cycle E2E PASS
+- contract, managed-session, multi-client, failure-injection, metadata rollback,
+  반복 keyboard E2E PASS
+- `master`는 변경하지 않았습니다.
+
 ## 2026-07-25 - archive transactional safety와 stale owner 정리
 
 변경:
