@@ -70,6 +70,10 @@ pre-existing sessions, or live installation are side-effect free.
   external sessions; a dedicated contract test passes.
 - Operation state is exposed through `@dotfiles_sidebar_operation` and input is
   rejected while save/delete/restore/move is in progress.
+- The sidebar owner client is recorded in `@dotfiles_sidebar_owner_client`, and
+  injected move failure preserves the source pane/window in a dedicated test.
+- Raw split archive smoke coverage now records a non-empty work-layout snapshot;
+  exact pane-ID/layout fidelity after every topology shape remains a follow-up.
 
 ## Next audit order
 

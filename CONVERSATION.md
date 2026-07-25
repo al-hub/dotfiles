@@ -16,11 +16,15 @@
 - sidebar pane ID/PID uniqueness를 attached-client 테스트로 검증했습니다.
 - `d All`은 `@dotfiles_sidebar_managed` session만 삭제하고 외부 session을 보존합니다.
 - operation busy 상태에서 추가 입력을 거부하도록 했습니다.
+- primary client ownership과 move failure injection rollback을 추가했습니다.
 
 검증 상태:
 - active-window, managed-session, contract, full PTY E2E는 PASS입니다.
 - full PTY E2E 3회 연속과 isolated install session 보존은 PASS했습니다.
 - raw split/archive/restore의 정확한 layout 보존은 아직 후속 검증입니다.
+- move failure injection은 sidebar pane ID와 source window 보존까지 PASS했습니다.
+- raw split archive snapshot smoke test도 PASS했지만 arbitrary topology의 정확한 pane-ID
+  layout 복원은 아직 후속 검증입니다.
 
 ## 2026-07-25 - 실사용 side-effect 수정 1차 적용
 

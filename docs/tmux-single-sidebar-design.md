@@ -27,6 +27,10 @@ to the newly active window while preserving its pane ID and process.
 7. A failed move does not complete the client switch.
 8. `master` behavior is unchanged until this branch is explicitly merged.
 
+The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
+second attached client cannot move or toggle the pane while another client
+owns it. The owner is released only by an explicit sidebar off operation.
+
 ## State model
 
 ```text
@@ -114,3 +118,7 @@ The scenario suite must verify:
 - active-window hooks move the same pane to a selected window;
 - `d All` removes only sessions marked as sidebar-managed and preserves external sessions;
 - current behavior on `master` remains untouched.
+
+Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
+snapshot, restore-layout, focus, and transition rollback without leaving a
+duplicate sidebar or an unrecoverable operation state.

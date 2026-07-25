@@ -18,6 +18,9 @@
 - session metadata `@dotfiles_sidebar_managed`를 도입하고 `d All`이 managed session만
   삭제하도록 변경했습니다.
 - archive/delete/restore/move 중에는 새 sidebar 입력을 거부합니다.
+- primary client ownership을 `@dotfiles_sidebar_owner_client`로 기록하고 다른 client의
+  sidebar 이동/toggle을 거부합니다.
+- `TMUX_SESSION_LAUNCHER_FAIL_STEP` fault injection과 move rollback test를 추가했습니다.
 
 검증:
 - active-window attached-client test PASS
@@ -26,6 +29,8 @@
 - full PTY keyboard E2E 3회 연속 PASS
 - isolated install에서 pre-existing tmux session 보존 PASS
 - raw split/restore의 정확한 layout 보존은 후속 안정성 검증 대상으로 유지합니다.
+- move failure injection rollback test PASS
+- raw split archive layout snapshot smoke test PASS; exact pane-ID mapping remains follow-up
 
 ## 2026-07-25 - installer 안전성과 sidebar prompt/restore 오류 처리 보강
 
