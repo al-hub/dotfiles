@@ -3628,3 +3628,12 @@
   sidebar-inclusive layout을 새 pane ID로 재매핑했습니다.
 - 2개 window/8개 pane과 window name/order/geometry/active metadata,
   단일 active-window sidebar 복원이 attached-PTY에서 PASS했습니다.
+
+## 2026-07-26 sidebar transition measurement decision
+
+- 사용자는 실제 사용 중 sidebar session 전환 시 전체 화면이 사라지고
+  sidebar/work layer가 순차 복원되는 것처럼 느껴지는 현상을 제기했습니다.
+- production 코드는 유지하고, pane-buffer 측정의 한계를 보완하기 위해
+  attached PTY raw output offset과 cursor redraw sequence를 전환별로 측정합니다.
+- 현재 관측은 전체 clear보다 대량의 cursor 기반 redraw 가능성이 높지만,
+  일부 반복에서 session switch가 중단되므로 두 문제를 분리해 분석합니다.

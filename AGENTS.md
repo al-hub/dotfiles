@@ -39,6 +39,8 @@
 - `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit
 - `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-sidebar-controller`: 단일 sidebar의 tmux 경계와 lifecycle 구현
 
+추가 측정 문서는 docs/sidebar-transition-measurement.md에 있습니다.
+
 ## 작업 규칙
 
 - 작업 전 `git status --short`로 기존 변경을 확인하세요.

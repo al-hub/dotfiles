@@ -7,6 +7,16 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-07-26 - sidebar transition redraw measurement
+
+- production launcher/controller는 수정하지 않고, sidebar session 전환 중
+  pane-buffer와 attached PTY raw output을 측정하는 테스트를 추가했습니다.
+- pane-buffer 측정은 불완전 frame이 실행별로 0~1회 달라지는 한계를 확인했습니다.
+- raw PTY 측정에서는 전환당 약 22~25KB 출력과 25~32회의 cursor-home sequence가
+  관측됐으며, ESC[2J 전체 화면 clear는 관측되지 않았습니다.
+- 측정 문서와 artifact 보존 규칙을 추가했으며, redraw 문제와 session switch 중단
+  문제를 분리해 후속 분석 대상으로 남겼습니다.
+
 ## 2026-07-26 - arbitrary pane topology semantic restore
 
 - attached PTY에서 가로·세로·가로 split으로 비선형 4-pane tree를 만들고,

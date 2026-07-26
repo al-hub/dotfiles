@@ -11,6 +11,8 @@ LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
 INPUT_LOG="$RUN_DIR/input.log"
 OUTPUT_LOG="$RUN_DIR/output.log"
 TMUX_CMD=(tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf")
+CLIENT_PID=""
+KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
 
 mkdir -p "$HOME_DIR/.local/bin" "$HISTORY_DIR"
 ln -sfn "$LAUNCHER" "$HOME_DIR/.local/bin/tmux-session-launcher"
@@ -23,7 +25,7 @@ cleanup() {
   set +e
   kill "$CLIENT_PID" 2>/dev/null
   tmuxc kill-server 2>/dev/null
-  rm -rf "$RUN_DIR"
+  [ "$KEEP_RUN_DIR" = true ] || rm -rf "$RUN_DIR"
 }
 trap cleanup EXIT
 
