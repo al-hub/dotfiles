@@ -26,8 +26,8 @@ to the newly active window while preserving its pane ID and process.
 6. Split shortcuts always target a work pane.
 7. A failed move does not complete the client switch.
 8. `master` behavior is unchanged until this branch is explicitly merged.
-9. New archives carry version 2 pane identity and geometry metadata; version 1
-   archives remain readable.
+9. New archives carry version 2 logical pane slot/title and geometry metadata;
+   version 1 archives remain readable.
 10. A session move snapshots the sidebar-inclusive window layout and reapplies
     it after moving the same pane into the target window.
 11. A multi-pane target without compatible sidebar layout metadata rejects the
@@ -44,6 +44,9 @@ to the newly active window while preserving its pane ID and process.
 16. An external conflict fails the operation, preserves externally created
    sessions, removes only matching partial restore state, and restores the owner
    client/sidebar when safe.
+17. Version 2 archives include all windows in the session. Restore preserves
+   window order/name, pane topology/geometry/focus, and restores one sidebar
+   only in the active window.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -102,9 +105,10 @@ the source window and restore the source work layout before reporting failure.
 
 Archive restore is transactional at the tmux topology boundary: layout and
 focus failures remove the partial restored session and switch the owning client
-back to its original session. Version 2 archives verify restored pane geometry
-and reselect the archived active pane. Paths and commands are restore inputs;
-the original running process state is not serialized.
+back to its original session. Version 2 archives verify restored pane geometry,
+reapply pane titles/logical slots, and reselect the archived active pane. Paths
+and command signatures are restore metadata; the original running process,
+physical pane ID, and PID are not serialized or required to remain identical.
 
 Window selection invokes the same move protocol through the runtime hook. A
 hook guard prevents recursive move events while the pane is being relocated.
@@ -134,7 +138,7 @@ session-to-session movement and is guarded by the active-client hook.
 The scenario suite must verify:
 
 - one global sidebar after opening and switching A -> B -> C;
-- unchanged pane ID and process PID across successful switches;
+- unchanged sidebar pane ID and process PID across successful session switches;
 - on/off idempotence and layout restoration;
 - split shortcuts never split the sidebar;
 - rapid switching never creates duplicates;
@@ -145,6 +149,10 @@ The scenario suite must verify:
 - a multi-pane target without a saved sidebar layout fails closed and preserves the source sidebar;
 - raw horizontal and vertical split/resize followed by session movement preserves
   work-pane count, sidebar geometry, and the attached PTY sidebar process;
+- archive/delete of the current session moves the sidebar to the fallback before
+  kill and keeps the TUI available for a subsequent history restore;
+- arbitrary topology archive/restore preserves semantic pane slot, title, path,
+  geometry, and active focus while allowing new work-pane IDs/PIDs;
 
 Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
 snapshot, restore-layout, focus, and transition rollback without leaving a

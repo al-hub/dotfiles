@@ -443,7 +443,7 @@ operation_conflict()
 check_delete_precondition()
 {
     local session_name_value="$1" operation_id="$2" expected_identity="$3" expected_clients="$4" expected_owner="$5" phase="$6"
-    local actual_identity actual_clients actual_owner
+    local actual_identity actual_clients actual_owner actual_owner_session internal_owner_transition=false
     actual_identity="$(session_identity_fingerprint "$session_name_value")"
     [ -n "$actual_identity" ] || {
         operation_conflict "$operation_id" delete "$phase" session-missing
@@ -454,15 +454,24 @@ check_delete_precondition()
         return 1
     }
     actual_clients="$(session_client_fingerprint "$session_name_value")"
-    [ "$actual_clients" = "$expected_clients" ] || {
+    actual_owner="$(owner_client_fingerprint)"
+    actual_owner_session="${actual_owner#*|}"
+    actual_owner_session="${actual_owner_session%%|*}"
+    if [ "$phase" = before-kill ] && [ -n "$expected_clients" ] && [ -z "$actual_clients" ] &&
+        [ "${expected_owner%%|*}" = "${actual_owner%%|*}" ] &&
+        [ "$actual_owner" != missing ] && [ "$actual_owner" != none ] &&
+        [ "$actual_owner_session" != "$session_name_value" ]; then
+        internal_owner_transition=true
+        trace_event "operation.precondition operation_id=$operation_id kind=delete phase=$phase owner-transition=internal session=$session_name_value actual-owner=$actual_owner"
+    fi
+    if [ "$actual_clients" != "$expected_clients" ] && [ "$internal_owner_transition" != true ]; then
         operation_conflict "$operation_id" delete "$phase" client-set-changed
         return 1
-    }
-    actual_owner="$(owner_client_fingerprint)"
-    [ "$actual_owner" = "$expected_owner" ] || {
+    fi
+    if [ "$actual_owner" != "$expected_owner" ] && [ "$internal_owner_transition" != true ]; then
         operation_conflict "$operation_id" delete "$phase" owner-client-changed
         return 1
-    }
+    fi
 }
 
 check_restore_precondition()
@@ -697,6 +706,24 @@ wait_for_session_absence()
     done
 
     debug_log "wait_for_session_absence timeout session=$session_name"
+    return 1
+}
+
+reassert_sidebar_after_session_delete()
+{
+    local client_tty sidebar_pane
+    [ -n "${current_session:-}" ] || return 1
+    client_tty="$(sidebar_owner_client || true)"
+    sidebar_pane="$(find_global_sidebar_pane || true)"
+    if [ -n "$client_tty" ] && [ -n "$sidebar_pane" ] &&
+        wait_for_sidebar_transition "$current_session" "$client_tty"; then
+        tmux select-pane -t "$sidebar_pane" -T "$SIDEBAR_TITLE" 2>/dev/null || true
+        tmux select-pane -t "$sidebar_pane" 2>/dev/null || true
+        tmux refresh-client -S -t "$client_tty" 2>/dev/null || true
+        trace_event "delete.input-focus.reassert session=$current_session client=$client_tty pane=$sidebar_pane"
+        return 0
+    fi
+    trace_event "delete.input-focus.reassert-failed session=$current_session client=${client_tty:-none} pane=${sidebar_pane:-none}"
     return 1
 }
 
@@ -3541,6 +3568,53 @@ apply_restored_window_layout()
     trace_event "restore.layout.end target=$target"
 }
 
+restore_archived_sidebar_layout()
+{
+    local target="$1" layout="$2" archived_panes="$3" archived_active="$4"
+    local archived_sidebar_pane="$5" restored_work_panes="$6"
+    local sidebar_pane mapped_panes old_pane new_pane work_index=1 active_pane
+
+    trace_event "restore.sidebar-layout.resolve target=$target archived-sidebar=$archived_sidebar_pane archived-work=$restored_work_panes"
+    [ -n "$target" ] && [ -n "$layout" ] && [ -n "$archived_panes" ] || {
+        trace_event "restore.sidebar-layout.error target=$target reason=missing-metadata"
+        return 1
+    }
+    sidebar_pane="$(tmux list-panes -t "$target" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }')"
+    [ -n "$sidebar_pane" ] || {
+        trace_event "restore.sidebar-layout.error target=$target reason=sidebar-not-found"
+        return 1
+    }
+
+    mapped_panes=""
+    for old_pane in $archived_panes; do
+        if [ "${old_pane#%}" = "${archived_sidebar_pane#%}" ]; then
+            new_pane="${sidebar_pane#%}"
+        else
+            new_pane="$(printf '%s\n' "$restored_work_panes" | awk -v slot="$work_index" '{ split($0, panes, " "); print panes[slot]; exit }')"
+            work_index=$((work_index + 1))
+        fi
+        [ -n "$new_pane" ] || {
+            trace_event "restore.sidebar-layout.error target=$target reason=work-pane-map old=$old_pane index=$work_index"
+            return 1
+        }
+        mapped_panes+="${mapped_panes:+ }$new_pane"
+        if [ "${old_pane#%}" = "${archived_active#%}" ]; then
+            active_pane="$new_pane"
+        fi
+    done
+
+    trace_event "restore.sidebar-layout.begin target=$target archived-panes=$archived_panes mapped-panes=$mapped_panes"
+    restored_layout="$(layout_with_pane_ids "$layout" "$mapped_panes")"
+    tmux select-layout -t "$target" "$restored_layout" >/dev/null 2>&1 || {
+        trace_event "restore.sidebar-layout.error target=$target reason=select-layout"
+        return 1
+    }
+    [ "${archived_active#%}" = "${archived_sidebar_pane#%}" ] && active_pane="$sidebar_pane"
+    [ -n "$active_pane" ] && tmux select-pane -t "$active_pane" >/dev/null 2>&1 || true
+    trace_event "restore.sidebar-layout.end target=$target sidebar=$sidebar_pane active=${active_pane:-none}"
+}
+
 restore_window_focus()
 {
     local target="$1" active_pane="${2:-}"
@@ -3569,6 +3643,10 @@ archive_session()
     declare -A archive_window_layouts=()
     declare -A archive_window_geometry=()
     declare -A archive_window_created=()
+    declare -A archive_window_sidebar_layout=()
+    declare -A archive_window_sidebar_panes=()
+    declare -A archive_window_sidebar_active=()
+    declare -A archive_window_sidebar_pane=()
     declare -a archive_window_order=()
 
     session_name="$1"
@@ -3594,10 +3672,14 @@ archive_session()
     archive_base="${stamp}-${BASHPID:-$$}-$(safe_file_part "$session_name")"
     archive_path="$HISTORY_DIR/${archive_base}-pending.tsv"
     trace_event "archive.snapshot.begin session=$session_name"
-    archive_panes_snapshot="$(tmux list-panes -t "=$session_name:" \
+    archive_global_sidebar_pane="$(find_global_sidebar_pane || true)"
+    # Archive every window in the session. The empty-window target form
+    # (=$session_name:) resolves to the client's current window and silently
+    # drops inactive windows from the archive.
+    archive_panes_snapshot="$(tmux list-panes -s -t "=$session_name" \
         -F '#{session_name}	#{window_index}	#{pane_index}	#{pane_id}	#{pane_left}	#{pane_top}	#{pane_width}	#{pane_height}	#{pane_active}	#{pane_current_path}	#{pane_current_command}	#{pane_title}	#{window_name}	#{window_active}	#{window_layout}	#{session_created}' \
         2>/dev/null || true)"
-    trace_event "archive.panes_snapshot session=$session_name"
+    trace_event "archive.panes_snapshot session=$session_name scope=session-all-windows"
     while IFS="$(printf '\t')" read -r archive_pane_session archive_pane_window \
         archive_pane_index archive_pane_id archive_pane_left archive_pane_top archive_pane_width \
         archive_pane_height archive_pane_active archive_pane_path archive_pane_command \
@@ -3611,12 +3693,18 @@ archive_session()
             archive_window_active["$archive_pane_window"]="$archive_window_active_value"
             archive_window_layouts["$archive_pane_window"]="$archive_window_layout_value"
             archive_window_created["$archive_pane_window"]="$archive_window_created_value"
+            archive_window_sidebar_layout["$archive_pane_window"]="$(tmux show-option -wqv -t "=$session_name:$archive_pane_window" "$SIDEBAR_LAYOUT_OPTION" 2>/dev/null || true)"
+            archive_window_sidebar_panes["$archive_pane_window"]="$(tmux show-option -wqv -t "=$session_name:$archive_pane_window" "$SIDEBAR_LAYOUT_PANES_OPTION" 2>/dev/null || true)"
+            archive_window_sidebar_active["$archive_pane_window"]="$(tmux show-option -wqv -t "=$session_name:$archive_pane_window" "$SIDEBAR_LAYOUT_ACTIVE_PANE_OPTION" 2>/dev/null || true)"
+            if [ -n "$archive_global_sidebar_pane" ]; then
+                archive_window_sidebar_pane["$archive_pane_window"]="$(printf '%s\n' "${archive_window_sidebar_panes[$archive_pane_window]}" | tr ' ' '\n' | grep -F "$archive_global_sidebar_pane" | head -1)"
+            fi
         fi
         [ "$archive_pane_title" = "$SIDEBAR_TITLE" ] && continue
         archive_window_pane_counts["$archive_pane_window"]=$((
             ${archive_window_pane_counts["$archive_pane_window"]:-0} + 1
         ))
-        archive_pane_line="$archive_pane_index$(printf '\t')$archive_pane_id$(printf '\t')$archive_pane_left$(printf '\t')$archive_pane_top$(printf '\t')$archive_pane_width$(printf '\t')$archive_pane_height$(printf '\t')$archive_pane_active$(printf '\t')$archive_pane_path$(printf '\t')$archive_pane_command"
+        archive_pane_line="$archive_pane_index$(printf '\t')$archive_pane_id$(printf '\t')$archive_pane_left$(printf '\t')$archive_pane_top$(printf '\t')$archive_pane_width$(printf '\t')$archive_pane_height$(printf '\t')$archive_pane_active$(printf '\t')$archive_pane_path$(printf '\t')$archive_pane_command$(printf '\t')$archive_pane_title"
         archive_window_pane_lines["$archive_pane_window"]+="${archive_window_pane_lines["$archive_pane_window"]:+$'\n'}$archive_pane_line"
         archive_window_geometry["$archive_pane_window"]+="${archive_window_geometry["$archive_pane_window"]:+ }$archive_pane_left,$archive_pane_top,$archive_pane_width,$archive_pane_height,$archive_pane_active"
     done <<< "$archive_panes_snapshot"
@@ -3645,9 +3733,18 @@ archive_session()
             window_count=$((window_count + 1))
             window_layout="$(prepare_window_for_archive_snapshot "$session_name" "$window_index" "$window_layout")"
             printf 'window\t%s\t%s\t%s\t%s\t%s\n' "$window_index" "$window_name" "$window_active" "$window_layout" "${archive_window_geometry["$window_index"]:-}"
-            while IFS="$(printf '\t')" read -r pane_index pane_id pane_left pane_top pane_width pane_height pane_active pane_path pane_command; do
-                printf 'pane\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                    "$pane_index" "$pane_id" "$pane_left" "$pane_top" "$pane_width" "$pane_height" "$pane_active" "$pane_path" "$pane_command"
+            if [ -n "${archive_window_sidebar_layout["$window_index"]:-}" ] &&
+                [ -n "${archive_window_sidebar_panes["$window_index"]:-}" ] &&
+                [ -n "${archive_window_sidebar_pane["$window_index"]:-}" ]; then
+                printf 'sidebar_layout\t%s\t%s\t%s\t%s\t%s\n' \
+                    "$window_index" "${archive_window_sidebar_layout["$window_index"]}" \
+                    "${archive_window_sidebar_panes["$window_index"]}" \
+                    "${archive_window_sidebar_active["$window_index"]:-}" \
+                    "${archive_window_sidebar_pane["$window_index"]:-}"
+            fi
+            while IFS="$(printf '\t')" read -r pane_index pane_id pane_left pane_top pane_width pane_height pane_active pane_path pane_command pane_title; do
+                printf 'pane\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                    "$pane_index" "$pane_id" "$pane_left" "$pane_top" "$pane_width" "$pane_height" "$pane_active" "$pane_path" "$pane_command" "$pane_title"
             done <<< "${archive_window_pane_lines["$window_index"]:-}"
             printf 'endwindow\n'
         done
@@ -3659,6 +3756,7 @@ archive_session()
         return 1
     fi
     trace_event "archive.write.end session=$session_name windows=$window_count"
+    trace_event "archive.window-count session=$session_name count=$window_count"
     if [ -n "$metrics_archive_start" ]; then
         metrics_archive_write_us=$(( $(metrics_now_us) - metrics_archive_phase_start ))
         metrics_archive_phase_start="$(metrics_now_us)"
@@ -3780,12 +3878,16 @@ delete_session_after_archive()
     local expected_identity="${4:-}" expected_clients="${5:-}" expected_owner="${6:-}"
     local current_client_session="" target_clients="" target_has_clients=false
     local next_session="" archive_fast_path=false
+    local sidebar_before="" sidebar_before_session=""
     local metrics_delete_start="" metrics_delete_operation_id=""
     local metrics_delete_phase_start="" metrics_delete_preflight_us=0
     local metrics_delete_fallback_us=0 metrics_delete_archive_us=0 metrics_delete_kill_us=0
 
     trace_event "operation.worker.begin operation_id=$operation_id type=delete-session session=$session_name archive=$should_archive worker=${BASHPID:-$$}"
     operation_test_delay "$operation_id"
+    [ -n "$expected_identity" ] || expected_identity="$(session_identity_fingerprint "$session_name")"
+    [ -n "$expected_clients" ] || expected_clients="$(session_client_fingerprint "$session_name")"
+    [ -n "$expected_owner" ] || expected_owner="$(owner_client_fingerprint)"
     check_delete_precondition "$session_name" "$operation_id" "$expected_identity" "$expected_clients" "$expected_owner" worker-start || return 1
 
     # archive_session performs the authoritative existence check.  The
@@ -3845,6 +3947,17 @@ delete_session_after_archive()
         if [ -n "$next_session" ]; then
             debug_log "delete_session_after_archive switch-client to fallback session=$next_session from session=$session_name"
             tmux switch-client -t "=$next_session" 2>/dev/null || true
+            sidebar_before="$(find_global_sidebar_pane || true)"
+            sidebar_before_session="$(sidebar_tmux_pane_session "$sidebar_before" || true)"
+            if [ "$sidebar_before_session" = "$session_name" ]; then
+                trace_event "delete.sidebar-move.begin session=$session_name fallback=$next_session"
+                if ! sidebar_controller_move_to_session "$next_session"; then
+                    trace_event "delete.sidebar-move.failed session=$session_name fallback=$next_session"
+                    sidebar_operation_finish failed "$operation_id" || true
+                    return 1
+                fi
+                trace_event "delete.sidebar-move.end session=$session_name fallback=$next_session"
+            fi
         else
             debug_log "delete_session_after_archive no fallback session for session=$session_name"
         fi
@@ -3961,6 +4074,7 @@ archive_selected_indices()
 restore_abort()
 {
     local reason="$1"
+    tmux set-option -gq '@dotfiles_sidebar_restore_topology' 0 2>/dev/null || true
     trace_event "restore.abort session=${restore_name:-unknown} reason=$reason"
     if [ -n "${restore_client_tty:-}" ] && [ -n "${restore_original_session:-}" ] &&
         session_exists "$restore_original_session"; then
@@ -3983,6 +4097,12 @@ restore_archive()
     local metrics_restore_start="" metrics_restore_operation_id="" restore_operation_id="${2:-}"
     local restore_client_tty="" restore_original_session="" sidebar_pane_before="" sidebar_pid_before=""
     local restore_original_identity="" restore_owner_identity="" restore_created_identity=""
+    declare -A restore_window_targets=()
+    declare -A restore_window_work_panes=()
+    declare -A restore_window_sidebar_layouts=()
+    declare -A restore_window_sidebar_panes=()
+    declare -A restore_window_sidebar_active=()
+    declare -A restore_window_sidebar_pane=()
     if [ -z "$restore_operation_id" ]; then
         new_sidebar_operation_id
         restore_operation_id="$sidebar_operation_id_result"
@@ -4032,6 +4152,8 @@ restore_archive()
     first_window=true
     first_pane_in_window=true
     active_window=""
+    active_window_target=""
+    active_window_index=""
     window_layout=""
     window_geometry=""
     current_window_active_pane=""
@@ -4039,7 +4161,7 @@ restore_archive()
     pane_id=""
     restored_work_pane_ids=""
 
-    while IFS="$(printf '\t')" read -r record a b c d e f g h i; do
+    while IFS="$(printf '\t')" read -r record a b c d e f g h i j; do
         case "$record" in
             window)
                 if [ "$first_window" = "false" ] && [ -n "$current_window_target" ]; then
@@ -4064,7 +4186,16 @@ restore_archive()
                 first_pane_in_window=true
                 if [ "$window_active" = "1" ]; then
                     active_window="$window_name"
+                    active_window_index="$window_index"
                 fi
+                trace_event "restore.window.begin session=$restore_name index=$window_index name=$window_name active=$window_active"
+                ;;
+            sidebar_layout)
+                restore_window_sidebar_layouts["$a"]="$b"
+                restore_window_sidebar_panes["$a"]="$c"
+                restore_window_sidebar_active["$a"]="$d"
+                restore_window_sidebar_pane["$a"]="$e"
+                trace_event "restore.sidebar-layout.archive index=$a panes=$c sidebar=$e"
                 ;;
             pane)
                 trace_event "restore.pane.begin session=$restore_name window=$current_window index=$a"
@@ -4073,10 +4204,12 @@ restore_archive()
                     archive_pane_geometry="$c,$d,$e,$f,$g"
                     pane_path="$h"
                     pane_command="$i"
+                    pane_title="$j"
                     trace_event "restore.identity.archive window=$current_window index=$a pane=$archive_pane_id geometry=$archive_pane_geometry"
                 else
                     pane_path="$b"
                     pane_command="$c"
+                    pane_title=""
                 fi
                 [ -d "$pane_path" ] || pane_path="$HOME"
                 if [ "$created" = "false" ]; then
@@ -4088,6 +4221,8 @@ restore_archive()
                     current_window_target="$created_target"
                     current_window_pane_ids="${pane_id#%}"
                     restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
+                    restore_window_targets["$window_index"]="$created_target"
+                    [ "$window_active" = "1" ] && active_window_target="$created_target"
                     created=true
                     first_window=false
                     first_pane_in_window=false
@@ -4100,11 +4235,16 @@ restore_archive()
                     current_window_target="$created_target"
                     current_window_pane_ids="${pane_id#%}"
                     restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
+                    restore_window_targets["$window_index"]="$created_target"
+                    [ "$window_active" = "1" ] && active_window_target="$created_target"
                     first_pane_in_window=false
                 else
                     pane_id="$(tmux split-window -P -F '#{pane_id}' -t "$current_window_target" -c "$pane_path")"
                     current_window_pane_ids="${current_window_pane_ids}${current_window_pane_ids:+ }${pane_id#%}"
                     restored_work_pane_ids+="${restored_work_pane_ids:+ }$pane_id"
+                fi
+                if [ -n "${pane_title:-}" ]; then
+                    tmux select-pane -t "$pane_id" -T "$pane_title" 2>/dev/null || true
                 fi
                 if [ "$archive_version" = 2 ] && [ "$g" = "1" ]; then
                     current_window_active_pane="$pane_id"
@@ -4122,6 +4262,15 @@ restore_archive()
                         return 1
                     fi
                 fi
+                if [ -n "$current_window" ]; then
+                    tmux rename-window -t "$current_window_target" "$current_window" >/dev/null 2>&1 || {
+                        trace_event "restore.window.error session=$restore_name index=$window_index reason=rename"
+                        restore_abort window-name
+                        return 1
+                    }
+                    trace_event "restore.window.end session=$restore_name index=$window_index target=$current_window_target name=$current_window"
+                fi
+                restore_window_work_panes["$window_index"]="$current_window_pane_ids"
                 current_window=""
                 current_window_target=""
                 current_window_pane_ids=""
@@ -4142,13 +4291,13 @@ restore_archive()
     fi
     mark_session_managed "$restore_name" || true
 
-    if [ -n "$active_window" ]; then
-        trace_event "restore.select-window.begin session=$restore_name"
-        if ! tmux select-window -t "=$restore_name:$active_window" >/dev/null 2>&1; then
+    if [ -n "$active_window_target" ]; then
+        trace_event "restore.select-window.begin session=$restore_name target=$active_window_target name=$active_window"
+        if ! tmux select-window -t "$active_window_target" >/dev/null 2>&1; then
             restore_abort select-window
             return 1
         fi
-        trace_event "restore.select-window.end session=$restore_name"
+        trace_event "restore.select-window.end session=$restore_name target=$active_window_target"
     fi
     selected_session="$restore_name"
     width="$(tmux show-option -gqv '@dotfiles-session-sidebar-width' 2>/dev/null || true)"
@@ -4166,6 +4315,7 @@ restore_archive()
     restore_target_pane="$(tmux list-panes -t "$restore_target_window" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
         awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }')"
     trace_event "restore.target-pane.end session=$restore_name window=$restore_target_window pane=$restore_target_pane"
+    tmux set-option -gq '@dotfiles_sidebar_restore_topology' 1 2>/dev/null || true
     if [ -n "$restore_target_pane" ]; then
         trace_event "restore.sidebar.begin session=$restore_name pane=$restore_target_pane"
         if ! open_sidebar "$restore_target_pane" false "$width" "" true; then
@@ -4180,6 +4330,27 @@ restore_archive()
             return 1
         fi
         trace_event "restore.sidebar.ensure.end session=$restore_name"
+    fi
+    if [ -n "${restore_window_sidebar_layouts[$active_window_index]:-}" ]; then
+        if ! restore_archived_sidebar_layout \
+            "$restore_target_window" \
+            "${restore_window_sidebar_layouts[$active_window_index]}" \
+            "${restore_window_sidebar_panes[$active_window_index]}" \
+            "${restore_window_sidebar_active[$active_window_index]}" \
+            "${restore_window_sidebar_pane[$active_window_index]}" \
+            "${restore_window_work_panes[$active_window_index]}"; then
+            restore_abort sidebar-layout
+            return 1
+        fi
+    fi
+    tmux set-option -gq '@dotfiles_sidebar_restore_topology' 0 2>/dev/null || true
+    if [ "$(sidebar_tmux_pane_session "$(find_global_sidebar_pane || true)" || true)" != "$restore_name" ]; then
+        trace_event "restore.sidebar.move.begin session=$restore_name"
+        if ! sidebar_controller_move_to_session "$restore_name"; then
+            restore_abort ensure-sidebar-move
+            return 1
+        fi
+        trace_event "restore.sidebar.move.end session=$restore_name"
     fi
     check_restore_precondition "$restore_operation_id" before-client-switch "$restore_owner_identity" "$restore_original_session" "$restore_original_identity" "$restore_name" || {
         restore_abort external-conflict
@@ -4376,7 +4547,6 @@ tui_delete_session()
                 next_session="$(fallback_session "$deleted_session")"
                 debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
                 if [ -n "$next_session" ]; then
-                    tmux switch-client -t "=$next_session" 2>/dev/null || true
                     current_session="$next_session"
                 fi
                 deleting_current_session=true
@@ -4389,8 +4559,13 @@ tui_delete_session()
             fi
             if [ "$deleting_current_session" = "true" ]; then
                 debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
+                wait_for_session_absence "$deleted_session" 100 0.05 || true
+                reassert_sidebar_after_session_delete || message_line "Sidebar focus is still settling"
                 discard_pending_input
-                exit 0
+                selected_session="$current_session"
+                collect_sessions false "$selected_session"
+                render_full
+                return 0
             fi
             discard_pending_input
             selected_session="$current_session"
@@ -4403,7 +4578,6 @@ tui_delete_session()
                 next_session="$(fallback_session "$deleted_session")"
                 debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
                 if [ -n "$next_session" ]; then
-                    tmux switch-client -t "=$next_session" 2>/dev/null || true
                     current_session="$next_session"
                 fi
                 deleting_current_session=true
@@ -4416,8 +4590,13 @@ tui_delete_session()
             fi
             if [ "$deleting_current_session" = "true" ]; then
                 debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
+                wait_for_session_absence "$deleted_session" 100 0.05 || true
+                reassert_sidebar_after_session_delete || message_line "Sidebar focus is still settling"
                 discard_pending_input
-                exit 0
+                selected_session="$current_session"
+                collect_sessions false "$selected_session"
+                render_full
+                return 0
             fi
             discard_pending_input
             selected_session="$current_session"

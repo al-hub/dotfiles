@@ -6,7 +6,43 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
+
+## 2026-07-26 - arbitrary pane topology semantic restore
+
+- attached PTY에서 가로·세로·가로 split으로 비선형 4-pane tree를 만들고,
+  session 이동 → `d` archive/delete → `o` restore를 수행하는 실사용 회귀
+  시나리오를 추가했습니다.
+- current session 삭제 전에 shared sidebar를 fallback session으로 이동하고,
+  TUI를 종료하지 않아 삭제 직후 `o` 입력이 계속 sidebar로 전달되도록 했습니다.
+- v2 archive에 pane title을 추가하고 restore 시 logical slot/title/path/layout을
+  복원하도록 했습니다. 새 pane ID/PID 생성은 정상적인 semantic restore 결과로
+  기록합니다.
+- 비선형 4-pane attached-PTY archive/delete → `o` restore 테스트가 PASS했습니다.
+- 기존 전체 keyboard E2E의 6회 history restore와 `d All` 종료 trace도 완료되었고,
+  contract, vertical split-cycle, raw-layout, metadata rollback, failure-injection,
+  multi-client conflict 회귀를 통과했습니다.
+- 실사용 현황표를 추가해 tmux에서 기술적으로 제공되지 않는 physical
+  pane ID/PID·process 연속성은 검토 제외하고, multi-window topology, live
+  pre-existing server 설치, 외부 key latency만 잔여 항목으로 분리했습니다.
 - 작은 오타 수정이나 설명만 바뀐 경우는 필요할 때만 기록합니다.
+
+## 2026-07-26 - multi-window topology archive/restore implementation
+
+- archive snapshot 범위를 현재 window에서 session 전체 window로 확장했습니다.
+- 한 session에서 두 window를 만들고 각 window에 서로 다른 4-pane topology를
+  구성한 뒤, Ctrl+a Tab/ Ctrl+a Shift-Tab, sidebar session 왕복,
+  d archive/delete, o restore를 실제 입력 경로로 수행합니다.
+- window 순서/name/layout, pane slot/title/path/command/geometry/active 상태,
+  sidebar metadata를 physical pane ID/PID와 분리해 before/after trace로 남깁니다.
+- version 2 archive에 active window의 sidebar-inclusive layout mapping을
+  추가하고, restore 시 새 pane ID로 layout을 재매핑하도록 했습니다.
+- restore는 모든 window의 name/order/layout/geometry/active pane을 복원하며,
+  sidebar는 active window에 하나만 유지합니다.
+- attached-PTY 테스트가 2개 window, 8개 pane, sidebar geometry와 semantic
+  metadata를 보존하는 PASS로 전환됐습니다.
+- 기존 contract, arbitrary topology, horizontal/vertical split, metadata
+  rollback 테스트도 PASS했습니다.
+- master는 변경하지 않았습니다.
 
 ## 2026-07-25 - external tmux client conflict handling
 

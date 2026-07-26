@@ -71,7 +71,8 @@ sidebar_controller_move_to_session()
     target_work_pane_count="$(sidebar_tmux_cmd list-panes -t "$target_window" \
         -F '#{pane_title}' 2>/dev/null |
         awk -v title="$SIDEBAR_TITLE" '$0 != title { count++ } END { print count + 0 }')"
-    if [ "$target_work_pane_count" -gt 1 ] && ! sidebar_layout_available "$target_window"; then
+    if [ "$target_work_pane_count" -gt 1 ] && ! sidebar_layout_available "$target_window" &&
+        [ "$(sidebar_tmux_cmd show-option -gqv '@dotfiles_sidebar_restore_topology' 2>/dev/null || true)" != 1 ]; then
         trace_event "sidebar.move.abort reason=target-layout-metadata-unavailable target=$target_window work_panes=$target_work_pane_count"
         return 1
     fi

@@ -124,9 +124,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle|direct-layout|rapid-operations) ;;
+    full|minimal|split-cycle|direct-layout|rapid-operations|arbitrary-topology|multi-window-topology) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, or rapid-operations\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, arbitrary-topology, or multi-window-topology\n' >&2
         exit 2
         ;;
 esac
@@ -414,6 +414,384 @@ run_split_cycle_reproduction()
     printf 'PASS: split-cycle preserved %s work split and sidebar geometry\n' "$split_label"
 }
 
+pane_identity_snapshot()
+{
+    tmuxc list-panes -t "=$1:" -F '#{pane_id}|#{pane_pid}|#{pane_current_command}|#{pane_current_path}|#{pane_title}' |
+        awk '$5 != "dotfiles-session-sidebar" { print }' | sort
+}
+
+focus_sidebar_via_prefix()
+{
+    local attempt
+    for attempt in 1 2 3 4 5 6; do
+        if [ "$(sidebar_is_active)" = true ]; then
+            return 0
+        fi
+        send_keys $'\001o'
+        sleep 0.1
+    done
+    if [ "$(sidebar_is_active)" = true ]; then
+        return 0
+    fi
+    return 1
+}
+
+run_arbitrary_topology_reproduction()
+{
+    local before after before_ids after_ids before_pids after_pids before_semantic after_semantic
+    local previous_session_count restored_session_count
+
+    # All actions that change the topology or session are sent through the
+    # attached PTY, matching a user's prefix, shortcut, and TUI input path.
+    send_keys $'\001s'
+    wait_until 'arbitrary-topology sidebar toggle off' 0 count_sidebars
+    send_keys $'\001s'
+    wait_until 'arbitrary-topology sidebar toggle on' 1 count_sidebars
+    wait_for_sidebar_input_ready
+
+    for index in 1 2 3; do
+        before_generation="$(action_generation)"
+        send_keys 'c'
+        wait_for_prompt_ready
+        send_keys "topology-$index"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sessions $((index + 1)) "arbitrary topology session $index"
+    done
+
+    # The cursor is on topology-3. Select topology-1.
+    for ignored in 1 2; do
+        before_generation="$(action_generation)"
+        send_keys $'\033[B'
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sidebar_input_ready
+    done
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'arbitrary topology target session' topology-1 client_session
+    wait_for_sidebar_input_ready
+
+    # Build a non-linear work topology using the public wrapper bindings:
+    # horizontal split, vertical split, then another horizontal split.
+    for split_key in '|' '_' '|'; do
+        send_keys $'\001'"$split_key"
+        sleep 0.2
+        focus_sidebar_via_prefix
+        wait_for_sidebar_input_ready
+    done
+    [ "$(work_pane_count topology-1)" -eq 4 ] || {
+        printf 'ERROR: arbitrary topology setup created %s work panes\n' "$(work_pane_count topology-1)" >&2
+        return 1
+    }
+    slot=0
+    while IFS='|' read -r pane_id pane_title; do
+        [ "$pane_title" = "dotfiles-session-sidebar" ] && continue
+        slot=$((slot + 1))
+        tmuxc select-pane -t "$pane_id" -T "topology-slot-$slot"
+    done < <(tmuxc list-panes -t '=topology-1:' -F '#{pane_id}|#{pane_title}')
+
+    before="$(pane_identity_snapshot topology-1)"
+    before_ids="$(printf '%s\n' "$before" | cut -d'|' -f1 | sort)"
+    before_pids="$(printf '%s\n' "$before" | cut -d'|' -f2 | sort)"
+    before_semantic="$(printf '%s\n' "$before" | cut -d'|' -f3-5 | sort)"
+    test_log "arbitrary-topology.before panes=$(printf '%s' "$before" | tr '\n' ';')"
+
+    # Leave and return through the sidebar, then archive/delete via d and
+    # restore through o, exactly as in the user's workflow.
+    before_generation="$(action_generation)"
+    send_keys $'\033[B'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'arbitrary topology second session' topology-2 client_session
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\033[A'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'arbitrary topology return session' topology-1 client_session
+    wait_for_sidebar_input_ready
+
+    previous_session_count="$(count_sessions)"
+    before_generation="$(action_generation)"
+    send_keys 'd'
+    wait_for_prompt_ready
+    send_keys $'y\r'
+    wait_for_prompt_complete
+    wait_for_action_generation_change "$before_generation"
+    wait_for_session_count_below "$previous_session_count"
+    wait_for_archives 1
+    restored_session_count="$(count_sessions)"
+
+    # Restore through the actual history key and Enter path after the delete
+    # focus barrier has reasserted the surviving sidebar.
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys 'o'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_session_count_above "$restored_session_count"
+    wait_for_sidebar_input_ready
+    wait_until 'arbitrary topology restored session' topology-1 client_session
+
+    after="$(pane_identity_snapshot topology-1)"
+    after_ids="$(printf '%s\n' "$after" | cut -d'|' -f1 | sort)"
+    after_pids="$(printf '%s\n' "$after" | cut -d'|' -f2 | sort)"
+    after_semantic="$(printf '%s\n' "$after" | cut -d'|' -f3-5 | sort)"
+    test_log "arbitrary-topology.after panes=$(printf '%s' "$after" | tr '\n' ';')"
+    printf 'INFO: arbitrary topology restored pane records:\n%s\n' "$after"
+    [ "$(work_pane_count topology-1)" -eq 4 ] || {
+        printf 'ERROR: arbitrary topology work-pane count was not restored\n' >&2
+        return 1
+    }
+    [ "$before_semantic" = "$after_semantic" ] || {
+        printf 'FAIL: arbitrary topology semantic pane mapping changed\n'
+        printf 'before semantic: %s\n' "$before_semantic"
+        printf 'after  semantic: %s\n' "$after_semantic"
+        return 1
+    }
+    printf 'PASS: arbitrary topology preserved semantic pane mapping\n'
+    printf 'INFO: physical pane IDs/PIDs were recreated as expected\n'
+    printf 'before IDs: %s\n' "$before_ids"
+    printf 'after  IDs: %s\n' "$after_ids"
+    printf 'before PIDs: %s\n' "$before_pids"
+    printf 'after  PIDs: %s\n' "$after_pids"
+}
+
+multi_window_count()
+{
+    tmuxc list-windows -t "=$1:" -F '#{window_index}' 2>/dev/null | wc -l | tr -d ' '
+}
+
+multi_window_snapshot()
+{
+    local session_name="$1"
+    {
+        printf 'windows\n'
+        tmuxc list-windows -t "=$session_name:" -F 'window=#{window_index}|name=#{window_name}|active=#{window_active}|layout=#{window_layout}' 2>/dev/null
+        printf 'panes\n'
+        tmuxc list-panes -s -t "=$session_name" -F 'window=#{window_index}|name=#{window_name}|pane=#{pane_index}|left=#{pane_left}|top=#{pane_top}|width=#{pane_width}|height=#{pane_height}|active=#{pane_active}|path=#{pane_current_path}|command=#{pane_current_command}|title=#{pane_title}' 2>/dev/null |
+            awk '$0 !~ /title=dotfiles-session-sidebar$/ { print }'
+        printf 'sidebar\n'
+        tmuxc list-panes -s -t "=$session_name" -F 'window=#{window_index}|pane=#{pane_id}|active=#{pane_active}|title=#{pane_title}' 2>/dev/null |
+            awk '$0 ~ /title=dotfiles-session-sidebar$/ { print }'
+    }
+}
+
+label_multi_window_panes()
+{
+    local session_name="$1" window_index pane_id pane_title slot=-1 last_window=''
+    while IFS='|' read -r window_index pane_id pane_title; do
+        [ -n "$pane_id" ] || continue
+        [ "$pane_title" = dotfiles-session-sidebar ] && continue
+        if [ "$window_index" != "$last_window" ]; then
+            slot=0
+            last_window="$window_index"
+        else
+            slot=$((slot + 1))
+        fi
+        tmuxc select-pane -t "$pane_id" -T "multi-window-w${window_index}-slot-${slot}"
+    done < <(tmuxc list-panes -s -t "=$session_name" -F '#{window_index}|#{pane_id}|#{pane_title}' 2>/dev/null)
+}
+
+current_window_index()
+{
+    tmuxc display-message -p '#{window_index}' 2>/dev/null || true
+}
+
+run_multi_window_topology_reproduction()
+{
+    local before after before_windows after_windows before_panes after_panes
+    local before_windows_semantic after_windows_semantic before_panes_semantic after_panes_semantic
+    local before_sidebar after_sidebar archive_file archive_window_count archive_endwindow_count archive_pane_count
+    local previous_session_count restored_session_count window_before window_after
+
+    test_log 'multi-window.before.setup'
+    send_keys $'\001s'
+    wait_until 'multi-window sidebar toggle off' 0 count_sidebars
+    send_keys $'\001s'
+    wait_until 'multi-window sidebar toggle on' 1 count_sidebars
+    wait_for_sidebar_input_ready
+
+    # Keep a peer session available for the real sidebar leave/return path.
+    for session_name in multi-window-peer multi-window-topology; do
+        before_generation="$(action_generation)"
+        send_keys 'c'
+        wait_for_prompt_ready
+        send_keys "$session_name"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+    done
+    wait_for_sessions 3 'multi-window session setup'
+
+    # The second c leaves the target selected in the sidebar. Enter is still
+    # sent through the attached PTY so the selection path is covered too.
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'multi-window target session' multi-window-topology client_session
+    wait_for_sidebar_input_ready
+
+    # Window 0: four panes through the public split wrapper bindings.
+    for split_key in '|' '_' '|'; do
+        send_keys $'\001'"$split_key"
+        sleep 0.2
+        focus_sidebar_via_prefix
+        wait_for_sidebar_input_ready
+    done
+    [ "$(work_pane_count multi-window-topology)" -eq 4 ] || {
+        printf 'ERROR: multi-window window 0 setup created %s work panes\n' "$(work_pane_count multi-window-topology)" >&2
+        return 1
+    }
+
+    # Ctrl+a c is the configured user shortcut for a new window. The new
+    # window starts with one work pane and the managed sidebar is relocated by
+    # the runtime hook.
+    window_before="$(multi_window_count multi-window-topology)"
+    send_keys $'\001c'
+    wait_until 'multi-window second window' 2 multi_window_count multi-window-topology
+    wait_until 'multi-window current window changed' 1 current_window_index
+
+    # Window 1: a different four-pane topology, including the quote split
+    # binding. This intentionally exercises more than one window layout. The
+    # single shared sidebar remains in window 0, so these splits deliberately
+    # stay in the work pane until we return to that window.
+    for split_key in '_' '|' '"'; do
+        send_keys $'\001'"$split_key"
+        sleep 0.2
+    done
+    [ "$(work_pane_count multi-window-topology)" -eq 4 ] || {
+        printf 'ERROR: multi-window window 1 setup created %s work panes\n' "$(work_pane_count multi-window-topology)" >&2
+        return 1
+    }
+    # Tab is used here to return to window 0 because it is the deterministic
+    # two-window cycle. BTab is validated separately below.
+    send_keys $'\001\t'
+    wait_until 'multi-window return to sidebar window' 0 current_window_index
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+    # Give window-name preservation a deterministic semantic identity. This
+    # observer-only setup disables tmux automatic rename for the fixture; all
+    # topology-changing actions above still came through the attached PTY.
+    tmuxc set-window-option -t '=multi-window-topology:0' automatic-rename off
+    tmuxc set-window-option -t '=multi-window-topology:1' automatic-rename off
+    tmuxc rename-window -t '=multi-window-topology:0' 'multi-window-main'
+    tmuxc rename-window -t '=multi-window-topology:1' 'multi-window-alt'
+    label_multi_window_panes multi-window-topology
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+
+    before="$(multi_window_snapshot multi-window-topology)"
+    before_windows="$(printf '%s\n' "$before" | sed -n '/^windows$/,/^panes$/p')"
+    before_panes="$(printf '%s\n' "$before" | sed -n '/^panes$/,/^sidebar$/p')"
+    before_windows_semantic="$(printf '%s\n' "$before_windows" | sed -E 's/\|layout=.*$//')"
+    before_panes_semantic="$(printf '%s\n' "$before_panes" | sed -E '/^panes$/d; s/\|pane=[^|]*//')"
+    before_sidebar="$(printf '%s\n' "$before" | sed -n '/^sidebar$/,$p' | sed -E '/^sidebar$/d; s/\|pane=[^|]*//')"
+    test_log "multi-window.before windows=$(printf '%s' "$before_windows" | tr '\n' ';') panes=$(printf '%s' "$before_panes" | tr '\n' ';')"
+
+    # Exercise next/previous window through the actual prefix and configured
+    # Tab/BTab shortcuts before changing sessions.
+    window_before="$(current_window_index)"
+    send_keys $'\001\t'
+    wait_until 'multi-window next-window shortcut' 1 current_window_index
+    test_log "multi-window.window-next from=$window_before to=$(current_window_index)"
+    send_keys $'\001\033[Z'
+    wait_until 'multi-window previous-window shortcut' 0 current_window_index
+    test_log "multi-window.window-previous to=$(current_window_index)"
+
+    # Leave and return through the sidebar, then archive/delete and restore.
+    before_generation="$(action_generation)"
+    send_keys $'\033[A'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'multi-window peer session' multi-window-peer client_session
+    test_log 'multi-window.switch-away target=multi-window-peer'
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\033[B'
+    wait_for_action_generation_change "$before_generation"
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'multi-window return session' multi-window-topology client_session
+    test_log 'multi-window.switch-back target=multi-window-topology'
+    wait_for_sidebar_input_ready
+
+    previous_session_count="$(count_sessions)"
+    before_generation="$(action_generation)"
+    test_log 'multi-window.archive.begin'
+    send_keys 'd'
+    wait_for_prompt_ready
+    send_keys $'y\r'
+    wait_for_prompt_complete
+    wait_for_action_generation_change "$before_generation"
+    wait_for_session_count_below "$previous_session_count"
+    wait_for_archives 1
+    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*.tsv' -print 2>/dev/null | sort | tail -1)"
+    archive_window_count="$(awk -F '\t' '$1 == "window" { count++ } END { print count + 0 }' "$archive_file")"
+    archive_endwindow_count="$(awk -F '\t' '$1 == "endwindow" { count++ } END { print count + 0 }' "$archive_file")"
+    archive_pane_count="$(awk -F '\t' '$1 == "pane" { count++ } END { print count + 0 }' "$archive_file")"
+    test_log "multi-window.archive.metadata file=$archive_file windows=$archive_window_count endwindows=$archive_endwindow_count panes=$archive_pane_count"
+    [ "$archive_window_count" -eq 2 ] && [ "$archive_endwindow_count" -eq 2 ] && [ "$archive_pane_count" -eq 8 ] || {
+        printf 'ERROR: archive did not contain complete multi-window metadata (windows=%s endwindows=%s panes=%s)\n' \
+            "$archive_window_count" "$archive_endwindow_count" "$archive_pane_count" >&2
+        return 1
+    }
+    restored_session_count="$(count_sessions)"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    test_log 'multi-window.restore.begin'
+    send_keys 'o'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_session_count_above "$restored_session_count"
+    wait_until 'multi-window restored session' multi-window-topology client_session
+    wait_for_sidebar_input_ready
+
+    label_multi_window_panes multi-window-topology
+    after="$(multi_window_snapshot multi-window-topology)"
+    after_windows="$(printf '%s\n' "$after" | sed -n '/^windows$/,/^panes$/p')"
+    after_panes="$(printf '%s\n' "$after" | sed -n '/^panes$/,/^sidebar$/p')"
+    after_windows_semantic="$(printf '%s\n' "$after_windows" | sed -E 's/\|layout=.*$//')"
+    after_panes_semantic="$(printf '%s\n' "$after_panes" | sed -E '/^panes$/d; s/\|pane=[^|]*//')"
+    after_sidebar="$(printf '%s\n' "$after" | sed -n '/^sidebar$/,$p' | sed -E '/^sidebar$/d; s/\|pane=[^|]*//')"
+    test_log "multi-window.after windows=$(printf '%s' "$after_windows" | tr '\n' ';') panes=$(printf '%s' "$after_panes" | tr '\n' ';')"
+    test_log "multi-window.semantic-diff before=$(printf '%s' "$before" | tr '\n' ';') after=$(printf '%s' "$after" | tr '\n' ';')"
+    printf 'INFO: multi-window before metadata:\n%s\n' "$before"
+    printf 'INFO: multi-window after metadata:\n%s\n' "$after"
+
+    if [ "$before_windows_semantic" != "$after_windows_semantic" ] ||
+        [ "$before_panes_semantic" != "$after_panes_semantic" ] ||
+        [ "$before_sidebar" != "$after_sidebar" ]; then
+        printf 'FAIL: multi-window topology metadata changed across archive/restore\n'
+        printf 'before windows semantic:\n%s\n' "$before_windows_semantic"
+        printf 'after windows semantic:\n%s\n' "$after_windows_semantic"
+        printf 'before panes semantic:\n%s\n' "$before_panes_semantic"
+        printf 'after panes semantic:\n%s\n' "$after_panes_semantic"
+        printf 'before sidebar semantic:\n%s\n' "$before_sidebar"
+        printf 'after sidebar semantic:\n%s\n' "$after_sidebar"
+        return 1
+    fi
+    printf 'PASS: multi-window topology and active-window sidebar metadata preserved\n'
+}
+
 wait_for_action_generation_change()
 {
     local previous="$1" deadline=$(( $(date +%s) + 20 ))
@@ -619,6 +997,16 @@ fi
 
 if [ "$SCENARIO" = split-cycle ] || [ "$SCENARIO" = direct-layout ]; then
     run_split_cycle_reproduction
+    exit 0
+fi
+
+if [ "$SCENARIO" = arbitrary-topology ]; then
+    run_arbitrary_topology_reproduction
+    exit 0
+fi
+
+if [ "$SCENARIO" = multi-window-topology ]; then
+    run_multi_window_topology_reproduction
     exit 0
 fi
 

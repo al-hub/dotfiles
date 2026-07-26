@@ -51,6 +51,38 @@ configured sidebar bindings and explicit target sessions:
 These results do not prove that arbitrary user-created splits, multiple windows,
 pre-existing sessions, or live installation are side-effect free.
 
+## Current practical-scenario status matrix
+
+This matrix evaluates only behavior that is meaningful and technically
+available within tmux. A capability that requires tmux to preserve a process
+after its session has been killed is explicitly excluded from the unresolved
+bug list.
+
+| Status | Area | Result and evidence |
+| --- | --- | --- |
+| Fixed | `c` prompt | Typed session name is visible before Enter; attached-PTY E2E PASS |
+| Fixed | Numeric session `0` | Session selection no longer fails; numeric regression PASS |
+| Fixed | Single sidebar | Session/window movement keeps one sidebar pane and process |
+| Fixed | Split/layout | Wrapper and raw horizontal/vertical split geometry survives movement |
+| Fixed | Current-session delete | Sidebar moves to fallback before target kill; TUI remains alive |
+| Fixed | Delete → history restore | Real `d` → `o` → Enter flow restores the selected session |
+| Fixed | Arbitrary topology | Non-linear four-pane topology restores logical slot/title/path/layout/focus |
+| Fixed | Archive safety | Failed archive preserves the source session; archive is validated atomically |
+| Fixed | Rapid input | Busy operation rejects/drains pending navigation and restore input |
+| Fixed | `d All` scope | Only `@dotfiles_sidebar_managed` sessions are deleted |
+| Fixed | External clients | Attach, target deletion, and restore name collision fail closed and preserve external sessions |
+| Fixed | Failure rollback | Move, snapshot, layout, focus, and transition failure injection preserves safe state |
+| Fixed | Archive compatibility | v1 archives remain readable; v2 stores logical pane metadata |
+| Fixed | Installer side effects | Existing tmux server, invalid X display, and local OpenCode install paths are guarded |
+| Excluded | Physical pane ID/PID continuity | Not a tmux archive capability after session/process termination; restore creates new panes and shells |
+| Excluded | Running process/runtime continuation | Original process environment, scrollback, and in-progress CLI state are not serializable through tmux archive |
+| Fixed | Multi-window topology | Attached-PTY two-window/four-pane-per-window archive/delete/restore preserves window order/name, geometry, active metadata, and one active-window sidebar |
+| Pending verification | Live installer preservation | Existing user tmux server needs final install/update acceptance, beyond isolated sockets |
+| Performance pending | External key latency | 40ms goal remains unmet at the tmux/PTY observation boundary; launcher internal target passes |
+
+The remaining practical work is therefore limited to live pre-existing-server
+installation acceptance and external key latency investigation.
+
 ## 2026-07-25 implementation status
 
 - Installer tmux-server preservation, X display probing, and OpenCode CLI opt-in
@@ -96,9 +128,31 @@ pre-existing sessions, or live installation are side-effect free.
 ## Next audit order
 
 1. Verify installer preservation against a live, pre-existing tmux server.
-2. Reproduce direct split → `d` → `o` with pane IDs, layouts, focus, and archive timestamps recorded before and after every action. The direct split/resize hook path is now implemented; arbitrary pane identity restoration remains a follow-up topology test.
-3. Exercise version 2 archives against more arbitrary pane topologies and add
-   an end-to-end legacy version 1 archive fixture.
+2. Exercise version 2 archives against multi-window and more arbitrary pane
+   topologies, and add an end-to-end legacy version 1 archive fixture.
+3. Measure external key latency separately from launcher internal latency and
+   tmux/PTY observer settlement.
+
+## 2026-07-26 arbitrary pane topology acceptance
+
+The reproduction is `tests/tmux-single-sidebar/test-keyboard-e2e-arbitrary-topology.sh`.
+It uses the attached PTY and performs the user sequence:
+
+1. Create three sessions with `c`.
+2. Select `topology-1` from the sidebar.
+3. Create a four-pane non-linear work tree with `Ctrl+a |`, `Ctrl+a _`, and
+   `Ctrl+a |`, returning to the sidebar with `Ctrl+a o` after each split.
+4. Move to `topology-2` and back to `topology-1`.
+5. Archive/delete with `d`, then enter history with `o` and restore with Enter.
+6. Compare work-pane count, logical slot/title, geometry, commands, paths, and
+   active focus; record pane IDs/PIDs as diagnostic values.
+
+Observed result: PASS. The current-session delete path moves the shared sidebar
+to the fallback session before killing the target, and the real `o` + Enter
+history path restores the four-pane topology. Logical slot/title/path mapping,
+pane count, geometry, and active focus are preserved. Physical pane IDs and
+PIDs change as expected because restore creates new panes and shells; they are
+diagnostic values, not semantic restore requirements.
 
 ## 2026-07-25 split-cycle reproduction
 
@@ -155,6 +209,31 @@ split from disabling the sidebar TUI while preserving the metadata needed by a
 later session move.
 
 Until these items are resolved, this branch remains unsuitable for `master`.
+
+## 2026-07-26 multi-window topology archive/restore implementation
+
+tests/tmux-single-sidebar/test-keyboard-e2e-multi-window-topology.sh는
+실사용 입력과 같은 attached PTY로 다음을 구성한다.
+
+1. 하나의 session에 두 window를 생성한다.
+2. 각 window에 서로 다른 가로·세로·quote split 조합으로 4개 work pane을 만든다.
+3. Ctrl+a Tab 및 Ctrl+a Shift-Tab으로 window를 이동한다.
+4. sidebar에서 peer session으로 이동했다가 target으로 돌아온다.
+5. d로 archive/delete한 뒤 o와 Enter로 restore한다.
+
+검증 메타데이터는 physical pane ID/PID가 아니라 window index/name과 pane
+slot/title/path/command/geometry/active 상태를 비교한다. archive 파일에
+window 2개, endwindow 2개, pane 8개가 기록되는지도 확인한다.
+
+구현 후 결과:
+
+`
+PASS: multi-window topology and active-window sidebar metadata preserved
+`
+
+archive는 session 전체 window를 저장하고, restore는 새 pane ID를 기존
+semantic pane 순서에 매핑한다. active window에는 기존 sidebar-inclusive
+layout을 재적용하고 inactive window에는 sidebar를 생성하지 않는다.
 
 ## 2026-07-25 rapid archive/restore reproduction
 

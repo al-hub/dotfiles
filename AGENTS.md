@@ -15,7 +15,7 @@
 - active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부하고, 완료 시 PTY에 쌓인 pending 입력도 drain합니다. 각 async worker는 operation id ownership을 확인해 stale completion이 최신 상태를 덮어쓰지 못합니다.
 - non-owner client의 session/window 변경은 sidebar를 탈취하지 않고 관측 trace만 남깁니다. archive/delete/restore는 session identity, client attachment, owner client tty/session/window precondition을 재검증하며 외부 conflict 시 대상 session 보존과 rollback을 수행합니다.
 - sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
-- archive는 version 2 pane identity/geometry/active metadata를 기록하고 restore에서 geometry와 focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, arbitrary topology의 완전한 process/identity 복원은 아직 후속 검증입니다.
+- archive는 version 2 pane logical slot/title/geometry/active metadata와 session 전체 window topology/sidebar layout metadata를 기록하고 restore에서 semantic topology, geometry, title, path, focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, physical work-pane ID/PID는 restore 시 새로 생성됩니다.
 - archive 생성은 임시 파일 검증 후 고유 이름으로 rename하며, restore 후 history import marker로 동일 archive의 중복 import를 막습니다. bulk archive 실패 시 session 삭제를 중단합니다.
 - session 이동 전 sidebar 포함 full window layout을 저장하고, target 이동 후 pane ID 순서에 맞춰 재적용합니다. horizontal/vertical multi-pane split의 sidebar geometry가 보존되지 않으면 이동을 rollback합니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
@@ -30,6 +30,7 @@
 - `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: 실제 attached PTY 입력으로 prefix/sidebar/TUI 전체 시나리오를 검증
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
 - `tests/tmux-single-sidebar/test-layout-metadata-failure.sh`: multi-pane target metadata 부재 시 rollback을 검증
+- `tests/tmux-single-sidebar/test-keyboard-e2e-multi-window-topology.sh`: multi-window/복합 topology archive·restore와 active-window 단일 sidebar를 attached PTY로 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-direct-layout.sh`: raw tmux horizontal/vertical split/resize 후 session 왕복을 attached PTY로 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-rapid-operations.sh`: archive/delete/restore 중 급속 입력 drain과 operation ownership을 검증
 - `tests/tmux-single-sidebar/test-multi-client-operation-conflict.sh`: 외부 client attach/delete/restore name collision conflict와 rollback을 검증

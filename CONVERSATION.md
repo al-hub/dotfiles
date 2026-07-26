@@ -3599,3 +3599,32 @@
 - `client_activity`는 Enter마다 증가하지 않아 byte 수신의 확정 증거가 아니며, session-change와 topology 관측용으로만 사용한다.
 - `script --log-in`으로 failing Down byte가 script 입력까지 도달함을 확인했다. launcher에는 해당 byte의 `input.read.result`가 없다.
 - 현재 정확한 분류는 test→script는 PASS, script child PTY→tmux client→sidebar는 미확정/실패 경계다. 다음 개선은 lower-level PTY transport 관측 또는 transport 경로 자체의 통제다.
+## 2026-07-26 arbitrary topology semantic restore implementation
+
+- 원본 pane ID/PID를 유지하는 대신 pane slot/title/path/layout/active focus를
+  semantic identity로 정의하고, v2 archive에 title metadata를 추가했습니다.
+- current session 삭제 전 worker가 client를 fallback으로 전환하고 shared sidebar를
+  먼저 이동하도록 변경했습니다. TUI는 더 이상 current session 삭제 후 종료하지
+  않으며, 삭제 완료 후 sidebar transition/focus를 재확인합니다.
+- restore 중에는 archive topology를 기반으로 multi-pane target에 sidebar를
+  초기 이동할 수 있도록 제한된 restore 전용 option을 사용하고, 완료/abort 시
+  즉시 해제합니다.
+- 실제 attached-PTY arbitrary topology 시나리오에서 4-pane 구성 → session 왕복 →
+  `d` archive/delete → `o` restore가 PASS했습니다. physical pane ID/PID는 새로
+  생성되지만 semantic mapping은 유지됩니다.
+- 실사용 현황 판단에서는 tmux가 session 종료 후 보존할 수 없는 physical
+  pane/process continuity는 개선 미완료 항목에서 제외하고, multi-window topology,
+  live pre-existing tmux 설치, external key latency만 후속 검토 대상으로 남겼습니다.
+
+## 2026-07-26 multi-window topology test-only baseline
+
+- 사용자는 multi-window 및 더 복잡한 topology 검증의 test 코드만 먼저 만들도록
+  요청했습니다.
+- production launcher/controller는 수정하지 않고, 실제 attached PTY 입력으로
+  두 window와 서로 다른 4-pane topology를 구성하는 시나리오를 추가했습니다.
+- window 전환, sidebar session 왕복, d archive/delete, o restore 후
+  semantic metadata를 비교하는 RED 기준선을 먼저 추가했습니다.
+- archive snapshot을 session 전체 window로 확장하고 active window의
+  sidebar-inclusive layout을 새 pane ID로 재매핑했습니다.
+- 2개 window/8개 pane과 window name/order/geometry/active metadata,
+  단일 active-window sidebar 복원이 attached-PTY에서 PASS했습니다.
