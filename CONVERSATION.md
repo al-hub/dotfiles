@@ -9,6 +9,16 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-26 - render cause correlation
+
+- 사용자는 각 `render_full` 호출 직전의 호출 원인을 더 세밀하게 구분할 수
+  있는 검증을 요청했습니다.
+- production launcher/controller는 유지하고, attached PTY 전환 테스트에 5ms
+  sampler를 추가해 trace/debug 증가 시점을 관찰합니다.
+- 각 render를 enter-dispatch, force-refresh, layout-restore,
+  full-render-required, periodic-refresh, unclassified 후보로 TSV에 기록하고,
+  미분류 render가 있으면 artifact를 보존한 채 RED로 판정합니다.
+
 ## 2026-07-25 - 외부 tmux client 동시 변경 conflict 처리
 
 사용자 결정:
@@ -3637,3 +3647,12 @@
   attached PTY raw output offset과 cursor redraw sequence를 전환별로 측정합니다.
 - 현재 관측은 전체 clear보다 대량의 cursor 기반 redraw 가능성이 높지만,
   일부 반복에서 session switch가 중단되므로 두 문제를 분리해 분석합니다.
+- 10회 correlation은 input부터 switch.end까지 모두 연결됐고 abort는 없었습니다.
+- 10회 raw PTY 측정에서는 clear sequence 없이 cursor-home이 265회 발생해,
+  정상 전환 시 주된 현상은 대량 redraw로 좁혀졌습니다.
+- render/debug correlation에서 전환당 render_full 평균 2회가 관측됐고,
+  input.read 20회와 abort 0회로 단순 전환의 PTY 경계는 안정적이었습니다.
+- sidebar hook sync는 0회였으므로 다음 분석은 중복 render/refresh 및 layout
+  restore 순서에 집중합니다.
+- render phase correlation 4회에서 전환별 render_full 8회가 모두 phase에
+  연결됐고 raw PTY output 합계는 87,029 bytes였습니다.

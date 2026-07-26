@@ -16,6 +16,14 @@
   관측됐으며, ESC[2J 전체 화면 clear는 관측되지 않았습니다.
 - 측정 문서와 artifact 보존 규칙을 추가했으며, redraw 문제와 session switch 중단
   문제를 분리해 후속 분석 대상으로 남겼습니다.
+- 10회 correlation 측정은 switch phase 전부 PASS, abort 0회였습니다.
+- 10회 raw PTY 측정은 전체 clear 0회, cursor-home 265회,
+  cursor 1,1 home 276회로 대량 cursor redraw를 재확인했습니다.
+- render/debug correlation에서 10회 전환 동안 render_full 20/20,
+  input.read 20회, switch.abort 0회, sidebar hook sync 0회를 확인했습니다.
+- 단순 전환의 주된 후보를 PTY 유실보다 중복 render/refresh 경로로 좁혔습니다.
+- render phase correlation 4회에서 render_full 8회, force-refresh 4회,
+  layout restore 3회, unclassified render 0회를 확인했습니다.
 
 ## 2026-07-26 - arbitrary pane topology semantic restore
 
@@ -4106,6 +4114,18 @@
 - wrapper의 `list-clients` 성공 결과를 archive 존재성 검사로 재사용했습니다.
 - 최신 공식 중앙값은 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms입니다.
 - archive 목표와 모든 기능 invariant는 PASS했지만 key 40ms 목표는 미달했습니다. pipe observer 진단도 key 66ms로 남아 observer 경로 추가 설계가 필요합니다.
+
+## 2026-07-26 - render cause correlation
+
+- Added the observer-only `test-keyboard-e2e-switch-render-cause.sh` scenario.
+  It samples trace/debug growth at a 5ms interval and records pre/observed
+  candidates for each `render_full` (enter, force-refresh, layout-restore,
+  full-render-required, or periodic-refresh), preserving ambiguous TSV
+  artifacts and failing the diagnostic when a unique cause cannot be proven,
+  without changing production code.
+- The first 4-transition run completed all transitions and observed 9 renders,
+  but returned RED with 2 ambiguous render-cause observations; exact per-call
+  attribution therefore remains open.
 ## 2026-07-24
 
 - Added `tests/tmux-single-sidebar/test-keyboard-e2e.sh`, an attached-PTY end-to-end scenario covering `Ctrl+a s`, six `c` session creations, repeated arrow/Enter switching, archived `d` deletion, `o` restoration, and `d All` shutdown.

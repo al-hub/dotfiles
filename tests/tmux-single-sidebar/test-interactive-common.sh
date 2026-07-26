@@ -10,6 +10,8 @@ SOCKET="dotfiles-$SCENARIO_NAME-$$"
 LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
 INPUT_LOG="$RUN_DIR/input.log"
 OUTPUT_LOG="$RUN_DIR/output.log"
+TRACE_FILE="$RUN_DIR/trace.log"
+DEBUG_FILE="$RUN_DIR/debug.log"
 TMUX_CMD=(tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf")
 CLIENT_PID=""
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
@@ -111,6 +113,14 @@ select_session_by_name() {
 setup_interactive_test() {
   tmuxc new-session -d -s interactive-anchor -c "$REPO_ROOT" 'sleep 300'
   tmuxc new-session -d -s interactive-peer -c "$REPO_ROOT" 'sleep 300'
+  if [ "${TMUX_SESSION_LAUNCHER_TRACE:-0}" = 1 ]; then
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE 1
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "$TRACE_FILE"
+  fi
+  if [ "${TMUX_SESSION_LAUNCHER_DEBUG:-0}" = 1 ]; then
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG 1
+    tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE "$DEBUG_FILE"
+  fi
   tmuxc split-window -d -t '=interactive-anchor:' -h -b -l 35 "$LAUNCHER --sidebar"
   local i
   for i in $(seq 1 100); do

@@ -12,6 +12,7 @@ source "$(dirname -- "$BASH_SOURCE")/test-interactive-common.sh"
 
 MEASURE_FILE="$RUN_DIR/pty-render-samples.tsv"
 EXPECTED_SESSIONS=(pty-a pty-b)
+EXPECTED_TRANSITIONS="${PTY_RENDER_TRANSITIONS:-20}"
 
 output_bytes() {
   wc -c < "$OUTPUT_LOG" | tr -d ' '
@@ -45,7 +46,7 @@ select_session_by_name pty-a
 : > "$MEASURE_FILE"
 
 completed=true
-for iteration in $(seq 1 20); do
+for iteration in $(seq 1 "$EXPECTED_TRANSITIONS"); do
   focus_sidebar
   if [ $((iteration % 2)) -eq 1 ]; then
     send_keys $'\033[B'
@@ -83,7 +84,7 @@ echo "cursor_home_total=$home_total cursor_1_1_home_total=$home11_total"
 echo "transitions_with_clear_screen=$clear_every"
 echo "completed_all_requested_transitions=$completed"
 
-if [ "$completed" != true ] || [ "$sample_count" -ne 20 ]; then
+if [ "$completed" != true ] || [ "$sample_count" -ne "$EXPECTED_TRANSITIONS" ]; then
   echo "RED: not all requested PTY transitions produced measurable output" >&2
   KEEP_RUN_DIR=true
   echo "artifacts=$RUN_DIR" >&2
