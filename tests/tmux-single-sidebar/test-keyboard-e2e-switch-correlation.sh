@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Correlates physical PTY input, launcher trace phases, and terminal output for
-# each session switch. This is diagnostic coverage only; production code is
-# not changed.
+# each session switch. The test does not mutate production state beyond the
+# normal attached-PTY scenario.
 
 SCENARIO_NAME=switch-correlation
 export SCENARIO_NAME
@@ -92,6 +92,7 @@ if [ "$completed" -ne "$EXPECTED" ] ||
    [ "$refresh_end" -ne "$EXPECTED" ] ||
    [ "$switch_end" -ne "$EXPECTED" ] ||
    [ "$abort_count" -ne 0 ] ||
+   [ "$render_begin" -ne "$EXPECTED" ] ||
    [ "$render_begin" -ne "$render_end" ] ||
    [ "$input_read" -lt "$EXPECTED" ]; then
   KEEP_RUN_DIR=true

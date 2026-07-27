@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Correlates each render_full invocation with the closest preceding trace
-# phase. This is an observer-only test; production files are not modified.
+# phase. This is an observer-only test; it validates the production render
+# reason markers without changing production state.
 
 SCENARIO_NAME=switch-render-cause
 export SCENARIO_NAME
@@ -65,6 +66,19 @@ classify_trace_history() {
   printf '%s\n' unclassified
 }
 
+normalize_render_reason() {
+  local line="$1" reason
+  reason="$(printf '%s\n' "$line" | sed -n 's/.* reason=\([^ ]*\).*/\1/p')"
+  case "$reason" in
+    enter-session-switch) printf '%s\n' enter-dispatch ;;
+    force-refresh) printf '%s\n' force-refresh ;;
+    history-restore|history-toggle|history-exit) printf '%s\n' layout-restore ;;
+    full-render-required) printf '%s\n' full-render-required ;;
+    periodic-refresh) printf '%s\n' periodic-refresh ;;
+    *) printf '%s\n' "" ;;
+  esac
+}
+
 start_sampler() {
   local iteration="$1" trace_start="$2" debug_start="$3"
   (
@@ -79,8 +93,12 @@ start_sampler() {
           case "$line" in
             *"render_full start"*)
               timestamp="$(date +%s%N)"
-              candidate_pre="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_before_debug")"
-              candidate_observed="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_now")"
+              candidate_pre="$(normalize_render_reason "$line")"
+              candidate_observed="$candidate_pre"
+              if [ -z "$candidate_pre" ]; then
+                candidate_pre="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_before_debug")"
+                candidate_observed="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_now")"
+              fi
               printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "$iteration" "$timestamp" "$debug_seen" "$trace_before_debug" \
                 "$trace_now" "$candidate_pre" "$candidate_observed" "$line" >> "$CAUSE_FILE"
@@ -104,7 +122,7 @@ stop_sampler() {
   wait "$CAUSE_SAMPLER_PID" 2>/dev/null || true
 }
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   iteration timestamp debug_line trace_before_debug trace_after_debug cause_pre cause_observed > "$RUN_DIR/render-cause.header"
 
 completed=0

@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
 SOCKET="dotfiles-single-sidebar-contract-$$"
 TMUX=(tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf")
+KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
 
 cleanup()
 {
@@ -20,6 +21,17 @@ count_sidebars()
 {
     "${TMUX[@]}" list-panes -a -F '#{pane_title}' 2>/dev/null |
         awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }'
+}
+
+wait_for_sidebar_count()
+{
+    local expected="$1" deadline=$(( $(date +%s) + 5 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(count_sidebars)" -eq "$expected" ] && return 0
+        sleep 0.05
+    done
+    printf 'ERROR: expected sidebar count %s, got %s\n' "$expected" "$(count_sidebars)" >&2
+    return 1
 }
 
 "${TMUX[@]}" new-session -d -s contract-a -c "$REPO_ROOT" 'sleep 300'
@@ -41,7 +53,7 @@ pid_before="$(${TMUX[@]} display-message -p -t "$sidebar_before" '#{pane_pid}')"
 # This is the current switch path's target-sidebar operation. The desired
 # implementation must move the existing pane instead of creating another one.
 "${TMUX[@]}" run-shell "$LAUNCHER --ensure-sidebar-session contract-b"
-sleep 0.2
+wait_for_sidebar_count 1
 
 [ "$(count_sidebars)" -eq 1 ]
 sidebar_after="$(${TMUX[@]} list-panes -t '=contract-b:' -F '#{pane_id}|#{pane_title}' |
@@ -52,15 +64,13 @@ pid_after="$(${TMUX[@]} display-message -p -t "$sidebar_after" '#{pane_pid}')"
 printf 'PASS: single sidebar remains unique across target session ensure\n'
 printf 'PASS: sidebar pane ID and process PID survive target session move\n'
 
-"${TMUX[@]}" run-shell "$LAUNCHER --open-sidebar"
-sleep 0.1
-[ "$(count_sidebars)" -eq 0 ]
-printf 'PASS: active-window toggle removes the single sidebar\n'
+# This contract test has no attached client, so an implicit active session is
+# undefined. Use the explicit session toggle; active-window behavior is covered
+# by attached-PTY scenarios where a client context exists.
+"${TMUX[@]}" run-shell "$LAUNCHER --toggle-sidebar-session contract-b"
+wait_for_sidebar_count 0
+printf 'PASS: explicit session toggle removes the single sidebar\n'
 
-"${TMUX[@]}" run-shell "$LAUNCHER --open-sidebar"
-for attempt in $(seq 1 50); do
-    [ "$(count_sidebars)" -eq 1 ] && break
-    sleep 0.05
-done
-[ "$(count_sidebars)" -eq 1 ]
-printf 'PASS: active-window toggle recreates exactly one sidebar\n'
+"${TMUX[@]}" run-shell "$LAUNCHER --toggle-sidebar-session contract-b"
+wait_for_sidebar_count 1
+printf 'PASS: explicit session toggle recreates exactly one sidebar\n'

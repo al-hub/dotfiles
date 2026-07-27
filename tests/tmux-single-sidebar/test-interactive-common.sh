@@ -43,6 +43,11 @@ wait_until() {
     sleep 0.05
   done
   echo "FAIL: timeout waiting for $description" >&2
+  KEEP_RUN_DIR=true
+  printf '%s\n' "failure_description=$description" > "$RUN_DIR/failure.txt"
+  tmuxc list-clients -F '#{client_control_mode}|#{client_tty}|#{session_name}|#{window_id}|#{pane_id}' > "$RUN_DIR/failure-clients.txt" 2>/dev/null || true
+  tmuxc list-panes -a -F '#{session_name}|#{window_id}|#{pane_id}|#{pane_title}|#{pane_pid}|#{pane_active}' > "$RUN_DIR/failure-panes.txt" 2>/dev/null || true
+  tmuxc show-options -g 2>/dev/null | grep -E 'dotfiles_sidebar|sidebar_force_refresh' > "$RUN_DIR/failure-options.txt" || true
   tmuxc capture-pane -p -t "$SIDEBAR_TARGET" 2>/dev/null || true
   return 1
 }
@@ -57,6 +62,16 @@ wait_sidebar_count() { [ "$(count_sidebars)" = "$1" ]; }
 wait_session_exists() { session_exists "$1"; }
 wait_session_absent() { ! session_exists "$1"; }
 wait_capture() { tmuxc capture-pane -p -t "$SIDEBAR_TARGET" | grep -Fq "$1"; }
+wait_trace() { [ -f "$TRACE_FILE" ] && grep -Fq "$1" "$TRACE_FILE"; }
+wait_trace_regex() { [ -f "$TRACE_FILE" ] && grep -Eq "$1" "$TRACE_FILE"; }
+wait_sidebar_stable() {
+  local first second
+  first="$(tmuxc list-panes -a -F '#{pane_id}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}' | awk -F'|' -v id="$(sidebar_pane_id)" '$1 == id {print; exit}')" || return 1
+  [ -n "$first" ] || return 1
+  sleep 0.1
+  second="$(tmuxc list-panes -a -F '#{pane_id}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}' | awk -F'|' -v id="$(sidebar_pane_id)" '$1 == id {print; exit}')" || return 1
+  [ "$first" = "$second" ]
+}
 pane_count_at_least() { [ "$(tmuxc list-panes -t "=$1:" | wc -l)" -ge "$2" ]; }
 sidebar_ready() { [ "$(tmuxc show-options -gqv @dotfiles_sidebar_input_ready 2>/dev/null || true)" = 1 ]; }
 sidebar_active() { [ "$(tmuxc display-message -p -t "$CLIENT_TTY" '#{pane_title}')" = dotfiles-session-sidebar ]; }

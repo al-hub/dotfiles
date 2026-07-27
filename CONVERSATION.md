@@ -9,6 +9,49 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-27 - canonical redraw measurement implementation
+
+- 사용자는 실질적인 개발에 필요한 test/measurement만 남기고 multi-pane
+  redraw와 geometry 원인을 정량적으로 연결하는 계획을 요청했습니다.
+- canonical P1 visual-layer 테스트에 기존 transition operation ID와 phase trace를
+  연결하고 T1~Ttotal 및 raw byte를 phase TSV에 기록하도록 했습니다.
+- `capture-pane` partial은 단독 RED가 아니라 raw PTY/geometry/READY와 함께
+  판정하도록 했고, P0 구조 Gate와 보조/legacy 테스트 역할을 문서화했습니다.
+- 1회 smoke run에서 phase missing 0, geometry mismatch 0,
+  sidebar identity 1, Ttotal p50/p95 2960989us를 확인했습니다.
+- production과 master는 변경하지 않았습니다.
+
+## 2026-07-27 - A/B/C topology measurement profile
+
+- canonical P1을 A/B/C 순환 10회 전환으로 확장하고 target별 semantic pane
+  manifest를 비교했습니다.
+- pane signature는 physical ID/active flag를 제외하고 pane index/title/path/
+  command/geometry를 사용합니다.
+- transition 중간 mismatch와 stable mismatch를 분리해 최종 복원 실패만 RED로
+  판정하도록 했습니다.
+- 10회 결과는 geometry mismatch 0, stable pane mismatch 0, phase missing 0,
+  transition pane mismatch 33 WARN이었습니다.
+
+## 2026-07-27 - contract active-session boundary
+
+- attached client가 없는 contract에서 `--open-sidebar`의 implicit active session
+  판정이 불가능해 명시적 session toggle 계약으로 변경했습니다.
+- active-window 동작은 attached-PTY context가 있는 별도 E2E에서 검증합니다.
+
+## 2026-07-27 - multi-pane redraw measurement plan implementation
+
+- 사용자는 실질적인 개발에 도움이 되도록 필수 test/measurement만 남기고,
+  multi-pane redraw와 geometry 판정을 정확하게 보강하도록 요청했습니다.
+- 기존 visual-layer의 `geometry 종류가 1개인가` 판정은 target session마다 정상
+  geometry가 다를 수 있어 오판 가능하므로 제거했습니다.
+- target별 expected sidebar geometry를 fixture 생성 후 기록하고, sampled row마다
+  observed geometry와 비교하도록 했습니다.
+- transition별 raw PTY artifact와 clear/cursor-home 요약을 추가하고, pane-buffer
+  partial은 raw correlation 전에는 WARN으로만 분류합니다.
+- 전용 attached-PTY 실행에서 6회 전환, 102 samples, geometry mismatch 0,
+  sidebar identity 1, p50 3231ms/p95 3669ms로 완료했습니다.
+- production과 master는 변경하지 않았습니다.
+
 ## 2026-07-26 - render cause correlation
 
 - 사용자는 각 `render_full` 호출 직전의 호출 원인을 더 세밀하게 구분할 수
@@ -18,6 +61,36 @@
 - 각 render를 enter-dispatch, force-refresh, layout-restore,
   full-render-required, periodic-refresh, unclassified 후보로 TSV에 기록하고,
   미분류 render가 있으면 artifact를 보존한 채 RED로 판정합니다.
+
+## 2026-07-26 - session transition redraw consolidation
+
+- 사용자는 session 전환 시 sidebar가 유지되면서 자연스럽게 전환되도록 개선을
+  요청했습니다.
+- `feature/single-sidebar`에서 전환 render 요청을 병합하고, Enter 전환 완료 후
+  full render를 1회만 수행하도록 수정했습니다. 전환 중 추가 입력은 기존 busy
+  정책으로 차단하는 방향을 유지했습니다.
+- `render.full.begin/end`에 reason과 generation marker를 추가했습니다.
+- attached PTY 검증에서 4회 전환 render 4회, 10회 전환 render 10회,
+  switch abort 0회, cause ambiguity 0회를 확인했습니다.
+
+## 2026-07-26 - broader regression verification
+
+- rapid operations, flicker sampling, raw PTY 20회, arbitrary topology,
+  multi-window topology, repeat E2E, rename, pane reorder는 PASS했습니다.
+- mouse selection은 target session 전환에 실패했고, visual-layer는 session
+  전환 timeout/server 종료로 RED였습니다.
+- multi-client attach conflict와 기존 contract의 `--open-sidebar` toggle도
+  별도 RED로 남아 있어 master 반영은 보류합니다.
+
+## 2026-07-27 - test observation boundary reinforcement
+
+- 공통 PTY 테스트에 trace/readiness wait와 timeout artifact 보존을 추가했습니다.
+- mouse는 SGR byte가 input log에는 도달하지만 tmux mouse binding/launcher
+  dispatch에는 도달하지 않는 경계 문제로 좁혀졌습니다.
+- visual-layer는 실제 keyboard split으로 fixture를 구성한 뒤 6회 전환을
+  완료했으며 partial frame 33회와 geometry 변화 2종을 측정했습니다.
+- multi-client는 timeout 대신 owner-policy redirect에 의한 INCONCLUSIVE로
+  분류했고, sidebar toggle contract는 readiness wait 후 PASS했습니다.
 
 ## 2026-07-25 - 외부 tmux client 동시 변경 conflict 처리
 
@@ -3656,3 +3729,15 @@
   restore 순서에 집중합니다.
 - render phase correlation 4회에서 전환별 render_full 8회가 모두 phase에
   연결됐고 raw PTY output 합계는 87,029 bytes였습니다.
+
+## 2026-07-27 - structural transition implementation
+
+- 사용자는 session 전환을 단순 최적화가 아닌 구조적 개선으로 진행하고,
+  기존 테스트의 side-effect/안정성/속도를 정량 검증하도록 요청했습니다.
+- owner-client 정책은 유지하고, 전환을 operation ID와 명시적 phase를 가진
+  coordinator transaction으로 관측하도록 구현했습니다. snapshot과 rollback
+  경계를 추가했으며 master에는 반영하지 않습니다.
+- attached PTY phase correlation은 PASS했지만, multi-pane visual-layer에서
+  partial frame과 geometry 변화가 남아 있어 사용자 체감 redraw 문제는 해결로
+  판정하지 않습니다. mouse dispatch와 multi-client conflict도 별도 경계의
+  미해결/INCONCLUSIVE 상태를 유지합니다.

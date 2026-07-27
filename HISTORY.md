@@ -7,6 +7,53 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-07-27 - canonical multi-pane redraw correlation
+
+- production launcher는 변경하지 않고 canonical visual-layer P1 테스트에
+  operation ID 기반 phase correlation을 추가했습니다.
+- Enter→PREPARE, PREPARE→RESTORE_FOCUS, RESTORE_FOCUS→RENDER_ONCE,
+  RENDER_ONCE→READY, Enter→READY를 microsecond 단위로 기록합니다.
+- transition별 phase/raw artifact를 보존하고 p50/p95를 출력하도록 했습니다.
+- P0 구조 Gate, P1 redraw 진단, 보조/legacy 측정 테스트의 역할과
+  PASS/WARN/RED 판정 기준을 문서화했습니다.
+- 1회 smoke run에서 missing phase 0, geometry mismatch 0,
+  sidebar identity 1을 확인했습니다.
+- master는 변경하지 않았습니다.
+
+## 2026-07-27 - A/B/C canonical topology profile
+
+- canonical P1 visual test를 A/B/C 순환 10회 전환으로 확장했습니다.
+- physical pane ID/active flag가 아닌 pane index/title/path/command/geometry 기반
+  semantic pane signature를 비교합니다.
+- transition 중간 mismatch와 stable 최종 mismatch를 분리해, 중간 redraw는
+  WARN으로 기록하고 최종 geometry/pane 복원 실패만 RED로 판정합니다.
+- 10회 실행에서 samples 172, blank/partial 0, geometry mismatch 0,
+  stable pane mismatch 0, phase missing 0을 확인했습니다. transition pane
+  mismatch 33회는 WARN으로 기록됐습니다.
+- latency p50/p95는 4089/4269ms, phase Ttotal p50/p95는 3821213/4019317us입니다.
+- master는 변경하지 않았습니다.
+
+## 2026-07-27 - contract toggle observation boundary
+
+- attached client가 없는 contract 테스트에서 implicit active session을 요구하던
+  toggle 검증을 명시적 `--toggle-sidebar-session contract-b`로 변경했습니다.
+- active-window toggle은 attached-PTY 시나리오의 client context에서 검증하도록
+  경계를 분리해 false failure를 제거했습니다.
+
+## 2026-07-27 - multi-pane redraw measurement gate correction
+
+- production launcher/controller는 변경하지 않고 visual-layer attached-PTY
+  측정을 보강했습니다.
+- 전체 실행에서 sidebar geometry가 하나인지 검사하던 오판 기준을 제거하고,
+  target session별 expected geometry와 관측 geometry를 비교합니다.
+- transition별 raw PTY output artifact, byte 수, clear-screen/cursor-home 요약,
+  latency p50/p95를 기록합니다.
+- pane-buffer의 blank/partial snapshot은 진단 경고로만 남기고, sidebar identity나
+  target geometry 불일치가 있을 때만 RED로 판정합니다.
+- 6회 전환, 102개 sampled row에서 blank/partial 0, geometry mismatch 0,
+  sidebar identity 1, latency p50 3231ms/p95 3669ms로 PASS했습니다.
+- master는 변경하지 않았습니다.
+
 ## 2026-07-26 - sidebar transition redraw measurement
 
 - production launcher/controller는 수정하지 않고, sidebar session 전환 중
@@ -4126,6 +4173,44 @@
 - The first 4-transition run completed all transitions and observed 9 renders,
   but returned RED with 2 ambiguous render-cause observations; exact per-call
   attribution therefore remains open.
+- Consolidated successful session-switch rendering into one render request per
+  transition and added render reason/generation trace markers. The updated
+  4-transition phase test observed 4 renders, and the 10-transition correlation
+  test observed 10/10 balanced renders with zero aborts.
+- Minimal attached-PTY switching and horizontal/vertical split geometry
+  regressions also passed. The existing contract test still fails at its
+  `--open-sidebar` toggle step after the move/pid assertions; this remains a
+  separate sidebar lifecycle issue and was not changed here.
+- Broader regression verification passed rapid operations, flicker sampling,
+  raw PTY rendering for 20 transitions, arbitrary topology, multi-window
+  topology, repeat E2E, rename, pane reorder, and ownership uniqueness checks.
+  Mouse selection, visual-layer transition, multi-client attach conflict, and
+  the existing contract `--open-sidebar` toggle remain RED.
+
+## 2026-07-27 - test observation boundary reinforcement
+
+- Added deterministic trace/readiness waits and failure artifact preservation to
+  interactive sidebar tests.
+- Reworked visual-layer topology setup to use attached-PTY split shortcuts and
+  exposed 33 partial frames across six completed transitions instead of masking
+  the issue as a target-layout metadata timeout.
+- Mouse diagnostics now distinguish PTY byte delivery from tmux mouse binding;
+  multi-client diagnostics classify owner-policy redirection as inconclusive;
+  sidebar toggle contract now waits on count readiness and passes.
+
+## 2026-07-27 - transition coordinator and quantitative baseline
+
+- session 전환에 operation ID, tmux-visible context, PREPARE/SNAPSHOT부터
+  RENDER_ONCE/READY까지의 명시적 phase와 실패 rollback 관측을 추가했습니다.
+- snapshot은 source/target layout, sidebar pane identity/geometry, owner client
+  상태를 같은 operation correlation으로 기록합니다.
+- phase correlation 테스트는 실제 attached PTY 전환에서 one-render invariant와
+  phase completeness를 검증합니다. visual-layer 테스트는 전환별 latency p50/p95를
+  기록하고 blank/partial frame 및 sidebar identity/geometry 변화는 계속 RED로
+  남깁니다.
+- mouse selection trace에 event ID를 추가해 PTY 입력 전달과 tmux dispatch를
+  분리 추적합니다.
+
 ## 2026-07-24
 
 - Added `tests/tmux-single-sidebar/test-keyboard-e2e.sh`, an attached-PTY end-to-end scenario covering `Ctrl+a s`, six `c` session creations, repeated arrow/Enter switching, archived `d` deletion, `o` restoration, and `d All` shutdown.
