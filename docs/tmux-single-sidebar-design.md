@@ -12,9 +12,11 @@ Keep one sidebar pane and one sidebar process for the active tmux client.
 When the client switches sessions, move the existing pane to the target
 session's active window instead of creating or respawning another sidebar.
 
-The implementation keeps the sidebar for the active client window. Runtime
+The implementation keeps the sidebar as a server-global singleton. Runtime
 `client-session-changed` and `after-select-window` hooks move the existing pane
-to the newly active window while preserving its pane ID and process.
+to the newly active session/window while preserving its pane ID and process.
+Session creation marks the new session immediately; sidebar provisioning is a
+lazy cold-path operation so the `New:` prompt is not blocked by preparation.
 
 ## Invariants
 
@@ -28,8 +30,10 @@ to the newly active window while preserving its pane ID and process.
 8. `master` behavior is unchanged until this branch is explicitly merged.
 9. New archives carry version 2 logical pane slot/title and geometry metadata;
    version 1 archives remain readable.
-10. A session move snapshots the sidebar-inclusive window layout and reapplies
-    it after moving the same pane into the target window.
+10. A multi-pane session move snapshots the sidebar-inclusive window layout and
+    reapplies it after moving the same pane into the target window. A
+    single-work-pane move uses the fast path and relies on the delta render
+    barrier instead of a topology snapshot.
 11. A multi-pane target without compatible sidebar layout metadata rejects the
    move and rolls back instead of accepting a best-effort geometry.
 12. Direct tmux split/resize/layout mutations refresh the sidebar-inclusive
@@ -47,6 +51,14 @@ to the newly active window while preserving its pane ID and process.
 17. Version 2 archives include all windows in the session. Restore preserves
    window order/name, pane topology/geometry/focus, and restores one sidebar
    only in the active window.
+18. Transition readiness polling is observation-only: it must not issue
+   `switch-client` or `select-pane` while waiting for the move to settle.
+19. Runtime hooks defer sidebar metadata/focus synchronization while a
+   transition is running or committed; `READY` is recorded only after the
+   single coalesced delta render completes.
+20. A normal session switch uses sidebar selection/state delta rendering and
+   must not clear or fully repaint the sidebar pane; full render is reserved
+   for geometry, topology, view-mode, or recovery fallback.
 
 The sidebar owner client is stored in `@dotfiles_sidebar_owner_client`. A
 second attached client cannot move or toggle the pane while another client
@@ -94,7 +106,9 @@ failure adapters.
 6. Move the existing sidebar pane to the target window.
 7. Apply the sidebar width without replacing the target work layout.
 8. Switch the explicit client to the target session.
-9. Refresh the surviving TUI process.
+9. Mark the transition `COMMIT` and let the coalesced sidebar delta enter
+   `RENDER_DELTA`; use `RENDER_ONCE` only for an explicit recovery fallback.
+10. Refresh the surviving TUI process and then mark the transition `READY`.
 
 If any step before client switching fails, keep the current client session and
 report the failure. A move must use stable pane/window IDs, not ambiguous
@@ -112,6 +126,10 @@ physical pane ID, and PID are not serialized or required to remain identical.
 
 Window selection invokes the same move protocol through the runtime hook. A
 hook guard prevents recursive move events while the pane is being relocated.
+Readiness polling does not repair focus or client state; those mutations belong
+to the transition protocol. Hook-triggered metadata synchronization is flushed
+once after the render barrier, so an intermediate hook cannot overwrite the
+target layout during movement.
 
 ## On/off policy
 

@@ -8,8 +8,8 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
-SOCKET="dotfiles-single-sidebar-keyboard-$$"
-RUN_DIR="${TMPDIR:-/tmp}/dotfiles-single-sidebar-keyboard-$$"
+SOCKET="${TMUX_KEYBOARD_E2E_SOCKET:-dotfiles-single-sidebar-keyboard-$$}"
+RUN_DIR="${TMUX_KEYBOARD_E2E_RUN_DIR:-${TMPDIR:-/tmp}/dotfiles-single-sidebar-keyboard-$$}"
 HOME_DIR="$RUN_DIR/home"
 HISTORY_DIR="$RUN_DIR/history"
 CLIENT_LOG="$RUN_DIR/client.log"
@@ -27,18 +27,71 @@ OBSERVER_FD=""
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
 TEST_TRACE_VERBOSE="${TEST_TRACE_VERBOSE:-false}"
 INPUT_SEQUENCE=0
+EVENT_SEQUENCE=0
 # forkpty is the acceptance transport. Set TMUX_KEYBOARD_E2E_TRANSPORT=script
 # only when comparing the legacy script(1) handoff behavior.
 TRANSPORT="${TMUX_KEYBOARD_E2E_TRANSPORT:-bridge}"
 SYSCALL_TRACE="${TMUX_KEYBOARD_E2E_SYSCALL_TRACE:-auto}"
 SCENARIO="${TMUX_KEYBOARD_E2E_SCENARIO:-full}"
 SPLIT_DIRECTION="${TMUX_KEYBOARD_E2E_SPLIT_DIRECTION:-horizontal}"
+ANCHOR_SESSION="${TMUX_KEYBOARD_E2E_ANCHOR_SESSION:-keyboard-anchor}"
+SEED_LIVE_TOPOLOGY="${TMUX_KEYBOARD_E2E_SEED_LIVE_TOPOLOGY:-0}"
+EXISTING_SERVER="${TMUX_KEYBOARD_E2E_EXISTING_SERVER:-0}"
+VISIBLE_CLIENT="${TMUX_KEYBOARD_E2E_VISIBLE_CLIENT:-}"
+VISIBLE_PANE=""
+PREFIX_DELAY_MS="${TMUX_KEYBOARD_E2E_PREFIX_DELAY_MS:-100}"
+TEST_RUN_ID="${TEST_RUN_ID:-keyboard-${SCENARIO}-$(date +%s%N)-$$}"
 
 tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" "$@"; }
 
+timestamp_mono_ms()
+{
+    perl -MTime::HiRes=time -e 'printf "%.3f", time * 1000'
+}
+
+timestamp_wall()
+{
+    date -u '+%Y-%m-%dT%H:%M:%S%z'
+}
+
+elapsed_ms()
+{
+    awk -v start="$1" -v end="$2" 'BEGIN { printf "%.3f", end - start }'
+}
+
 test_log()
 {
-    printf '%s %s\n' "$(date '+%F %T.%3N')" "$*" >> "$TEST_TRACE"
+    EVENT_SEQUENCE=$((EVENT_SEQUENCE + 1))
+    printf 'ts_wall=%s ts_mono_ms=%s run_id=%s event_seq=%s input_seq=%s %s\n' \
+        "$(timestamp_wall)" "$(timestamp_mono_ms)" "$TEST_RUN_ID" \
+        "$EVENT_SEQUENCE" "$INPUT_SEQUENCE" "$*" >> "$TEST_TRACE"
+}
+
+test_context_snapshot()
+{
+    local clients panes operation owner window_id sidebar geometry work
+    clients="$(tmuxc list-clients -F 'control=#{client_control_mode}|tty=#{client_tty}|session=#{session_name}|window=#{window_id}|pane=#{pane_id}|active=#{window_active}|prefix=#{client_prefix}' 2>/dev/null | tr '\n' ';' || true)"
+    panes="$(tmuxc list-panes -a -F 'session=#{session_name}|window=#{window_id}|pane=#{pane_id}|title=#{pane_title}|pid=#{pane_pid}|active=#{pane_active}|dead=#{pane_dead}' 2>/dev/null | tr '\n' ';' || true)"
+    operation="$(tmuxc show-option -gqv @dotfiles_sidebar_operation 2>/dev/null || true)"
+    owner="$(tmuxc show-option -gqv @dotfiles_sidebar_owner_client 2>/dev/null || true)"
+    window_id="$(client_window_id 2>/dev/null || true)"
+    sidebar="$(sidebar_pane_id 2>/dev/null || true)"
+    geometry="$(tmuxc display-message -p -t "$sidebar" '#{pane_left},#{pane_top},#{pane_width},#{pane_height}' 2>/dev/null || true)"
+    work="$(tmuxc list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{pane_left},#{pane_top},#{pane_width},#{pane_height}' 2>/dev/null | tr '\n' ';' || true)"
+    test_log "context client=[$clients] operation=$operation owner=$owner window=$window_id sidebar=$sidebar geometry=$geometry work=[$work] panes=[$panes]"
+}
+
+capture_observation()
+{
+    local label="$1" pane window_id
+    window_id="$(client_window_id 2>/dev/null || true)"
+    pane="$(sidebar_pane_id 2>/dev/null || true)"
+    if [ -n "$pane" ]; then
+        tmuxc capture-pane -e -p -J -t "$pane" > "$RUN_DIR/capture-${label}.log" 2>/dev/null || true
+    fi
+    tmuxc list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{pane_left},#{pane_top},#{pane_width},#{pane_height}|#{pane_pid}|#{pane_active}' \
+        > "$RUN_DIR/layout-${label}.tsv" 2>/dev/null || true
+    test_log "observation label=$label pane=$pane window=$window_id capture=$RUN_DIR/capture-${label}.log layout=$RUN_DIR/layout-${label}.tsv"
 }
 
 client_telemetry()
@@ -68,7 +121,17 @@ input_log_tail_hex()
 
 cleanup()
 {
-    tmuxc kill-server >/dev/null 2>&1 || true
+    local status=$?
+    if [ -n "$VISIBLE_CLIENT" ]; then
+        tmuxc switch-client -c "$VISIBLE_CLIENT" -t 0 >/dev/null 2>&1 || true
+    fi
+    if [ "$EXISTING_SERVER" = 1 ]; then
+        for cleanup_session in "$ANCHOR_SESSION" keyboard-1 keyboard-2 keyboard-3 keyboard-4 keyboard-5 keyboard-6; do
+            tmuxc kill-session -t "=$cleanup_session" >/dev/null 2>&1 || true
+        done
+    else
+        tmuxc kill-server >/dev/null 2>&1 || true
+    fi
     if [ -n "${ATTACHED_PID:-}" ]; then
         kill "$ATTACHED_PID" >/dev/null 2>&1 || true
         wait "$ATTACHED_PID" 2>/dev/null || true
@@ -88,6 +151,7 @@ cleanup()
     if [ -n "${OBSERVER_FD:-}" ]; then
         eval "exec ${OBSERVER_FD}<&-" 2>/dev/null || true
     fi
+    [ "$status" -eq 0 ] || KEEP_RUN_DIR=true
     [ "$KEEP_RUN_DIR" = true ] || rm -rf "$RUN_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -124,9 +188,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle|direct-layout|rapid-operations|arbitrary-topology|multi-window-topology) ;;
+    full|minimal|split-cycle|direct-layout|rapid-operations|session-create-latency|arbitrary-topology|multi-window-topology|window-local-switch|window-local-lifecycle|window-local-toggle) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, arbitrary-topology, or multi-window-topology\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, session-create-latency, arbitrary-topology, multi-window-topology, window-local-switch, window-local-lifecycle, or window-local-toggle\n' >&2
         exit 2
         ;;
 esac
@@ -152,6 +216,141 @@ count_sessions()
     tmuxc list-sessions -F '#{session_name}' 2>/dev/null | wc -l | tr -d ' '
 }
 
+launcher_ensure_error_scan()
+{
+    local pane_id pane_title pane_session pane_window capture found=0
+    : > "$RUN_DIR/ensure-sidebar-window-errors.log"
+    if grep -aE 'ensure-sidebar-window.*returned 1|--ensure-sidebar-window.*returned 1' \
+        "$CLIENT_LOG" "$RUN_DIR/trace.log" "$RUN_DIR/debug.log" 2>/dev/null >> "$RUN_DIR/ensure-sidebar-window-errors.log"; then
+        found=1
+    fi
+    while IFS='|' read -r pane_id pane_title pane_session pane_window; do
+        [ -n "$pane_id" ] || continue
+        [ "$pane_title" = dotfiles-session-sidebar ] && continue
+        capture="$(tmuxc capture-pane -p -t "$pane_id" 2>/dev/null || true)"
+        if printf '%s\n' "$capture" | grep -nE 'ensure-sidebar-window.*returned 1|--ensure-sidebar-window.*returned 1' >> "$RUN_DIR/ensure-sidebar-window-errors.log"; then
+            printf 'pane=%s title=%s session=%s window=%s\n' \
+                "$pane_id" "$pane_title" "$pane_session" "$pane_window" >> "$RUN_DIR/ensure-sidebar-window-errors.log"
+            found=1
+        fi
+    done < <(tmuxc list-panes -a -F '#{pane_id}|#{pane_title}|#{session_name}|#{window_id}' 2>/dev/null)
+    return "$found"
+}
+
+client_pty_error_scan()
+{
+    local output_file="$1" offset="${2:-0}" raw_file="$RUN_DIR/client-error-delta.raw"
+    local normalized="$RUN_DIR/client-error-delta.txt"
+    local size bytes
+    size="$(wc -c < "$output_file" 2>/dev/null || printf 0)"
+    bytes=$((size - offset))
+    [ "$bytes" -gt 0 ] || return 1
+    dd if="$output_file" of="$raw_file" iflag=skip_bytes,count_bytes \
+        skip="$offset" count="$bytes" status=none 2>/dev/null || return 1
+    perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a]*\a//g; s/\r//g' \
+        "$raw_file" > "$normalized"
+    grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed' \
+        "$normalized" > "$RUN_DIR/client-pty-errors.log" 2>/dev/null
+}
+
+session_row_visible()
+{
+    local name="$1"
+    if tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null | grep -Fq "$name"; then
+        printf 'true\n'
+    else
+        printf 'false\n'
+    fi
+}
+
+session_count_above()
+{
+    local previous="$1"
+    if [ "$(count_sessions)" -gt "$previous" ]; then
+        printf 'true\n'
+    else
+        printf 'false\n'
+    fi
+}
+
+run_session_create_latency_reproduction()
+{
+    local iteration name before_sessions c_start prompt_ms enter_ms row_ms ready_ms total_ms
+    local now prompt_start enter_start row_at ready_at client_output_before
+    local -a samples=(create-latency-1 create-latency-2 create-latency-3)
+
+    # This is a measurement/reproduction scenario; retain the TSV and raw
+    # pane/trace artifacts even when the assertions pass.
+    KEEP_RUN_DIR=true
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+    printf '%b\n' 'iteration\tname\tc_to_prompt_ms\tenter_to_session_ms\tenter_to_row_ms\tenter_to_ready_ms\tc_to_row_ms' \
+        > "$RUN_DIR/session-create-latency.tsv"
+    client_output_before="$(wc -c < "$CLIENT_LOG" 2>/dev/null || printf 0)"
+
+    for iteration in 1 2 3; do
+        name="${samples[$((iteration - 1))]}"
+        before_sessions="$(count_sessions)"
+        c_start="$(timestamp_mono_ms)"
+        send_keys c
+        wait_for_prompt_ready
+        prompt_start="$(timestamp_mono_ms)"
+        prompt_ms="$(elapsed_ms "$c_start" "$prompt_start")"
+        send_keys "$name"
+        wait_for_prompt_text "New: $name"
+        enter_start="$(timestamp_mono_ms)"
+        send_keys $'\r'
+        wait_until "created session $name" true session_count_above "$before_sessions"
+        now="$(timestamp_mono_ms)"
+        enter_ms="$(elapsed_ms "$enter_start" "$now")"
+        wait_until "sidebar row $name" true session_row_visible "$name"
+        row_at="$(timestamp_mono_ms)"
+        row_ms="$(elapsed_ms "$enter_start" "$row_at")"
+        wait_for_sidebar_input_ready
+        ready_at="$(timestamp_mono_ms)"
+        ready_ms="$(elapsed_ms "$enter_start" "$ready_at")"
+        total_ms="$(elapsed_ms "$c_start" "$row_at")"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$iteration" "$name" "$prompt_ms" "$enter_ms" "$row_ms" "$ready_ms" "$total_ms" \
+            >> "$RUN_DIR/session-create-latency.tsv"
+        test_log "session-create.measure iteration=$iteration name=$name c_to_prompt_ms=$prompt_ms enter_to_session_ms=$enter_ms enter_to_row_ms=$row_ms enter_to_ready_ms=$ready_ms c_to_row_ms=$total_ms"
+    done
+
+    sleep 0.2
+    if client_pty_error_scan "$CLIENT_LOG" "$client_output_before"; then
+        printf 'RED: attached client PTY detected a transient session/hook error\n' >&2
+        cat "$RUN_DIR/client-pty-errors.log" >&2
+        KEEP_RUN_DIR=true
+        return 1
+    fi
+    if ! launcher_ensure_error_scan; then
+        printf 'FAIL: --ensure-sidebar-window returned 1 was observed outside sidebar\n' >&2
+        cat "$RUN_DIR/ensure-sidebar-window-errors.log" >&2
+        KEEP_RUN_DIR=true
+        return 1
+    fi
+    if awk -F '\t' 'NR > 1 && $5 > 1000 { failed = 1 } END { exit failed ? 0 : 1 }' \
+        "$RUN_DIR/session-create-latency.tsv"; then
+        printf 'FAIL: session row latency exceeded 1000ms\n' >&2
+        KEEP_RUN_DIR=true
+        return 1
+    fi
+    perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\r//g' "$CLIENT_LOG" \
+        > "$RUN_DIR/client-normalized.txt" 2>/dev/null || true
+    for name in "${samples[@]}"; do
+        if ! grep -Fq "$name" "$RUN_DIR/client-normalized.txt"; then
+            printf 'FAIL: prompt input echo missing for %s\n' "$name" >&2
+            KEEP_RUN_DIR=true
+            return 1
+        fi
+    done
+    awk -F '\t' 'NR > 1 {sum += $5; if ($5 > max) max=$5} END {printf "create_row_ms_avg=%.1f create_row_ms_max=%d\n", sum / (NR - 1), max + 0}' \
+        "$RUN_DIR/session-create-latency.tsv"
+    printf 'artifacts=%s\n' "$RUN_DIR"
+    printf 'PASS: c/New/Enter session creation timing captured for 3 attached-PTY iterations\n'
+    printf 'PASS: no --ensure-sidebar-window returned 1 observed outside sidebar\n'
+}
+
 count_sidebars()
 {
     tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
@@ -165,7 +364,9 @@ tmux_state_snapshot()
         tmuxc list-clients -F 'control=#{client_control_mode} client=#{client_name} tty=#{client_tty} session=#{session_name} window=#{window_index} pane=#{pane_id} activity=#{client_activity} key_table=#{client_key_table} prefix=#{client_prefix}' 2>&1 || true
         printf 'panes\n'
         tmuxc list-panes -a -F 'session=#{session_name} window=#{window_index} pane=#{pane_id} title=#{pane_title} active=#{pane_active} dead=#{pane_dead}' 2>&1 || true
-        printf 'options input_ready=%s prompt_ready=%s generation=%s\n' "$(input_ready)" "$(prompt_ready)" "$(action_generation)"
+        printf 'options input_ready=%s window_ready=%s window_id=%s prompt_ready=%s generation=%s\n' \
+            "$(input_ready)" "$(tmuxc show-option -wqv -t "$(client_window_id)" '@dotfiles_sidebar_ready' 2>/dev/null || true)" \
+            "$(client_window_id)" "$(prompt_ready)" "$(action_generation)"
         printf 'active\n'
         sidebar_is_active
     } | tr '\n' ';' | sed 's/;$//'
@@ -182,14 +383,27 @@ client_session()
         awk -F '|' '$1 != 1 { print $2; exit }'
 }
 
+client_tty()
+{
+    tmuxc list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
+        awk -F '|' '$1 != 1 { print $2; exit }'
+}
+
+client_window_id()
+{
+    tmuxc list-clients -F '#{client_control_mode}|#{window_id}' 2>/dev/null |
+        awk -F '|' '$1 != 1 { print $2; exit }'
+}
+
 sidebar_is_active()
 {
-    local sidebar_pane client_tty active_pane
-    sidebar_pane="$(tmuxc list-panes -a -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+    local sidebar_pane client_tty active_pane window_id
+    client_tty="$(client_tty)"
+    window_id="$(client_window_id)"
+    sidebar_pane="$(tmuxc list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
         awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
-    client_tty="$(tmuxc list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
+    active_pane="$(tmuxc list-clients -F '#{client_control_mode}|#{pane_id}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }')"
-    active_pane="$(tmuxc display-message -p -t "$client_tty" '#{pane_id}' 2>/dev/null || true)"
     if [ -n "$sidebar_pane" ] && [ "$active_pane" = "$sidebar_pane" ]; then
         printf 'true\n'
     else
@@ -199,20 +413,30 @@ sidebar_is_active()
 
 sidebar_pane_id()
 {
-    tmuxc list-panes -a -F '#{pane_id}|#{pane_title}' 2>/dev/null |
+    local window_id
+    window_id="$(client_window_id)"
+    tmuxc list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
         awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }'
 }
 
 wait_until()
 {
-    local description="$1" expected="$2" command_name="$3" deadline=$(( $(date +%s) + 20 ))
+    local description="$1" expected="$2" command_name="$3" deadline=$(( $(date +%s) + 20 )) start_ms end_ms
     shift 3
+    start_ms="$(timestamp_mono_ms)"
+    test_log "wait.begin description=$description expected=$expected command=$command_name"
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if [ "$($command_name "$@" 2>/dev/null || true)" = "$expected" ]; then
+            end_ms="$(timestamp_mono_ms)"
+            test_log "wait.end description=$description result=pass duration_ms=$(awk -v s="$start_ms" -v e="$end_ms" 'BEGIN{print e-s}')"
             return 0
         fi
         sleep 0.05
     done
+    end_ms="$(timestamp_mono_ms)"
+    test_log "wait.end description=$description result=timeout duration_ms=$(awk -v s="$start_ms" -v e="$end_ms" 'BEGIN{print e-s}')"
+    test_context_snapshot
+    capture_observation "timeout-$(printf '%s' "$description" | tr ' /' '__')"
     test_log "wait.timeout description=$description expected=$expected state=$(tmux_state_snapshot)"
     printf 'ERROR: timeout waiting for %s (expected %s)\n' "$description" "$expected" >&2
     return 1
@@ -232,28 +456,51 @@ wait_for_sessions()
 
 action_generation()
 {
-    tmuxc show-option -gqv '@dotfiles_sidebar_action_generation' 2>/dev/null || true
+    local window_id
+    window_id="$(client_window_id)"
+    tmuxc show-option -wqv -t "$window_id" '@dotfiles_sidebar_action_generation' 2>/dev/null ||
+        tmuxc show-option -gqv '@dotfiles_sidebar_action_generation' 2>/dev/null || true
 }
 
 input_ready()
 {
-    tmuxc show-option -gqv '@dotfiles_sidebar_input_ready' 2>/dev/null || true
+    local window_id
+    window_id="$(client_window_id)"
+    tmuxc show-option -wqv -t "$window_id" '@dotfiles_sidebar_input_ready' 2>/dev/null ||
+        tmuxc show-option -gqv '@dotfiles_sidebar_input_ready' 2>/dev/null || true
+}
+
+window_local_ready()
+{
+    local window_id pane_id ready
+    window_id="$(client_window_id)"
+    [ -n "$window_id" ] || return 1
+    ready="$(tmuxc show-option -wqv -t "$window_id" '@dotfiles_sidebar_ready' 2>/dev/null || true)"
+    [ "$ready" = 1 ] && return 0
+    # The option is the primary readiness boundary. The pane snapshot is a
+    # transport-safe fallback for tmux versions where a window option update
+    # races the attached client's control notification.
+    pane_id="$(sidebar_pane_id)"
+    [ -n "$pane_id" ] || return 1
+    tmuxc capture-pane -p -t "$pane_id" 2>/dev/null | grep -Fxq 'sessions'
 }
 
 prompt_ready()
 {
-    tmuxc show-option -gqv '@dotfiles_sidebar_prompt_ready' 2>/dev/null || true
+    local window_id
+    window_id="$(client_window_id)"
+    tmuxc show-option -wqv -t "$window_id" '@dotfiles_sidebar_prompt_ready' 2>/dev/null ||
+        tmuxc show-option -gqv '@dotfiles_sidebar_prompt_ready' 2>/dev/null || true
 }
 
 sidebar_input_ready()
 {
-    if [ "$(count_sidebars)" = 1 ] &&
-        [ "$(input_ready)" = 1 ] &&
-        [ "$(sidebar_is_active)" = true ]; then
+    if window_local_ready && [ "$(sidebar_is_active)" = true ]; then
         printf 'true\n'
-    else
-        printf 'false\n'
+        return 0
     fi
+    printf 'false\n'
+    return 1
 }
 
 wait_for_prompt_ready()
@@ -320,6 +567,7 @@ run_split_cycle_reproduction()
     wait_until 'split-cycle sidebar toggle off' 0 count_sidebars
     send_keys $'\001s'
     wait_until 'split-cycle sidebar toggle on' 1 count_sidebars
+    focus_sidebar_via_prefix
     wait_for_sidebar_input_ready
 
     # Create three sessions exactly as a user does from the sidebar.
@@ -399,7 +647,7 @@ run_split_cycle_reproduction()
 
     target_layout_after="$(session_window_layout split-cycle-1)"
     test_log "split-cycle.after-return session=split-cycle-1 sidebar_width=$(session_sidebar_width split-cycle-1) layout=$target_layout_after"
-    if [ "$(count_sidebars)" != 1 ] ||
+    if [ "$(count_sidebars)" != 4 ] ||
         [ "$(work_pane_count split-cycle-1)" != 2 ] ||
         [ "$(session_sidebar_width split-cycle-1)" != "$target_sidebar_width" ] ||
         [ "$target_layout_after" != "$target_layout_before" ]; then
@@ -434,6 +682,12 @@ focus_sidebar_via_prefix()
         return 0
     fi
     return 1
+}
+
+sidebar_selected_name()
+{
+    tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
+        awk '$1 ~ /^>/ { print $2; exit }'
 }
 
 run_arbitrary_topology_reproduction()
@@ -475,9 +729,11 @@ run_arbitrary_topology_reproduction()
 
     # Build a non-linear work topology using the public wrapper bindings:
     # horizontal split, vertical split, then another horizontal split.
+    split_index=1
     for split_key in '|' '_' '|'; do
         send_keys $'\001'"$split_key"
-        sleep 0.2
+        split_index=$((split_index + 1))
+        wait_until "arbitrary topology split $split_index" "$split_index" work_pane_count topology-1
         focus_sidebar_via_prefix
         wait_for_sidebar_input_ready
     done
@@ -644,9 +900,11 @@ run_multi_window_topology_reproduction()
     wait_for_sidebar_input_ready
 
     # Window 0: four panes through the public split wrapper bindings.
+    split_index=1
     for split_key in '|' '_' '|'; do
         send_keys $'\001'"$split_key"
-        sleep 0.2
+        split_index=$((split_index + 1))
+        wait_until "multi-window window 0 split $split_index" "$split_index" work_pane_count multi-window-topology
         focus_sidebar_via_prefix
         wait_for_sidebar_input_ready
     done
@@ -667,9 +925,11 @@ run_multi_window_topology_reproduction()
     # binding. This intentionally exercises more than one window layout. The
     # single shared sidebar remains in window 0, so these splits deliberately
     # stay in the work pane until we return to that window.
+    split_index=1
     for split_key in '_' '|' '"'; do
         send_keys $'\001'"$split_key"
-        sleep 0.2
+        split_index=$((split_index + 1))
+        wait_until "multi-window window 1 split $split_index" "$split_index" work_pane_count multi-window-topology
     done
     [ "$(work_pane_count multi-window-topology)" -eq 4 ] || {
         printf 'ERROR: multi-window window 1 setup created %s work panes\n' "$(work_pane_count multi-window-topology)" >&2
@@ -731,6 +991,27 @@ run_multi_window_topology_reproduction()
     test_log 'multi-window.switch-back target=multi-window-topology'
     wait_for_sidebar_input_ready
 
+    # Re-align by observing the actual selection marker after every arrow.
+    # Client session and selected row are separate state after a window
+    # round-trip, so a stale row-number calculation is not sufficient.
+    selected_name="$(sidebar_selected_name)"
+    for _ in $(seq 1 12); do
+        [ "$selected_name" = multi-window-topology ] && break
+        focus_sidebar_via_prefix
+        wait_for_sidebar_input_ready
+        before_generation="$(action_generation)"
+        send_keys $'\033[B'
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sidebar_input_ready
+        selected_name="$(sidebar_selected_name)"
+    done
+    [ "$selected_name" = multi-window-topology ] || {
+        printf 'ERROR: multi-window selection marker is %s before archive\n' "${selected_name:-<empty>}" >&2
+        tmuxc capture-pane -p -t "$(sidebar_pane_id)" >&2 || true
+        return 1
+    }
+    test_log "multi-window.archive.selection target=$selected_name client=$(client_session)"
+
     previous_session_count="$(count_sessions)"
     before_generation="$(action_generation)"
     test_log 'multi-window.archive.begin'
@@ -741,7 +1022,12 @@ run_multi_window_topology_reproduction()
     wait_for_action_generation_change "$before_generation"
     wait_for_session_count_below "$previous_session_count"
     wait_for_archives 1
-    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*.tsv' -print 2>/dev/null | sort | tail -1)"
+    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*-multi-window-topology-*.tsv' -print 2>/dev/null | sort | tail -1)"
+    [ -n "$archive_file" ] || {
+        printf 'ERROR: archive target was not multi-window-topology\n' >&2
+        find "$HISTORY_DIR" -maxdepth 1 -type f -name '*.tsv' -print >&2
+        return 1
+    }
     archive_window_count="$(awk -F '\t' '$1 == "window" { count++ } END { print count + 0 }' "$archive_file")"
     archive_endwindow_count="$(awk -F '\t' '$1 == "endwindow" { count++ } END { print count + 0 }' "$archive_file")"
     archive_pane_count="$(awk -F '\t' '$1 == "pane" { count++ } END { print count + 0 }' "$archive_file")"
@@ -790,6 +1076,153 @@ run_multi_window_topology_reproduction()
         return 1
     fi
     printf 'PASS: multi-window topology and active-window sidebar metadata preserved\n'
+}
+
+window_local_sidebar_count()
+{
+    tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
+        awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }'
+}
+
+window_local_sidebar_for_session()
+{
+    local session_name="$1"
+    tmuxc list-panes -t "=$session_name:" -F '#{window_id}|#{pane_id}|#{pane_pid}|#{pane_title}' 2>/dev/null |
+        awk -F '|' '$4 == "dotfiles-session-sidebar" { print; exit }'
+}
+
+window_local_input_ready()
+{
+    local tty active_title
+    tty="$(client_tty)"
+    active_title="$(tmuxc display-message -p -t "$tty" '#{pane_title}' 2>/dev/null || true)"
+    [ "$active_title" = dotfiles-session-sidebar ] && window_local_ready
+}
+
+latest_native_switch_ms()
+{
+    awk '
+        / switch\.begin mode=native / { begin=$1 }
+        / switch\.end mode=native / && begin != "" {
+            end=$1
+            printf "%.1f\n", (end - begin) * 1000
+            begin=""
+        }
+    ' "$RUN_DIR/trace.log" 2>/dev/null | tail -1
+}
+
+run_window_local_switch_contract()
+{
+    local before_count after_count target session_index before_trace after_trace switch_ms max_switch_ms=0
+    local row current delta key moves pane_record window_id pane_id pane_pid
+    local -a targets=(window-local-1 window-local-2 window-local-3)
+    declare -A sidebar_ids=()
+    declare -A sidebar_pids=()
+    declare -A sidebar_windows=()
+
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+
+    # Create sessions through the same c + name + Enter path as the user.
+    for session_index in 1 2 3; do
+        before_generation="$(action_generation)"
+        send_keys c
+        wait_for_prompt_ready
+        send_keys "window-local-$session_index"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sessions $((session_index + 1)) "window-local session $session_index"
+    done
+    wait_for_sidebar_input_ready || true
+
+    before_count="$(window_local_sidebar_count)"
+    test_log "window-local.contract sidebar_count=$before_count"
+    [ "$before_count" -eq 4 ] || {
+        printf 'FAIL: window-local contract expected 4 sidebars after 3 session creates, got %s\n' "$before_count" >&2
+        return 1
+    }
+
+    while IFS='|' read -r window_id pane_id pane_pid; do
+        [ -n "$window_id" ] || continue
+        sidebar_ids[$window_id]="$pane_id"
+        sidebar_pids[$window_id]="$pane_pid"
+    done < <(tmuxc list-panes -a -F '#{window_id}|#{pane_id}|#{pane_pid}|#{pane_title}' |
+        awk -F '|' '$4 == "dotfiles-session-sidebar" { print $1 "|" $2 "|" $3 }')
+
+    before_trace="$(wc -l < "$RUN_DIR/trace.log" 2>/dev/null || printf 0)"
+    # After the three creates the TUI selection is deterministically on
+    # window-local-3. Use the same visible arrow-key sequence a user would
+    # use, but keep the expected movement explicit so the assertion is not
+    # coupled to ANSI cursor decoration in captured output.
+    for target_index in 0 1 2; do
+        target="${targets[$target_index]}"
+        focus_sidebar_via_prefix
+        [ -n "$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" |
+            grep -F -- "$target")" ] || {
+            printf 'FAIL: target %s was not visible in sidebar\n' "$target" >&2
+            return 1
+        }
+        case "$target_index" in
+            0) key=$'\033[A'; moves=2 ;;
+            1) key=$'\033[B'; moves=1 ;;
+            2) key=$'\033[B'; moves=1 ;;
+        esac
+        for _ in $(seq 1 "$moves"); do
+            before_generation="$(action_generation)"
+            send_keys "$key"
+            wait_for_action_generation_change "$before_generation"
+        done
+        before_generation="$(action_generation)"
+        send_keys $'\r'
+        wait_for_action_generation_change "$before_generation"
+        wait_until "window-local target $target" "$target" client_session
+        window_local_input_ready || true
+        switch_ms="$(latest_native_switch_ms)"
+        switch_ms="${switch_ms:-0}"
+        test_log "window-local.switch target=$target duration_ms=$switch_ms"
+        awk -v value="$switch_ms" 'BEGIN { exit !(value <= 500) }' || {
+            printf 'FAIL: native switch to %s took %sms (limit 500ms)\n' "$target" "$switch_ms" >&2
+            return 1
+        }
+        awk -v value="$switch_ms" -v current="$max_switch_ms" 'BEGIN { exit !(value > current) }' && max_switch_ms="$switch_ms"
+    done
+    after_trace="$(wc -l < "$RUN_DIR/trace.log" 2>/dev/null || printf 0)"
+
+    [ "$after_trace" -ge "$before_trace" ] || {
+        printf 'FAIL: trace accounting moved backwards\n' >&2
+        return 1
+    }
+    if grep -E 'sidebar\.move|move-pane|sidebar\.layout\.restore|restore\.layout\.begin|render_full' \
+        "$RUN_DIR/trace.log" >/dev/null 2>&1; then
+        printf 'FAIL: session switch used pane movement/layout restore/full render\n' >&2
+        grep -E 'sidebar\.move|move-pane|sidebar\.layout\.restore|restore\.layout\.begin|render_full' \
+            "$RUN_DIR/trace.log" >&2 || true
+        return 1
+    fi
+
+    for window_id in "${!sidebar_ids[@]}"; do
+        pane_id="${sidebar_ids[$window_id]}"
+        pane_pid="${sidebar_pids[$window_id]}"
+        [ "$(tmuxc display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)" = "$pane_pid" ] || {
+            printf 'FAIL: sidebar process changed for window %s\n' "$window_id" >&2
+            return 1
+        }
+    done
+    printf 'PASS: window-local session switch keeps every sidebar process stable\n'
+    printf 'PASS: session switch trace contains no pane move/layout restore/full render\n'
+    printf 'PASS: native switch max latency %sms (p95 target <=500ms)\n' "$max_switch_ms"
+}
+
+run_window_local_toggle_contract()
+{
+    local before after
+    before="$(window_local_sidebar_count)"
+    send_keys $'\001s'
+    wait_until 'window-local global toggle off' 0 window_local_sidebar_count
+    send_keys $'\001s'
+    wait_until 'window-local global toggle on' "$before" window_local_sidebar_count
+    printf 'PASS: global sidebar toggle removes and recreates all window-local sidebars\n'
 }
 
 wait_for_action_generation_change()
@@ -866,7 +1299,29 @@ send_keys()
         test_log "send.state=$(tmux_state_snapshot)"
     fi
     test_log "input.send.begin seq=$INPUT_SEQUENCE bytes=$(printf '%b' "$payload" | od -An -tx1 | tr -d ' \n') telemetry=$(client_telemetry)"
-    printf '%b' "$payload" >&"${ATTACHED[1]}"
+    if [ -n "$VISIBLE_CLIENT" ]; then
+        case "$payload" in
+            $'\001s') tmuxc send-keys -t "$VISIBLE_PANE" C-a s ;;
+            $'\033[B') tmuxc send-keys -t "$VISIBLE_PANE" Down ;;
+            $'\033[A') tmuxc send-keys -t "$VISIBLE_PANE" Up ;;
+            $'\033') tmuxc send-keys -t "$VISIBLE_PANE" Escape ;;
+            $'\r') tmuxc send-keys -t "$VISIBLE_PANE" Enter ;;
+            *$'\r')
+                tmuxc send-keys -t "$VISIBLE_PANE" -l "${payload%$'\r'}"
+                tmuxc send-keys -t "$VISIBLE_PANE" Enter
+                ;;
+            *) tmuxc send-keys -t "$VISIBLE_PANE" -l "$(printf '%b' "$payload")" ;;
+        esac
+    else
+        if [[ "$payload" == $'\001'* ]]; then
+            printf '%b' "${payload:0:1}" >&"${ATTACHED[1]}"
+            sleep "0.$(printf '%03d' "$PREFIX_DELAY_MS")"
+            printf '%b' "${payload:1}" >&"${ATTACHED[1]}"
+            test_log "input.prefix-delay seq=$INPUT_SEQUENCE delay_ms=$PREFIX_DELAY_MS"
+        else
+            printf '%b' "$payload" >&"${ATTACHED[1]}"
+        fi
+    fi
     test_log "input.send.end seq=$INPUT_SEQUENCE telemetry=$(client_telemetry)"
 }
 
@@ -874,6 +1329,9 @@ run_rapid_operations_reproduction()
 {
     local iteration before_generation previous_session_count
     local trace_before trace_rejected
+
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
 
     for iteration in 1 2 3; do
         before_generation="$(action_generation)"
@@ -908,7 +1366,7 @@ run_rapid_operations_reproduction()
             printf 'ERROR: rapid delete input was not rejected (iteration %s)\n' "$iteration" >&2
             return 1
         }
-        [ "$(count_sidebars)" = 1 ] || {
+        [ "$(count_sidebars)" = "$(count_sessions)" ] || {
             printf 'ERROR: rapid delete changed sidebar uniqueness (iteration %s)\n' "$iteration" >&2
             return 1
         }
@@ -925,7 +1383,7 @@ run_rapid_operations_reproduction()
         wait_for_session_count_above "$previous_session_count"
         wait_for_operation_quiet
         wait_for_sidebar_input_ready
-        [ "$(count_sidebars)" = 1 ] || {
+        [ "$(count_sidebars)" = "$(count_sessions)" ] || {
             printf 'ERROR: rapid restore changed sidebar uniqueness (iteration %s)\n' "$iteration" >&2
             return 1
         }
@@ -937,7 +1395,16 @@ run_rapid_operations_reproduction()
     printf 'PASS: rapid restore→navigation input is rejected during restore (3 iterations)\n'
 }
 
-tmuxc new-session -d -s keyboard-anchor -c "$REPO_ROOT" 'sleep 300'
+tmuxc new-session -d -s "$ANCHOR_SESSION" -c "$REPO_ROOT" 'sleep 300'
+if [ "$SEED_LIVE_TOPOLOGY" = 1 ]; then
+    for seed_session in live-seed-1 live-seed-2 live-seed-3; do
+        tmuxc new-session -d -s "$seed_session" -c "$REPO_ROOT" 'sleep 300'
+        seed_window="$(tmuxc display-message -p -t "=$seed_session:" '#{window_id}')"
+        tmuxc set-option -w -t "$seed_window" @dotfiles_sidebar_managed 1
+        tmuxc run-shell -b "$LAUNCHER --ensure-sidebar-window $seed_window"
+    done
+    wait_until 'live-compatible seed sidebars' 3 count_sidebars
+fi
 if [ "$SCENARIO" = minimal ]; then
     tmuxc new-session -d -s keyboard-target -c "$REPO_ROOT" 'sleep 300'
 fi
@@ -946,32 +1413,42 @@ tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG "${TMUX_SESSION_LAUNCHER_DE
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE "$RUN_DIR/debug.log"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE "${TMUX_SESSION_LAUNCHER_TRACE:-0}"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "${TMUX_SESSION_LAUNCHER_TRACE_FILE:-$RUN_DIR/trace.log}"
+tmuxc set-environment -g TMUX_SESSION_LAUNCHER_METRICS_FILE "${TMUX_SESSION_LAUNCHER_METRICS_FILE:-$RUN_DIR/metrics.log}"
+tmuxc set-environment -g TMUX_SESSION_LAUNCHER_METRICS_RUN_ID "${TMUX_SESSION_LAUNCHER_METRICS_RUN_ID:-$TEST_RUN_ID}"
 tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TEST_OPERATION_DELAY "${TMUX_SESSION_LAUNCHER_TEST_OPERATION_DELAY:-0}"
-tmuxc split-window -d -t '=keyboard-anchor:' -h -b -l 35 "$LAUNCHER --sidebar"
+tmuxc split-window -d -t "=$ANCHOR_SESSION:" -h -b -l 35 "$LAUNCHER --sidebar"
 test_log 'step=sidebar.start'
 test_log "transport=$TRANSPORT"
-wait_until 'initial sidebar' 1 count_sidebars
+expected_initial_sidebars=1
+[ "$SEED_LIVE_TOPOLOGY" = 1 ] && expected_initial_sidebars=4
+wait_until 'initial sidebar' "$expected_initial_sidebars" count_sidebars
 
 # A real attached client is created through the selected transport. Its stdin
-# remains writable through the coprocess descriptor.
-if [ "$TRANSPORT" = bridge ]; then
+# remains writable through the coprocess descriptor. Visible mode instead
+# drives the already-attached user client and therefore does not create a
+# second visible or hidden tmux client.
+if [ -n "$VISIBLE_CLIENT" ]; then
+    tmuxc switch-client -c "$VISIBLE_CLIENT" -t "$ANCHOR_SESSION"
+    VISIBLE_PANE="$(tmuxc list-clients -F '#{client_tty}|#{pane_id}' | awk -F '|' -v tty="$VISIBLE_CLIENT" '$1 == tty { print $2; exit }')"
+    [ -n "$VISIBLE_PANE" ] || { printf 'ERROR: visible client pane not found\n' >&2; exit 1; }
+elif [ "$TRANSPORT" = bridge ]; then
     coproc ATTACHED {
         HOME="$HOME_DIR" "$PTY_BRIDGE_BIN" --log "$BRIDGE_LOG" --output "$CLIENT_LOG" -- \
-            tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" attach-session -t keyboard-anchor
+            tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" attach-session -t "$ANCHOR_SESSION"
     }
 else
     coproc ATTACHED {
         if [ "$TRACE_MODE" = strace ]; then
             TERM=xterm strace -ff -ttt -yy -o "$SYSCALL_LOG" \
                 -e trace=read,write,ioctl,poll,ppoll,select,pselect6,fcntl,signal,rt_sigaction,rt_sigprocmask,wait4 \
-                script -qefc "env -u LD_PRELOAD HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t keyboard-anchor" \
+                script -qefc "env -u LD_PRELOAD HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t '$ANCHOR_SESSION'" \
                 --log-in "$INPUT_LOG" --log-out "$CLIENT_LOG" >/dev/null 2>&1
         elif [ "$TRACE_MODE" = preload ]; then
-            TMUX_KEYBOARD_INTERPOSER_LOG="$INTERPOSER_LOG" LD_PRELOAD="$INTERPOSER_BIN" \
-                TERM=xterm script -qefc "HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t keyboard-anchor" \
+                TMUX_KEYBOARD_INTERPOSER_LOG="$INTERPOSER_LOG" LD_PRELOAD="$INTERPOSER_BIN" \
+                TERM=xterm script -qefc "HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t '$ANCHOR_SESSION'" \
                 --log-in "$INPUT_LOG" --log-out "$CLIENT_LOG" >/dev/null 2>&1
         else
-            TERM=xterm script -qefc "env -u LD_PRELOAD HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t keyboard-anchor" \
+            TERM=xterm script -qefc "env -u LD_PRELOAD HOME='$HOME_DIR' tmux -L '$SOCKET' -f '$REPO_ROOT/dotfiles/tmux.conf' attach-session -t '$ANCHOR_SESSION'" \
                 --log-in "$INPUT_LOG" --log-out "$CLIENT_LOG" >/dev/null 2>&1
         fi
     }
@@ -981,7 +1458,7 @@ sleep 0.3
 # A control-mode client observes tmux notifications without being treated as
 # the user's input client. All client selectors above explicitly exclude it.
 coproc TMUX_OBSERVER {
-    TERM=xterm HOME="$HOME_DIR" tmux -C -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" attach-session -t keyboard-anchor
+    TERM=xterm HOME="$HOME_DIR" tmux -C -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" attach-session -t "$ANCHOR_SESSION"
 }
 OBSERVER_PID="$TMUX_OBSERVER_PID"
 exec {OBSERVER_FD}<&"${TMUX_OBSERVER[0]}"
@@ -990,8 +1467,23 @@ OBSERVER_LOG_PID=$!
 sleep 0.1
 test_log "observer.started pid=$OBSERVER_PID"
 
+if [ "$SCENARIO" = window-local-switch ]; then
+    run_window_local_switch_contract
+    exit 0
+fi
+
+if [ "$SCENARIO" = window-local-toggle ]; then
+    run_window_local_toggle_contract
+    exit 0
+fi
+
 if [ "$SCENARIO" = rapid-operations ]; then
     run_rapid_operations_reproduction
+    exit 0
+fi
+
+if [ "$SCENARIO" = session-create-latency ]; then
+    run_session_create_latency_reproduction
     exit 0
 fi
 
@@ -1133,6 +1625,8 @@ while [ "$(count_sessions)" -gt 1 ]; do
 done
 wait_for_sessions 1 'six deleted sessions'
 wait_for_archives 6
+wait_for_operation_quiet
+wait_for_sidebar_input_ready
 printf 'PASS: d + y + Enter archives and deletes six sessions\n'
 test_log 'step=delete.complete sessions=1 archives=6'
 
@@ -1179,10 +1673,16 @@ send_keys $'y\r'
 # disappears before a prompt-complete poll can observe the value 0.
 local_deadline=$(( $(date +%s) + 20 ))
 while [ "$(date +%s)" -lt "$local_deadline" ]; do
-    tmuxc list-sessions >/dev/null 2>&1 || break
+    if ! tmuxc list-sessions >/dev/null 2>&1 ||
+        grep -Fq 'tmux.control %exit' "$RUN_DIR/test-trace.log" 2>/dev/null ||
+        grep -Fq '[exited]' "$CLIENT_LOG" 2>/dev/null; then
+        break
+    fi
     sleep 0.05
 done
-if tmuxc list-sessions >/dev/null 2>&1; then
+if tmuxc list-sessions >/dev/null 2>&1 &&
+    ! grep -Fq 'tmux.control %exit' "$RUN_DIR/test-trace.log" 2>/dev/null &&
+    ! grep -Fq '[exited]' "$CLIENT_LOG" 2>/dev/null; then
     printf 'ERROR: All deletion did not terminate the tmux server\n' >&2
     exit 1
 fi

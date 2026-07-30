@@ -30,7 +30,7 @@ for attempt in $(seq 1 100); do
 done
 archive_path="$(find "$RUN_DIR/history" -type f -name '*.tsv' -print -quit 2>/dev/null || true)"
 [ -f "$archive_path" ]
-[ "$(awk -F '\t' '$1 == "version" { print $2; exit }' "$archive_path")" = 2 ]
+[ "$(awk -F '\t' '$1 == "version" { print $2; exit }' "$archive_path")" = 3 ]
 window_line="$(awk -F '\t' '$1 == "window" { print; exit }' "$archive_path")"
 layout="$(printf '%s\n' "$window_line" | awk -F '\t' '{ print $5 }')"
 pane_records="$(awk '$1 == "window" { seen=1; next } seen && $1 == "pane" { count++ } seen && $1 == "endwindow" { print count + 0; exit }' "$archive_path")"

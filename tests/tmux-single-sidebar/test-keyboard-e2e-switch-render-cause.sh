@@ -107,6 +107,18 @@ start_sampler() {
           debug_seen=$((debug_seen + 1))
         done < <(sed -n "$((debug_seen + 1)),$debug_now p" "$DEBUG_FILE" 2>/dev/null)
       fi
+      if [ "$trace_now" -gt "$trace_seen" ]; then
+        while IFS= read -r line; do
+          case "$line" in
+            *"render.delta.begin"*)
+              timestamp="$(date +%s%N)"
+              printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$iteration" "$timestamp" "$debug_seen" "$trace_seen" \
+                "$trace_now" enter-dispatch enter-dispatch "$line" >> "$CAUSE_FILE"
+              ;;
+          esac
+        done < <(sed -n "$((trace_seen + 1)),$trace_now p" "$TRACE_FILE" 2>/dev/null)
+      fi
       printf '%s\t%s\t%s\t%s\t%s\n' \
         "$iteration" "$(date +%s%N)" "$trace_now" "$debug_now" \
         "$(client_session 2>/dev/null || true)" >> "$TIMELINE_FILE"
@@ -171,14 +183,14 @@ full_total="$(awk -F '\t' 'NR > 1 && ($6 == "full-render-required" || $7 == "ful
 echo "cause_file=$CAUSE_FILE"
 echo "timeline_file=$TIMELINE_FILE"
 echo "completed=$completed requested=$EXPECTED"
-echo "render_full=$render_total enter_dispatch=$enter_total force_refresh=$force_total layout_restore=$layout_total full_render_required=$full_total ambiguous=$ambiguous_total unclassified=$unclassified_total"
+echo "render_calls=$render_total enter_dispatch=$enter_total force_refresh=$force_total layout_restore=$layout_total full_render_required=$full_total ambiguous=$ambiguous_total unclassified=$unclassified_total"
 
 if [ "$completed" -ne "$EXPECTED" ] || [ "$render_total" -lt "$EXPECTED" ] ||
    [ "$unclassified_total" -ne 0 ] || [ "$ambiguous_total" -ne 0 ]; then
   KEEP_RUN_DIR=true
-  echo "RED: one or more render_full calls have no unique causal classification" >&2
+  echo "RED: one or more render calls have no unique causal classification" >&2
   echo "artifacts=$RUN_DIR" >&2
   exit 1
 fi
 
-echo "PASS: every observed render_full has a correlated trace-cause candidate"
+echo "PASS: every observed render call has a correlated trace-cause candidate"

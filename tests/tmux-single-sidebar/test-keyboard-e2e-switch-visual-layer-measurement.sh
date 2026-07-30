@@ -13,6 +13,8 @@ export SCENARIO_NAME
 export TMUX_SESSION_LAUNCHER_TRACE=1
 export TMUX_SESSION_LAUNCHER_DEBUG=1
 source "$(dirname -- "$BASH_SOURCE")/test-interactive-common.sh"
+export TMUX_SESSION_LAUNCHER_METRICS_FILE="${TMUX_SESSION_LAUNCHER_METRICS_FILE:-$RUN_DIR/metrics.log}"
+export TMUX_SESSION_LAUNCHER_METRICS_RUN_ID="${TMUX_SESSION_LAUNCHER_METRICS_RUN_ID:-$SCENARIO_NAME-$$}"
 
 MEASURE_FILE="$RUN_DIR/visual-transition-samples.tsv"
 LATENCY_FILE="$RUN_DIR/visual-transition-latency.tsv"
@@ -22,6 +24,10 @@ EXPECTED_SESSIONS=(visual-a visual-b visual-c)
 EXPECTED_TRANSITIONS="${VISUAL_TRANSITIONS:-10}"
 declare -A EXPECTED_SIDEBAR_GEOMETRY=()
 declare -A EXPECTED_PANE_SIGNATURE=()
+
+now_us() {
+  perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000000'
+}
 
 visual_signature() {
   local session="$1"
@@ -44,7 +50,7 @@ visual_sample() {
     session_count selected_count layer sidebar_id sidebar_geom expected_geom geometry_match \
     layout pane_signature expected_pane_signature pane_match output_offset
   session="$(client_session)"
-  capture="$(tmuxc capture-pane -p -t "$SIDEBAR_TARGET" 2>/dev/null || true)"
+  capture="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null || true)"
   title_count="$(printf '%s\n' "$capture" | grep -Ec '^sessions *$' || true)"
   footer_count="$(printf '%s\n' "$capture" | grep -Ec 'j/k .*Enter.*c/r/d.*o.*q' || true)"
   session_count=0
@@ -86,7 +92,8 @@ move_selection_to() {
   local target="$1" row current delta key count i
   row="$(sidebar_row_for "$target")"
   [ -n "$row" ] || return 1
-  current="$(tmuxc capture-pane -p -t "$SIDEBAR_TARGET" | nl -ba |
+  current="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" |
+    sed $'s/\033\\[[0-9;]*m//g' | nl -ba |
     awk '$0 ~ />[ *]/ {print $1; exit}')"
   [ -n "$current" ] || return 1
   delta=$((row - current))
@@ -97,7 +104,19 @@ move_selection_to() {
   [ "$count" -lt 0 ] && count=$((-count))
   for i in $(seq 1 "$count"); do
     send_keys "$key"
+    wait_until "sidebar ready after navigation $target/$i" sidebar_ready
   done
+}
+
+switch_fixture_session() {
+  local name="$1"
+  # Fixture construction is deliberately observer-only. The measured path
+  # below still uses the attached PTY and real sidebar arrows/Enter; using the
+  # public selector here would make topology setup depend on a prior session's
+  # selection marker and contaminate the redraw measurement.
+  tmuxc switch-client -c "$CLIENT_TTY" -t "=$name:"
+  wait_until "fixture session $name" "wait_session '$name'"
+  wait_until "fixture sidebar $name" sidebar_ready
 }
 
 trace_operation_id() {
@@ -135,6 +154,33 @@ trace_phase_us() {
   ' "$TRACE_FILE" 2>/dev/null || true
 }
 
+trace_ready_after() {
+  local from_line="$1"
+  awk -v from="$from_line" 'NR > from && /transition.phase/ && /phase=READY/ {found=1} END {exit !found}' "$TRACE_FILE" 2>/dev/null
+}
+
+trace_count_range() {
+  local from_line="$1" to_line="$2" pattern="$3"
+  awk -v from="$from_line" -v to="$to_line" -v pattern="$pattern" \
+    'NR > from && NR <= to && $0 ~ pattern {n++} END {print n + 0}' \
+    "$TRACE_FILE" 2>/dev/null || printf '0\n'
+}
+
+trace_finish_result() {
+  local from_line="$1" to_line="$2" operation_id="$3"
+  awk -v from="$from_line" -v to="$to_line" -v operation_id="$operation_id" '
+    NR > from && NR <= to && /transition.finish/ {
+      matched = 0; result = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i == "operation_id=" operation_id) matched = 1
+        if ($i ~ /^result=/) { result = $i; sub(/^result=/, "", result) }
+      }
+      if (matched) latest = result
+    }
+    END { print (latest == "" ? "unknown" : latest) }
+  ' "$TRACE_FILE" 2>/dev/null || printf 'unknown\n'
+}
+
 phase_percentile_us() {
   local field="$1" percentile="$2" count index
   count="$(awk -F '\t' -v field="$field" -v min=1 'NR > 1 && $field >= min {print $field}' "$PHASE_FILE" |
@@ -148,39 +194,50 @@ phase_percentile_us() {
 record_phase_measurement() {
   local iteration="$1" target="$2" input_us="$3" trace_before="$4" trace_after="$5" raw_bytes="$6"
   local operation_id prepare snapshot move_sidebar switch_client restore_layout restore_focus render_once ready
+  local render_request render_full render_delta finish_result error_count
   local t1 t2 t3 t4 total
   operation_id="$(trace_operation_id "$trace_before" "$trace_after" "$target")"
-  prepare="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" PREPARE)"
+  # The current production trace names the lifecycle boundaries
+  # VALIDATE_TARGET -> SWITCH_CLIENT -> READY. Keep the archive-era phase
+  # columns for compatibility, but derive required timing from boundaries
+  # that are actually emitted by the implementation.
+  prepare="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" VALIDATE_TARGET)"
   snapshot="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" SNAPSHOT)"
   move_sidebar="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" MOVE_SIDEBAR)"
   switch_client="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" SWITCH_CLIENT)"
   restore_layout="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" RESTORE_LAYOUT)"
   restore_focus="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" RESTORE_FOCUS)"
   render_once="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" RENDER_ONCE)"
+  [ -n "$render_once" ] ||
+    render_once="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" RENDER_DELTA)"
   ready="$(trace_phase_us "$trace_before" "$trace_after" "$operation_id" READY)"
+  render_request="$(trace_count_range "$trace_before" "$trace_after" 'render.request')"
+  render_full="$(trace_count_range "$trace_before" "$trace_after" 'render.full.begin')"
+  render_delta="$(trace_count_range "$trace_before" "$trace_after" 'render.delta.begin')"
+  finish_result="$(trace_finish_result "$trace_before" "$trace_after" "$operation_id")"
+  error_count="$(trace_count_range "$trace_before" "$trace_after" 'switch.abort|session switch failed|returned 1|transition.rollback')"
   t1=0; t2=0; t3=0; t4=0; total=0
   [ -n "$prepare" ] && t1=$((prepare - input_us))
-  [ -n "$prepare" ] && [ -n "$restore_focus" ] && t2=$((restore_focus - prepare))
-  [ -n "$restore_focus" ] && [ -n "$render_once" ] && t3=$((render_once - restore_focus))
-  [ -n "$render_once" ] && [ -n "$ready" ] && t4=$((ready - render_once))
+  [ -n "$prepare" ] && [ -n "$switch_client" ] && t2=$((switch_client - prepare))
+  [ -n "$switch_client" ] && [ -n "$ready" ] && t3=$((ready - switch_client))
   [ -n "$ready" ] && total=$((ready - input_us))
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$iteration" "$target" "${operation_id:-unknown}" "$input_us" \
     "${prepare:-0}" "${snapshot:-0}" "${move_sidebar:-0}" "${switch_client:-0}" \
     "${restore_layout:-0}" "${restore_focus:-0}" "${render_once:-0}" "${ready:-0}" \
-    "$t1" "$t2" "$t3" "$t4" "$total" "$raw_bytes" >> "$PHASE_FILE"
+    "$t1" "$t2" "$t3" "$t4" "$total" "$raw_bytes" \
+    "$render_request" "$render_full" "$render_delta" "$finish_result" "$error_count" >> "$PHASE_FILE"
 }
 
 sample_switch() {
   local iteration="$1" target="$2" sampler_pid start end input_us trace_before trace_after output_before output_after raw_file raw_bytes clear_count home_count
-  start="$(date +%s%N)"
-  input_ns="$(date +%s%N)"
-  input_us=$((input_ns / 1000))
+  start="$(now_us)"
+  input_us="$(now_us)"
   trace_before="$(wc -l < "$TRACE_FILE" 2>/dev/null || printf '0')"
   output_before="$(wc -c < "$OUTPUT_LOG" | tr -d ' ')"
   (
     while :; do
-      visual_sample "$iteration" transition "$(date +%s%N)"
+      visual_sample "$iteration" transition "$(now_us)"
       sleep 0.01
     done
   ) &
@@ -202,7 +259,12 @@ sample_switch() {
     wait "$sampler_pid" 2>/dev/null || true
     return 1
   fi
-  end="$(date +%s%N)"
+  # The tmux/client readiness flag can become visible just before the trace
+  # writer flushes READY. Extend the correlation boundary until that marker is
+  # observable, otherwise the last transition can be falsely reported as a
+  # missing phase row.
+  wait_until "trace READY $target" "trace_ready_after '$trace_before'"
+  end="$(now_us)"
   trace_after="$(wc -l < "$TRACE_FILE" 2>/dev/null || printf '0')"
   output_after="$(wc -c < "$OUTPUT_LOG" | tr -d ' ')"
   kill "$sampler_pid" 2>/dev/null || true
@@ -222,9 +284,9 @@ sample_switch() {
     "$iteration" "$target" "$output_before" "$output_after" "$raw_bytes" \
     "$clear_count/$home_count" >> "$RAW_SUMMARY_FILE"
   record_phase_measurement "$iteration" "$target" "$input_us" "$trace_before" "$trace_after" "$raw_bytes"
-  printf 'iteration=%s target=%s transition_ns=%s\n' \
+  printf 'iteration=%s target=%s transition_us=%s\n' \
     "$iteration" "$target" "$((end - start))"
-  printf '%s\t%s\t%s\n' "$iteration" "$target" "$(( (end - start) / 1000000 ))" >> "$LATENCY_FILE"
+  printf '%s\t%s\t%s\n' "$iteration" "$target" "$(( (end - start) / 1000 ))" >> "$LATENCY_FILE"
 }
 
 setup_interactive_test
@@ -232,13 +294,13 @@ for session in "${EXPECTED_SESSIONS[@]}"; do
   create_session "$session"
 done
 
-select_session_by_name visual-a
+switch_fixture_session visual-a
 
 for session in visual-b visual-c; do
   # Keep the fixture deterministic. The P0 split-cycle tests cover physical
   # split shortcuts; this P1 test focuses on the physical Enter transition
   # and its raw PTY observation boundary.
-  select_session_by_name "$session"
+  switch_fixture_session "$session"
   work_pane="$(tmuxc list-panes -t "=$session:" -F '#{pane_id}|#{pane_title}' |
     awk -F'|' '$2 != "dotfiles-session-sidebar" {print $1; exit}')"
   tmuxc split-window -d -t "$work_pane" -h -b -l 35 'sleep 300'
@@ -254,7 +316,7 @@ for session in visual-b visual-c; do
   EXPECTED_PANE_SIGNATURE["$session"]="$(visual_signature "$session")"
 done
 
-select_session_by_name visual-a
+switch_fixture_session visual-a
 wait_until "visual sidebar stable before transitions" wait_sidebar_stable
 EXPECTED_SIDEBAR_GEOMETRY[visual-a]="$(sidebar_geometry_for_session visual-a)"
 EXPECTED_PANE_SIGNATURE[visual-a]="$(visual_signature visual-a)"
@@ -263,7 +325,7 @@ EXPECTED_PANE_SIGNATURE[visual-a]="$(visual_signature visual-a)"
 : > "$LATENCY_FILE"
 : > "$RAW_SUMMARY_FILE"
 : > "$PHASE_FILE"
-printf '%b\n' 'iteration\ttarget\toperation_id\tinput_us\tprepare_us\tsnapshot_us\tmove_sidebar_us\tswitch_client_us\trestore_layout_us\trestore_focus_us\trender_once_us\tready_us\tt1_us\tt2_us\tt3_us\tt4_us\ttotal_us\traw_bytes' > "$PHASE_FILE"
+printf '%b\n' 'iteration\ttarget\toperation_id\tinput_us\tprepare_us\tsnapshot_us\tmove_sidebar_us\tswitch_client_us\trestore_layout_us\trestore_focus_us\trender_once_us\tready_us\tt1_us\tt2_us\tt3_us\tt4_us\ttotal_us\traw_bytes\trender_request_count\trender_full_count\trender_delta_count\tfinish_result\terror_marker_count' > "$PHASE_FILE"
 
 TARGET_SEQUENCE=(visual-b visual-c visual-a)
 for iteration in $(seq 1 "$EXPECTED_TRANSITIONS"); do
@@ -286,20 +348,23 @@ stable_pane_mismatch_count="$(awk -F '\t' '$2 == "stable" && $13 != "true" {n++}
 latency_count="$(awk 'END {print NR + 0}' "$LATENCY_FILE")"
 latency_p50="$(sort -n -k3,3 "$LATENCY_FILE" | awk -v n="$latency_count" 'n {v[NR]=$3} END {print v[int((n + 1) / 2)] + 0}')"
 latency_p95="$(sort -n -k3,3 "$LATENCY_FILE" | awk -v n="$latency_count" 'n {v[NR]=$3} END {i=int(n * 0.95 + 0.999); if (i < 1) i=1; print v[i] + 0}')"
-missing_phase_count="$(awk -F '\t' 'NR > 1 && ($3 == "unknown" || $13 == 0 || $14 == 0 || $15 == 0 || $16 == 0 || $17 == 0) {n++} END {print n + 0}' "$PHASE_FILE")"
+missing_phase_count="$(awk -F '\t' 'NR > 1 && ($3 == "unknown" || $12 == 0 || $17 == 0 || $19 != 1 || ($20 + $21) != 1 || $22 != "success") {n++} END {print n + 0}' "$PHASE_FILE")"
+full_render_count="$(awk -F '\t' 'NR > 1 {n += $20} END {print n + 0}' "$PHASE_FILE")"
+delta_render_count="$(awk -F '\t' 'NR > 1 {n += $21} END {print n + 0}' "$PHASE_FILE")"
+error_marker_count="$(awk -F '\t' 'NR > 1 {n += $23} END {print n + 0}' "$PHASE_FILE")"
 
 echo "measurement_file=$MEASURE_FILE"
 echo "samples=$sample_count blank_frames=$blank_count partial_frames=$partial_count complete_frames=$complete_count"
 echo "sidebar_identities=$sidebar_identity_count geometry_mismatches=$geometry_mismatch_count stable_geometry_mismatches=$stable_geometry_mismatch_count pane_mismatches=$pane_mismatch_count stable_pane_mismatches=$stable_pane_mismatch_count"
 echo "latency_samples=$latency_count latency_p50_ms=$latency_p50 latency_p95_ms=$latency_p95"
 echo "raw_summary=$RAW_SUMMARY_FILE"
-echo "phase_summary=$PHASE_FILE missing_phase_rows=$missing_phase_count"
+echo "phase_summary=$PHASE_FILE missing_or_ambiguous_rows=$missing_phase_count render_full=$full_render_count render_delta=$delta_render_count error_markers=$error_marker_count metrics=$TMUX_SESSION_LAUNCHER_METRICS_FILE"
 echo "phase_p50_us t1=$(phase_percentile_us 13 50) t2=$(phase_percentile_us 14 50) t3=$(phase_percentile_us 15 50) t4=$(phase_percentile_us 16 50) total=$(phase_percentile_us 17 50)"
 echo "phase_p95_us t1=$(phase_percentile_us 13 95) t2=$(phase_percentile_us 14 95) t3=$(phase_percentile_us 15 95) t4=$(phase_percentile_us 16 95) total=$(phase_percentile_us 17 95)"
 
 if [ "$sidebar_identity_count" -ne 1 ] || [ "$stable_geometry_mismatch_count" -gt 0 ] ||
    [ "$stable_pane_mismatch_count" -gt 0 ] || [ "$missing_phase_count" -ne 0 ]; then
-  echo "RED: stable sidebar identity, target geometry, pane signature, or phase metadata did not match expected values" >&2
+  echo "RED: sidebar identity cardinality, target geometry, pane signature, or phase metadata did not match expected values" >&2
   echo "invalid_sample_rows(iteration phase timestamp session layer sidebar_id geometry expected_geometry geometry_match layout pane_signature expected_pane_signature pane_match completeness output_offset):"
   awk -F '\t' '$2 == "stable" && ($9 != "true" || $13 != "true") {print}' "$MEASURE_FILE"
   exit 1

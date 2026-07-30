@@ -67,8 +67,14 @@ refresh_begin="$(grep -c 'switch.force-refresh.final.begin session=corr-' "$TRAC
 refresh_end="$(grep -c 'switch.force-refresh.final.end session=corr-' "$TRACE_FILE" 2>/dev/null || true)"
 switch_end="$(grep -c 'switch.end session=corr-' "$TRACE_FILE" 2>/dev/null || true)"
 abort_count="$(grep -c 'switch.abort.*session=corr-' "$TRACE_FILE" 2>/dev/null || true)"
-render_begin="$(grep -c 'render_full start' "$DEBUG_FILE" 2>/dev/null || true)"
-render_end="$(grep -c 'render_full end' "$DEBUG_FILE" 2>/dev/null || true)"
+render_begin=$((
+  $(grep -c 'render_full start' "$DEBUG_FILE" 2>/dev/null || true) +
+  $(grep -c 'render.delta.begin' "$TRACE_FILE" 2>/dev/null || true)
+))
+render_end=$((
+  $(grep -c 'render_full end' "$DEBUG_FILE" 2>/dev/null || true) +
+  $(grep -c 'render.delta.end' "$TRACE_FILE" 2>/dev/null || true)
+))
 hook_begin="$(grep -c 'sidebar.hook.sync.begin' "$TRACE_FILE" 2>/dev/null || true)"
 hook_end="$(grep -c 'sidebar.hook.sync.end.*result=ok' "$TRACE_FILE" 2>/dev/null || true)"
 layout_restore_begin="$(grep -c 'sidebar.layout.restore.begin' "$TRACE_FILE" 2>/dev/null || true)"
@@ -79,7 +85,7 @@ echo "completed=$completed requested=$EXPECTED"
 echo "switch_begin=$switch_begin sidebar_move=$sidebar_move_begin/$sidebar_move_end"
 echo "client_switch=$client_begin/$client_end refresh=$refresh_begin/$refresh_end"
 echo "switch_end=$switch_end aborts=$abort_count"
-echo "render_full=$render_begin/$render_end hook_sync=$hook_begin/$hook_end"
+echo "render_calls=$render_begin/$render_end hook_sync=$hook_begin/$hook_end"
 echo "layout_restore_begin=$layout_restore_begin input_read=$input_read"
 
 if [ "$completed" -ne "$EXPECTED" ] ||

@@ -18,8 +18,9 @@ sidebar_controller_move_to_session()
 {
     local target_session="$1"
     local sidebar_pane source_window target_window source_work_pane target_work_pane
-    local width source_session target_work_pane_count
-    local source_layout_saved=false target_layout_restored=false
+    local width source_session target_work_pane_count source_work_pane_count
+    local source_context target_context source_summary target_summary actual_sidebar_session
+    local source_layout_saved=false target_layout_restored=false fast_path=false
 
     [ -n "$target_session" ] || return 1
     sidebar_pane="$(find_global_sidebar_pane)"
@@ -39,8 +40,9 @@ sidebar_controller_move_to_session()
         return 1
     fi
 
-    source_session="$(sidebar_tmux_pane_session "$sidebar_pane")"
-    source_window="$(sidebar_tmux_pane_window "$sidebar_pane")"
+    source_context="$(sidebar_tmux_pane_context "$sidebar_pane")"
+    source_session="${source_context%%|*}"
+    source_window="${source_context#*|}"
     target_window="$(sidebar_tmux_session_window "$target_session")"
     trace_event "sidebar.move.resolve pane=${sidebar_pane:-none} source=${source_session:-none}:$source_window target=$target_session:$target_window"
     [ -n "$source_session" ] && [ -n "$source_window" ] && [ -n "$target_window" ] || return 1
@@ -50,27 +52,36 @@ sidebar_controller_move_to_session()
         return 0
     fi
 
-    source_work_pane="$(sidebar_tmux_any_work_pane "$source_window")"
+    source_summary="$(sidebar_tmux_work_pane_summary "$source_window")"
+    source_work_pane="${source_summary%%|*}"
+    source_work_pane_count="${source_summary#*|}"
     # Use the first work pane as the stable insertion anchor. Anchoring to
     # the active pane nests the sidebar inside the active branch of a split
     # tree, which changes sidebar geometry after a round trip.
-    target_work_pane="$(sidebar_tmux_any_work_pane "$target_window")"
+    target_summary="$(sidebar_tmux_work_pane_summary "$target_window")"
+    target_work_pane="${target_summary%%|*}"
+    target_work_pane_count="${target_summary#*|}"
     trace_event "sidebar.move.work-panes source=${source_work_pane:-none} target=${target_work_pane:-none}"
     [ -n "$source_work_pane" ] && [ -n "$target_work_pane" ] || {
         debug_log "single-sidebar move refused: missing work pane source=$source_window target=$target_window"
         return 1
     }
 
-    width="$(sidebar_controller_width "$sidebar_pane")"
-    if ! save_sidebar_layout "$source_window"; then
-        trace_event "sidebar.move.abort reason=source-layout-snapshot-failed source=$source_window"
-        return 1
+    if [ "$source_work_pane_count" = 1 ] && [ "$target_work_pane_count" = 1 ]; then
+        fast_path=true
+        sidebar_tmux_cmd set-option -gq @dotfiles_sidebar_fast_transition 1 2>/dev/null || true
+        trace_event "sidebar.move.fast-path source=$source_window target=$target_window reason=single-work-pane"
     fi
-    source_layout_saved=true
 
-    target_work_pane_count="$(sidebar_tmux_cmd list-panes -t "$target_window" \
-        -F '#{pane_title}' 2>/dev/null |
-        awk -v title="$SIDEBAR_TITLE" '$0 != title { count++ } END { print count + 0 }')"
+    width="$(sidebar_controller_width "$sidebar_pane")"
+    if [ "$fast_path" != true ]; then
+        if ! save_sidebar_layout "$source_window"; then
+            trace_event "sidebar.move.abort reason=source-layout-snapshot-failed source=$source_window"
+            return 1
+        fi
+        source_layout_saved=true
+    fi
+
     if [ "$target_work_pane_count" -gt 1 ] && ! sidebar_layout_available "$target_window" &&
         [ "$(sidebar_tmux_cmd show-option -gqv '@dotfiles_sidebar_restore_topology' 2>/dev/null || true)" != 1 ]; then
         trace_event "sidebar.move.abort reason=target-layout-metadata-unavailable target=$target_window work_panes=$target_work_pane_count"
@@ -78,9 +89,11 @@ sidebar_controller_move_to_session()
     fi
     # The target currently has no sidebar, so this snapshot is work-only and
     # can later restore the target when the sidebar is toggled off.
-    if ! save_work_layout "$target_window"; then
-        trace_event "sidebar.move.abort reason=target-work-layout-snapshot-failed target=$target_window"
-        return 1
+    if [ "$fast_path" != true ]; then
+        if ! save_work_layout "$target_window"; then
+            trace_event "sidebar.move.abort reason=target-work-layout-snapshot-failed target=$target_window"
+            return 1
+        fi
     fi
     trace_event "sidebar.move.begin pane=$sidebar_pane source=$source_session:$source_window target=$target_session:$target_window"
     if ! sidebar_tmux_move_pane "$sidebar_pane" "$target_work_pane" "$width"; then
@@ -90,16 +103,27 @@ sidebar_controller_move_to_session()
 
     sidebar_tmux_cmd select-pane -t "$sidebar_pane" -T "$SIDEBAR_TITLE" 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$sidebar_pane" 2>/dev/null || true
-    if [ "$(sidebar_tmux_pane_session "$sidebar_pane")" != "$target_session" ]; then
-        debug_log "single-sidebar move failed verification target=$target_session pane=$sidebar_pane"
+    actual_sidebar_session="$(sidebar_tmux_pane_session "$sidebar_pane")"
+    if [ "$actual_sidebar_session" != "$target_session" ]; then
+        debug_log "single-sidebar move failed verification target=$target_session actual=${actual_sidebar_session:-none} pane=$sidebar_pane control_active=${SIDEBAR_TMUX_CONTROL_ACTIVE:-0}"
         sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
         restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
         restore_work_layout "$target_window"
         return 1
     fi
+    # The pane moved with its process; keep the window-local lookup aligned
+    # with the stable global pane identity and clear the source reference.
+    sidebar_tmux_cmd set-option -wq -t "$target_window" @dotfiles_sidebar_pane_id "$sidebar_pane" 2>/dev/null || true
+    sidebar_tmux_cmd set-option -wq -t "$source_window" @dotfiles_sidebar_pane_id "" 2>/dev/null || true
+    sidebar_tmux_cmd set-option -wq -t "$target_window" @dotfiles_sidebar_ready 1 2>/dev/null || true
 
-    if sidebar_layout_available "$target_window"; then
-        if ! restore_sidebar_layout "$target_window"; then
+    if [ "$fast_path" = true ]; then
+        target_layout_restored=false
+    elif sidebar_layout_available "$target_window"; then
+        # This injection is deliberately placed at the real target restore
+        # boundary. It must exercise the same failure path as a tmux layout
+        # or geometry verification failure, before client switch occurs.
+        if ! fault_injection restore-layout || ! restore_sidebar_layout "$target_window"; then
             trace_event "sidebar.move.abort reason=target-layout-restore-failed target=$target_window"
             sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
             restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
@@ -111,6 +135,13 @@ sidebar_controller_move_to_session()
         # A single work pane has no ambiguous topology. Capture the first
         # combined layout so subsequent visits use the same deterministic
         # restore path.
+        fault_injection restore-layout || {
+            trace_event "sidebar.move.abort reason=target-layout-capture-failed target=$target_window"
+            sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+            restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+            restore_work_layout "$target_window"
+            return 1
+        }
         save_sidebar_layout "$target_window" || {
             trace_event "sidebar.move.abort reason=target-layout-capture-failed target=$target_window"
             sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
@@ -122,12 +153,14 @@ sidebar_controller_move_to_session()
 
     # The source is now work-only; save this layout only after the move has
     # been verified so the snapshot never includes the sidebar pane.
-    if ! save_work_layout "$source_window"; then
-        trace_event "sidebar.move.abort reason=source-work-layout-snapshot-failed source=$source_window"
-        sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
-        restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
-        restore_work_layout "$target_window"
-        return 1
+    if [ "$fast_path" != true ]; then
+        if ! save_work_layout "$source_window"; then
+            trace_event "sidebar.move.abort reason=source-work-layout-snapshot-failed source=$source_window"
+            sidebar_tmux_move_pane "$sidebar_pane" "$source_work_pane" "$width" >/dev/null 2>&1 || true
+            restore_sidebar_layout "$source_window" >/dev/null 2>&1 || true
+            restore_work_layout "$target_window"
+            return 1
+        fi
     fi
     sidebar_session_cached="$target_session"
     trace_event "sidebar.move.end pane=$sidebar_pane target=$target_session:$target_window full-layout-restored=$target_layout_restored source-layout-saved=$source_layout_saved"

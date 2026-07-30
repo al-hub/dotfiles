@@ -41,8 +41,16 @@ sample_state() {
 summarize_transition() {
   local iteration="$1" target="$2" trace_before="$3" trace_after="$4"
   local debug_before="$5" debug_after="$6" output_before="$7" output_after="$8"
-  local raw_file="$RUN_DIR/transition-$iteration.raw" output_count
+  local raw_file="$RUN_DIR/transition-$iteration.raw" output_count render_count render_phase_count
   output_count=$((output_after - output_before))
+  render_count=$((
+    $(count_range "$DEBUG_FILE" "$debug_before" "$debug_after" 'render_full start') +
+    $(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'render.delta.begin')
+  ))
+  render_phase_count=$((
+    $(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=RENDER_ONCE') +
+    $(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=RENDER_DELTA')
+  ))
   if [ "$output_count" -gt 0 ]; then
     dd if="$OUTPUT_LOG" of="$raw_file" iflag=skip_bytes,count_bytes \
       skip="$output_before" count="$output_count" status=none
@@ -55,14 +63,14 @@ summarize_transition() {
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'switch.begin')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'sidebar.layout.restore.begin')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'switch.force-refresh.final.begin')"
-    "$(count_range "$DEBUG_FILE" "$debug_before" "$debug_after" 'render_full start')"
+    "$render_count"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=PREPARE')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=SNAPSHOT')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=MOVE_SIDEBAR')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=SWITCH_CLIENT')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=RESTORE_LAYOUT')"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=RESTORE_FOCUS')"
-    "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=RENDER_ONCE')"
+    "$render_phase_count"
     "$(count_range "$TRACE_FILE" "$trace_before" "$trace_after" 'transition.phase.*phase=READY')"
     "$output_count"
   )

@@ -9,6 +9,113 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-07-30 global-sidebar production implementation follow-up
+
+- 목표는 sidebar pane/process를 유지하고 session 전환 시 work pane만 안정적으로
+  바꾸는 것이며, master에는 반영하지 않고 `feature/single-sidebar`에서만
+  진행한다.
+- global single-sidebar, lazy session creation, single-work-pane fast transition,
+  delta render barrier, prompt refresh critical section을 적용했다. multi-pane
+  topology는 layout metadata/rollback 경계를 유지한다.
+- live runner는 stale hook과 수동 split race를 피하도록 current launcher의
+  `--ensure-current-sidebar`를 사용하고, 생성된 session 이름을 실제 row
+  selection 후 Enter로 선택한다.
+- 최신 user live는 duplicate sidebar 없이 단일 pane identity를 유지했지만 첫
+  전환 target 미변경 1건과 후속 전환 약 1.3초 지연으로 FAIL이다. 전용 contract는
+  PASS했으므로 환경 차이는 줄었지만 전환 latency와 첫 Enter 경계는 아직 완료로
+  판정하지 않는다.
+
+## 2026-07-30 production latency implementation follow-up
+
+- 전환 지연 원인 분석을 위해 operation ID와 phase별 metrics를 production
+  경로에 추가했다. render.delta는 약 1ms이고 render_full은 성공 전환에서
+  발생하지 않았다.
+- 반복 tmux 조회를 줄이고 transition 중 active-window hook 재진입을 차단했다.
+  refresh signal은 이동 전 확인한 sidebar pane/PID를 재사용한다.
+- attached PTY 결과는 target/identity/geometry invariant는 통과했지만 전환
+  finish가 약 0.63~0.86초로 500ms 목표를 미달했다. 현재 남은 최적화 대상은
+  move-pane 자체와 switch-client/refresh 경계다.
+- user live runner의 session 이름 표시 폭 및 선택시간 측정 오류를 수정했다.
+- 보정된 user live는 target 전환 6/6과 sidebar identity 보존에 성공했으며
+  Enter 이후 736~911ms를 기록했다. 생성은 667~997ms였고 known error는
+  없었다. 따라서 기능 invariant는 통과하지만 500ms 전환 목표는 아직
+  미달이다.
+
+## 2026-07-30 persistent control-mode boundary finding
+
+- 500ms p95 목표를 위해 FIFO-backed persistent tmux control-mode adapter를
+  구현하고 전용 socket에서 query/response parsing을 검증했다.
+- 실제 sidebar attached PTY에서는 첫 move 후 tmux control client의
+  `%sessions-changed`/`%exit` event와 attached client context가 섞여 후속
+  session switch가 실패했다. 이 경로를 기본 production으로 사용하지 않도록
+  control mode 기본값을 false로 낮췄다.
+- 다음 control-mode 승격에는 dedicated internal control session/client와
+  event isolation이 필수다. 현재 기본 CLI 경로는 contract와 raw PTY render
+  test를 통과한다.
+- 정리된 user tmux 기본 CLI live에서 생성은 658~940ms, target 전환은 6/6
+  성공, Enter 이후 765~865ms, identity/duplicate/error invariant는 통과했다.
+  500ms latency 목표는 아직 미달이다.
+  multi-pane 전용 runner는 두 실행이 hang되어 INCONCLUSIVE로 남겼고, 사용자
+  tmux는 session 0/window @0/pane %0으로 복원했다.
+
+## 2026-07-30 - session creation latency/error reproduction
+
+- 사용자가 보고한 `c → New 입력 → Enter` 후 sidebar 배치 지연과
+  비-sidebar 창의 `--ensure-sidebar-window returned 1`을 재현하기 위한
+  attached-PTY 테스트를 추가했습니다.
+- 테스트는 prompt, Enter 이후 session 존재, sidebar row, input-ready까지의
+  지연을 분리 기록하고 모든 non-sidebar pane/output/trace를 오류 검색합니다.
+- 최신 branch 실행에서는 Enter 이후 row 표시가 3회 평균 395ms, 최대 398ms였고,
+  `c`부터 row 표시까지는 평균 약 2.05초였습니다. 2·3회차 `New:` prompt 표시가
+  약 2.1~2.2초 지연되어 사용자가 느끼는 지연의 별도 경계로 확인되었습니다.
+  `--ensure-sidebar-window returned 1`은 검출되지 않아 현재 환경에서는 아직
+  재현되지 않았습니다.
+
+## 2026-07-30 - live manual keyboard result
+
+- live tmux에 실제 tmux keyboard event로 3회 session 생성과 방향키+Enter
+  전환을 수행했습니다. 첫 생성 413ms, 세 번째 생성 273ms였습니다.
+- 두 번째 생성은 `New:` 입력 echo가 갱신되지 않아 이전 문자열과 다음 문자열이
+  결합된 `live-manual-2clive-manual-2` session으로 생성되었습니다. 따라서
+  사용자가 느낀 입력 지연/불연속은 live에서 재현된 것으로 판단합니다.
+- 전환 시간은 599~730ms였으며, 현재 pane/scrollback에서는
+  `--ensure-sidebar-window returned 1`을 찾지 못했습니다. 해당 오류는 더 짧은
+  hook stderr 경계를 별도 수집해야 합니다.
+
+## 2026-07-30 - live switch failure reproduction
+
+- live tmux에서 `0 → live-manual-1`은 636ms에 성공했지만, 이후 방향키+Enter
+  전환은 12초 timeout까지 target session으로 이동하지 못했습니다.
+- source session에 남거나 다른 session으로 늦게 이동하는 현상이 발생하여
+  사용자가 보고한 session switch failed 증상을 재현했습니다.
+- 다만 오류 문자열은 pane capture/scrollback에 남지 않았습니다. 실패 결과와
+  오류 메시지 전달은 별도 경계이며, client PTY raw output/launcher trace를
+  함께 수집해야 정확한 원문을 확보할 수 있습니다.
+
+## 2026-07-30 - raw PTY error detection result
+
+- 별도 attached client의 `script --log-out` raw output에서 사용자가 본 오류를
+  직접 검출했습니다:
+  `/home/al-hub/.local/bin/tmux-session-launcher --ensure-sidebar-window ' returned 1`
+- `--ensure-sidebar-window`의 target 인자가 비어 있는 형태이며, 오류가 pane이
+  아니라 tmux client status/message stream에 표시되어 기존 capture 방식에서
+  누락되었습니다.
+- 동일 문자열은 raw stream에 반복되지만 status line redraw 반복일 가능성이
+  있어 실제 hook invocation 수와는 분리해 분석해야 합니다. 다음 production
+  수정은 hook target expansion과 stderr/message correlation부터 확인합니다.
+
+## 2026-07-28 - window-local sidebar test contract
+
+- 사용자는 master에서 관찰된 session 전환 redraw, split topology 붕괴,
+  sidebar 재생성, 신규 session/restore 지연 문제를 window-local sidebar
+  구조로 검증하기 위한 테스트 계획을 승인했습니다.
+- 이번 단계의 범위는 production 수정 없이 테스트 코드와 문서만 작성하는
+  것이며, 신규 테스트는 현재 branch에서 의도적인 RED 기준선입니다.
+- 테스트 기준은 전역 pane 1개가 아니라 unique managed window당 sidebar
+  1개이며, normal session switch에서 pane 이동/layout restore/full render가
+  0회여야 합니다.
+- 현재 변경은 master에 적용하지 않고 commit/push도 보류합니다.
+
 ## 2026-07-27 - canonical redraw measurement implementation
 
 - 사용자는 실질적인 개발에 필요한 test/measurement만 남기고 multi-pane
@@ -37,6 +144,17 @@
 - attached client가 없는 contract에서 `--open-sidebar`의 implicit active session
   판정이 불가능해 명시적 session toggle 계약으로 변경했습니다.
 - active-window 동작은 attached-PTY context가 있는 별도 E2E에서 검증합니다.
+
+## 2026-07-27 - session transition structural barrier
+
+- session 전환 중간 redraw의 구조적 원인 후보로 readiness polling의 반복
+  `switch-client`/`select-pane` mutation과 render 전 READY 상태가 확인됐습니다.
+- observer polling을 읽기 전용으로 바꾸고 detached pane 이동, deferred hook sync,
+  `COMMIT → RENDER_ONCE → READY` barrier를 적용했습니다.
+- P0 contract/phase 회귀는 PASS했습니다. P1 10회 결과는 stable mismatch 0,
+  Ttotal p50/p95 3.233/3.719초이며 transition mismatch 32회 WARN이 남았습니다.
+- 따라서 구조적 개선은 일부 효과가 확인됐지만 중간 layout 적용 경로는 추가 개선
+  대상으로 남겨두었습니다.
 
 ## 2026-07-27 - multi-pane redraw measurement plan implementation
 
@@ -3741,3 +3859,157 @@
   partial frame과 geometry 변화가 남아 있어 사용자 체감 redraw 문제는 해결로
   판정하지 않습니다. mouse dispatch와 multi-client conflict도 별도 경계의
   미해결/INCONCLUSIVE 상태를 유지합니다.
+
+## 2026-07-27 - transition barrier implementation follow-up
+
+- readiness 대기 함수가 20ms polling마다 client/pane focus를 재변경하던 구조를
+  확인하고, 대기를 순수 관찰로 변경했습니다.
+- detached pane 이동과 hook defer를 적용하고, render 완료 전에는 READY로
+  기록하지 않도록 COMMIT → RENDER_ONCE → READY 장벽을 구현했습니다.
+- 최종 상태 보존은 안정적이지만 intermediate manifest mismatch와 약 3.6초의
+  전환 latency가 남아 있어 자연스러운 redraw 개선은 아직 완료로 판단하지
+  않습니다. 이 branch에서만 계속 수정합니다.
+
+## 2026-07-27 - sidebar fixed/work-only contract
+
+- 사용자는 session 선택 후 sidebar는 유지되고 오른쪽 work pane만 전환되는
+  동작을 기대한다고 명확히 했습니다.
+- 이에 production 코드는 유지하고, sidebar structural hash와 work topology를
+  분리 측정하는 strict attached-PTY 테스트를 추가했습니다.
+- 기본 10회 실행에서 sidebar identity/geometry/hash/frame과 stable work topology는
+  유지됐지만 전환마다 `render.full.begin`이 발생했습니다. 현재 구조는 work
+  복원은 안정적이나 sidebar를 포함한 full redraw를 수행하며, 다음 구조 개선의
+  기준은 sidebar 영역 full render 제거입니다.
+
+## 2026-07-28 - incremental sidebar render production change
+
+- 현재 tmux session/sidebar 이동 구조는 유지하면서, session 전환 시 전체
+  sidebar를 지우고 다시 그리던 경로를 source/target row delta render로
+  변경했습니다.
+- strict attached-PTY 10회 profile에서 full render가 10/10에서 0/10으로 줄었고
+  sidebar identity/geometry/hash/frame 및 stable work topology는 유지됐습니다.
+- latency p95는 약 3.5초로 여전히 높습니다. 다음 production 개선은 renderer가
+  아니라 tmux sidebar move/layout restore와 readiness settlement를 줄이는 데
+  집중해야 합니다.
+- target layout restore fault injection도 실제 경계에 연결해 4종 rollback
+  profile을 모두 PASS시켰습니다.
+- metrics timing과 failure/rollback profile도 보강했습니다. move/client-switch/
+  transition 실패는 sidebar/client를 복원했지만, restore-layout 실패에서는
+  target client로 전환된 뒤 rollback이 누락되는 side-effect가 재현되어 별도
+  수정 대상으로 남겼습니다.
+## 2026-07-28 - window-local sidebar production migration
+
+- 사용자는 약 3.5초 전환 지연을 단순 최적화가 아닌 tmux 정책에 맞는 구조적
+  개선으로 진행하고, 최소 85% 개선 목표를 유지하며 master에는 반영하지
+  않도록 결정했습니다.
+- normal switch의 전역 pane 이동/layout restore 경로를 제거하고 managed
+  physical window마다 sidebar를 하나씩 미리 provision하는 구조로 변경했습니다.
+  session 생성은 cold path로 분리해 모든 local TUI 목록을 refresh한 뒤 전환합니다.
+- attached PTY에서 모든 sidebar process identity가 유지되고 pane movement,
+  layout restore, full render 없는 전환을 확인했습니다. lifecycle과 multi-client
+  계약도 통과했으며 master 승격은 보류합니다.
+
+## 2026-07-29 - operation and selection boundary implementation
+
+- `d All` 종료 여부는 socket 존재만으로 판정하지 않고 managed/external session
+  결과와 operation trace를 함께 관측하도록 보강했습니다.
+- session 전환 후 target sidebar에 남는 이전 session selection marker를 current
+  session으로 재정렬하고, native switch 후 target refresh settlement를 추가했습니다.
+- mouse 측정은 pane readiness/focus와 dynamic target을 분리했지만, 현재 attached
+  `script` PTY가 SGR mouse bytes를 tmux `MouseDown1Pane` event로 승격하지 않는
+  실패가 남아 있습니다. 이는 production mouse handler와 구분하여 추적합니다.
+- 현재 계약 테스트는 PASS이나 multi-window attached archive correlation과 mouse
+  E2E는 아직 전체 14-test gate 통과 상태가 아닙니다. master에는 반영하지 않습니다.
+## 2026-07-30 - test correlation logging implementation
+
+- interactive test의 timestamp/run_id/input sequence를 통일하고, 모든 wait의
+  시작·성공·timeout을 기록하도록 보강했습니다.
+- timeout artifact에는 client/session/window/pane/sidebar PID와 operation state를
+  함께 저장합니다. 실패 시 run directory를 자동 보존합니다.
+- mouse 재측정에서 SGR bytes는 PTY input log에 도착했지만 tmux control event와
+  launcher mouse dispatch가 없음을 확인했습니다. production mouse handler와
+  PTY/tmux 전달 문제를 분리해 분석할 수 있게 되었습니다.
+## 2026-07-30 - correlated gate rerun analysis
+
+- 보강 로그를 사용한 14개 gate 재실행 결과는 PASS 5개, FAIL 3개,
+  TIMEOUT 6개였습니다.
+- mouse 로그는 `input.begin/end`와 launcher의 `mouse.select.begin`을 연결했고,
+  tmux가 `mouse_line`에 숫자 좌표가 아닌 선택된 화면 텍스트를 전달하는 문제를
+  확인했습니다.
+- archive metadata FAIL은 production v3와 test의 v2 기대치 불일치이며, redraw
+  FAIL은 visual-b 생성 실패로 측정 경계 이전에 발생했습니다.
+- split/multi-window와 busy timeout은 timeout snapshot을 통해 server 종료,
+  input-ready/prompt-ready 불일치, action generation 정체를 구분할 수 있게
+  되었습니다. master에는 반영하지 않았습니다.
+- 2026-07-30 후속 검증: 이번 작업은 production 동작 변경보다 테스트 관측
+  경계와 fixture 보강에 집중했습니다. mouse 좌표, v3 archive raw snapshot,
+  window-local contract는 PASS했습니다.
+- visual-layer 측정은 session별 sidebar identity를 허용하고 target별
+  geometry/pane signature를 검증하도록 수정했습니다. 3회 전환에서 중간
+  partial frame 1건, blank 0건, 최종 complete, trace phase 누락 0건을
+  확인했습니다. p50은 약 1.55초, p95는 약 1.78초였습니다.
+- native window-local switch는 약 1.10초로 500ms 목표를 넘었고, rollback
+  failure test는 현재 native 경로에 유효한 fault injection 지점이 없음을
+  드러냈습니다. 이 두 항목은 미해결로 유지하고 master에는 반영하지 않습니다.
+- 2026-07-30 parity 후속: numeric session `0`, script PTY, raw client output,
+  기존 window-local sidebar 3개를 포함하는 핵심 parity profile을 추가했습니다.
+  row 표시 평균은 362ms, 최대 423ms였고 raw PTY scanner는 동작했습니다.
+- isolated parity에서는 live의 빈 target `--ensure-sidebar-window returned 1`
+  오류가 재현되지 않았습니다. 따라서 live 오류는 검출 경계가 아니라 stale
+  hook/message 또는 hook 실행 순서 차이에 의존할 가능성이 남았습니다.
+
+## 2026-07-30 - visible live test confirmation
+
+- 사용자의 live tmux 안에 visible test window를 만들고 child attached client를
+  화면에 표시한 상태로 자동 입력을 수행했습니다.
+- 두 번째 session 생성은 4.135초, 세 번째는 timeout이었고 `New:` prompt의
+  입력 echo 누락이 화면에서 재현되었습니다.
+- 방향키+Enter 전환은 570~772ms였으며 raw client output에서 빈 target의
+  `--ensure-sidebar-window ' returned 1`을 검출했습니다. 두 사용자 증상이
+  동일한 visible live test에서 재현되었습니다.
+## 2026-07-30 full monitored live test
+
+- 사용자의 tmux 안에 child tmux를 띄우는 방식은 중첩 화면을 만들어 혼란을
+  주므로 폐기하고, private tmux socket + real attached PTY 방식으로 전환했습니다.
+- 전체 keyboard E2E를 실행 중 raw client/launcher trace를 동시에 감시하는
+  runner를 추가했습니다. 테스트가 끝나면 private server만 종료하고 사용자의
+  tmux는 보존합니다.
+- 최종 실행은 toggle/6개 생성/6회 전환/6개 archive-delete까지 PASS했지만
+  restore 단계에서 action generation timeout으로 FAIL했습니다. raw PTY에는
+  빈 target의 `--ensure-sidebar-window ' returned 1`이 81회 기록되었습니다.
+- 따라서 현재는 “full test가 모두 PASS”가 아니며, restore timeout과 빈 target
+  오류를 production 수정 전의 재현/분석 기준으로 유지합니다.
+
+## 2026-07-30 user tmux comparison
+
+- 사용자의 `default` tmux server에 같은 full runner를 직접 연결해 비교했습니다.
+- 기존 sidebar owner가 `/dev/pts/0`으로 고정되어 있고 runner의 추가 PTY는
+  `/dev/pts/6`이어서 owner guard에 의해 sidebar input-ready 단계에서 timeout됐습니다.
+- 이 결과는 full PASS가 아니며, 사용자 live와 격리 PTY의 차이가 “어느 client가
+  sidebar owner인가”에 있음을 확인합니다. 정확한 재현에는 실제 `/dev/pts/0`
+  client에 직접 키를 보내는 시나리오가 필요합니다.
+## 2026-07-30 user tmux required live suite
+
+- 사용자 default tmux의 현재 attached client에서 실행하는 필수 live runner를
+  추가했습니다. 별도 attached client나 nested tmux를 만들지 않고 임시 visible
+  window만 사용합니다.
+- 모든 이벤트는 wall-clock/monotonic millisecond timestamp와 event/input sequence,
+  client/pane/layout snapshot으로 기록됩니다. prefix는 별도 real attached PTY에서
+  검증해야 하며, pane 대상 `tmux send-keys` 결과와 혼동하지 않습니다.
+- 실제 user server에서 session 생성은 811ms, 3.32초, 10.79초였고 session 전환은
+  6회 모두 500ms 계약 위반 또는 target 미변경이었습니다. trace/debug에는 known
+  error 문자열이 없었지만 raw PTY 미수집 상태이므로 오류 부재로 판정하지 않습니다.
+- 비동기 sidebar 이동 side-effect를 cleanup polling과 original window option 복원으로
+  처리했으며, 최종 사용자 tmux는 원래 session 0의 1 window/1 pane으로 복원했습니다.
+# 2026-07-30 operation correlation follow-up
+
+- Production 수정 전 원인 식별을 위해 기존 visual-layer attached-PTY test를
+  operation ID 중심으로 보강했다.
+- native session 전환에 실제 존재하지 않는 archive phase를 필수로 취급하지
+  않고, operation별 READY/finish 및 render 경로 수를 정량 판정한다.
+- raw PTY byte 범위, trace phase, render full/delta, metrics duration을 같은
+  run ID로 연결한다. user tmux는 raw PTY owner가 아니므로 오류 부재를 PASS로
+  해석하지 않는다.
+- private smoke 실행은 fixture setup 후 focus 경계에서 transition row 없이
+  종료되어 INCONCLUSIVE다. 이 결과를 다음 production 수정의 근거로 사용하지
+  않고, focus/input boundary timeout 보강 대상으로 남긴다.

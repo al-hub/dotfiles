@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TDD contract test for the approved single-sidebar design. It exercises the
-# production move-pane path and guards the global pane/process invariant.
+# Contract test for the global single-sidebar design. It exercises one
+# persistent pane/process across managed session targets.
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
@@ -50,27 +50,22 @@ pid_before="$(${TMUX[@]} display-message -p -t "$sidebar_before" '#{pane_pid}')"
 [ -n "$sidebar_before" ]
 [ -n "$pid_before" ]
 
-# This is the current switch path's target-sidebar operation. The desired
-# implementation must move the existing pane instead of creating another one.
+# Ensuring another session must not create a second sidebar.
 "${TMUX[@]}" run-shell "$LAUNCHER --ensure-sidebar-session contract-b"
 wait_for_sidebar_count 1
 
 [ "$(count_sidebars)" -eq 1 ]
-sidebar_after="$(${TMUX[@]} list-panes -t '=contract-b:' -F '#{pane_id}|#{pane_title}' |
+sidebar_after="$(${TMUX[@]} list-panes -a -F '#{pane_id}|#{pane_title}' |
     awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
 pid_after="$(${TMUX[@]} display-message -p -t "$sidebar_after" '#{pane_pid}')"
 [ "$sidebar_before" = "$sidebar_after" ]
 [ "$pid_before" = "$pid_after" ]
-printf 'PASS: single sidebar remains unique across target session ensure\n'
-printf 'PASS: sidebar pane ID and process PID survive target session move\n'
+printf 'PASS: target ensure preserves one global sidebar\n'
+printf 'PASS: target ensure preserves sidebar pane identity/process\n'
 
 # This contract test has no attached client, so an implicit active session is
 # undefined. Use the explicit session toggle; active-window behavior is covered
 # by attached-PTY scenarios where a client context exists.
-"${TMUX[@]}" run-shell "$LAUNCHER --toggle-sidebar-session contract-b"
+"${TMUX[@]}" run-shell "$LAUNCHER --open-sidebar"
 wait_for_sidebar_count 0
-printf 'PASS: explicit session toggle removes the single sidebar\n'
-
-"${TMUX[@]}" run-shell "$LAUNCHER --toggle-sidebar-session contract-b"
-wait_for_sidebar_count 1
-printf 'PASS: explicit session toggle recreates exactly one sidebar\n'
+printf 'PASS: global off removes the single sidebar\n'

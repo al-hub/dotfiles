@@ -6,19 +6,21 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.10을 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.11(v6.11)입니다. launcher 내부 latency는 목표를 통과했으며 외부 key latency 40ms 목표 미달은 tmux/PTY 관측 과제로 추적합니다.
+- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.10을 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.11(v6.11)입니다. launcher 내부 latency phase metrics는 기록되지만 현재 attached-PTY transition finish는 약 0.63~0.86초로 500ms 목표를 아직 통과하지 못했으며 외부 key latency 40ms 목표 미달은 tmux/PTY 관측 과제로 추적합니다.
 - 기본 enabled 설치 항목은 사용자에게 `opencode`와 `tmux`가 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`, `tmux-theme-picker`, `tmux-command-palette`는 hidden dependency로 함께 설치됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
 - sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. sidebar가 열린 상태의 직접 tmux split/resize도 after-command/window-resized hook으로 full layout metadata를 갱신하며, sidebar 이동·복구 시 해당 metadata를 검증합니다. wrapper에 묶인 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`는 sidebar를 제외한 work pane을 대상으로 하는 권장 경로입니다.
-- session 전환 시 target sidebar 프로세스는 유지하고 refresh signal과 force-refresh polling fallback을 사용합니다. 운용 개선판의 live 측정은 0.75~0.83초이며, Bash `read -t` 경계로 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제입니다.
-- active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 sidebar pane을 active window로 이동합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore/move 중에는 operation busy guard가 추가 입력을 거부하고, 완료 시 PTY에 쌓인 pending 입력도 drain합니다. 각 async worker는 operation id ownership을 확인해 stale completion이 최신 상태를 덮어쓰지 못합니다.
+- session 전환은 tmux server 전체에서 하나의 sidebar pane/process를 유지하고, target session으로 `move-pane`한 뒤 명시적 `switch-client`를 수행합니다. 단일 work pane에서는 layout snapshot/restore를 생략하는 fast path와 delta render barrier를 사용하고, multi-pane에서는 metadata 검증/rollback을 유지합니다.
+- active client가 session/window를 직접 변경하면 runtime tmux hook이 동일 global sidebar를 active session으로 이동하며, sidebar가 없을 때만 active window에 lazy provision합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore 중에는 operation busy guard가 추가 입력을 거부합니다.
 - non-owner client의 session/window 변경은 sidebar를 탈취하지 않고 관측 trace만 남깁니다. archive/delete/restore는 session identity, client attachment, owner client tty/session/window precondition을 재검증하며 외부 conflict 시 대상 session 보존과 rollback을 수행합니다.
 - sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
-- archive는 version 2 pane logical slot/title/geometry/active metadata와 session 전체 window topology/sidebar layout metadata를 기록하고 restore에서 semantic topology, geometry, title, path, focus를 검증합니다. version 1 archive는 legacy parser로 읽을 수 있으며, physical work-pane ID/PID는 restore 시 새로 생성됩니다.
+- archive는 version 3 work-pane logical slot/title/geometry/active metadata와 session 전체 window topology를 기록하고 window-local sidebar infrastructure는 저장하지 않습니다. version 1/2 archive는 legacy parser로 읽을 수 있으며, physical work-pane ID/PID는 restore 시 새로 생성됩니다.
 - archive 생성은 임시 파일 검증 후 고유 이름으로 rename하며, restore 후 history import marker로 동일 archive의 중복 import를 막습니다. bulk archive 실패 시 session 삭제를 중단합니다.
-- session 이동 전 sidebar 포함 full window layout을 저장하고, target 이동 후 pane ID 순서에 맞춰 재적용합니다. horizontal/vertical multi-pane split의 sidebar geometry가 보존되지 않으면 이동을 rollback합니다.
+- session 전환은 layout snapshot/restore를 사용하지 않습니다. archive/restore와 cold provisioning만 topology/geometry를 검증하며, horizontal/vertical multi-pane window도 local sidebar geometry를 유지합니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
+- 전환 metrics는 validate/move-pane/switch-client/refresh-queue/dispatch/finish phase를 operation ID로 연결합니다. 현재 multi-pane fixed-work runner는 hang으로 INCONCLUSIVE였고 사용자 live 필수 suite는 target/identity는 통과하지만 latency threshold는 FAIL입니다.
+- `tmux-sidebar-tmux-adapter`에는 FIFO-backed persistent control-mode 실험 경로가 있으나 `TMUX_SESSION_SIDEBAR_CONTROL_MODE` 기본값은 false입니다. 실제 pane 이동 후 control client event isolation 문제가 확인되어 기본 production은 CLI adapter를 사용하며, control-mode 승격에는 dedicated internal control session/client가 필요합니다.
 
 ## 문서 역할
 
@@ -28,12 +30,18 @@
 - `README.md`: 사용자용 설치/구조 안내
 - `docs/reproduction.md`: 에이전트와 사용자의 실환경 재현 및 검증 가이드
 - `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: 실제 attached PTY 입력으로 prefix/sidebar/TUI 전체 시나리오를 검증
+- `tests/tmux-single-sidebar/test-user-tmux-required-monitored.sh`: 사용자 default tmux의 현재 client/window에서 필수 live 동작과 timestamp 로그를 검증
+- `tests/tmux-single-sidebar/test-live-full-monitored.sh`: 중첩 tmux 없이 full E2E를 실행하고 raw PTY/trace를 실시간 모니터링
 - `tests/tmux-single-sidebar/test-session-name-zero.sh`: live numeric session `0` target ambiguity를 재현하는 RED 회귀 테스트
 - `tests/tmux-single-sidebar/test-layout-metadata-failure.sh`: multi-pane target metadata 부재 시 rollback을 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-multi-window-topology.sh`: multi-window/복합 topology archive·restore와 active-window 단일 sidebar를 attached PTY로 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-direct-layout.sh`: raw tmux horizontal/vertical split/resize 후 session 왕복을 attached PTY로 검증
 - `tests/tmux-single-sidebar/test-keyboard-e2e-rapid-operations.sh`: archive/delete/restore 중 급속 입력 drain과 operation ownership을 검증
 - `tests/tmux-single-sidebar/test-multi-client-operation-conflict.sh`: 외부 client attach/delete/restore name collision conflict와 rollback을 검증
+- `tests/tmux-single-sidebar/test-window-local-contract.sh`: managed window별 sidebar 1개와 global toggle의 RED contract
+- `tests/tmux-single-sidebar/test-keyboard-e2e-window-local-switch.sh`: attached PTY window-local session switch의 RED contract
+- `tests/tmux-single-sidebar/test-window-local-lifecycle-contract.sh`, `test-window-local-multi-client.sh`: archive/lifecycle와 linked-window/multi-client 경계 contract
+- `docs/tmux-window-local-test-plan.md`: window-local sidebar 테스트 경계·정량 기준·RED/GREEN 정책
 - `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
 - `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
 - `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit
@@ -68,8 +76,7 @@ git diff --check
 bash tests/tmux-single-sidebar/test-contract.sh
 ```
 
-이 테스트는 production `move-pane` 경로가 구현되기 전까지 의도적으로 실패할
-수 있으며, branch의 신규 동작 기준선으로 사용합니다.
+이 테스트는 global single-sidebar provisioning과 native switch 기준선을 검증합니다.
 
 tmux 설정 로딩 검증:
 

@@ -33,9 +33,63 @@ The 33 pane mismatches occurred only in transition samples; stable rows matched
 the target manifest. They remain WARN evidence for intermediate redraw/layout
 activity, not final topology failure.
 
+## 2026-07-27 structural transition implementation
+
+The transition path now has three structural safeguards:
+
+- readiness polling is observation-only; it no longer repeats `switch-client` or
+  `select-pane` while waiting;
+- pane movement uses detached `move-pane`, avoiding an intermediate focus change;
+- transition state remains `COMMIT`/`committed` until the single render completes,
+  so the observable phase order is `COMMIT → RENDER_ONCE → READY`.
+
+During a running/committed transition, layout/focus/active-window hooks defer
+instead of reapplying layout. Deferred metadata is flushed once after success.
+
+The first 10-transition post-change profile recorded 185 samples, blank/partial
+0, stable geometry mismatch 0, stable pane mismatch 0, phase missing 0, and
+Ttotal p50/p95 of 3.233/3.719 seconds. Transition pane mismatch remained 32
+WARN samples, so the structural change improved the observer latency but did not
+yet prove that all user-visible intermediate redraw has been eliminated.
+
 The test remains measurement-only and does not modify production behavior. The
 P0 correctness gates remain the split-cycle, multi-window, arbitrary-topology,
 and failure/rollback scenarios.
+
+## 2026-07-28 incremental sidebar render implementation
+
+Normal session switching now uses `render_transition_delta()` after the tmux
+topology transition. It redraws only the source/target session rows and records
+`RENDER_DELTA`; `render_full()` remains the recovery path for an invisible row,
+geometry change, topology change, or explicit full refresh.
+
+The existing render-phase/cause/correlation tests treat delta and full render as
+one logical transition render, while the strict sidebar-fixed test rejects any
+normal full render. A three-transition attached-PTY smoke run recorded:
+
+```text
+sidebar_id_changes=0 sidebar_geometry_changes=0 sidebar_hash_changes=0
+blank_frames=0 partial_frames=0 work_signature_mismatches=0
+full_render_calls=0 latency_p50=3768ms latency_p95=3785ms
+sidebar_move_p95=1218368us client_switch_p95=163966us total_metrics_p95=2370751us
+```
+
+The redraw contract is improved and the full sidebar repaint is removed, but
+the latency target is not yet met. The latest 10-transition profile recorded:
+
+```text
+full_render_calls=0 latency_p50=3427ms latency_p95=3531ms
+sidebar_move_p95=1149961us client_switch_p95=178963us total_metrics_p95=2212421us
+```
+
+The remaining delay is concentrated in the
+tmux sidebar move/layout and readiness settlement path, not in the sidebar
+renderer.
+
+The target-layout fault injection is now placed at the real target layout
+restore/capture boundary. `move`, `client-switch`, `restore-layout`, and
+`transition` failure profiles all preserve sidebar identity/geometry and owner
+client state.
 
 ## 실행 계층과 판정 기준
 
@@ -80,6 +134,62 @@ blank/partial `capture-pane` sample은 단독 RED가 아니다. raw PTY 구간�
 operation phase에 연결되고 target geometry 불일치 또는 READY 이후 미복구가
 함께 확인될 때만 RED이며, 그 외에는 WARN이다.
 
+### 2026-07-30 operation correlation 보강
+
+visual-layer 측정은 이제 trace와 metrics를 같은 run ID로 활성화하고, 각 전환을
+`transition.begin`의 operation ID로 연결한다. `visual-transition-phases.tsv`에는
+다음 항목이 추가된다.
+
+- `render.request_count`, `render_full_count`, `render_delta_count`
+- `transition.finish` 결과와 transition 중 오류 marker 수
+- monotonic microsecond 기준 Enter 시각, phase 시각, raw PTY byte 범위
+
+native 전환에서 실제로 필요한 최소 invariant는
+`VALIDATE_TARGET`, `SWITCH_CLIENT`, `VERIFY_CLIENT`, `RENDER_DELTA 또는 RENDER_ONCE`,
+`READY`, 성공 `transition.finish` 각각의 operation 귀속이다. archive-era
+`SNAPSHOT`/`MOVE_SIDEBAR`/`RESTORE_LAYOUT` phase가 없다는 이유로 해당 전환을
+오류로 분류하지 않는다. 반대로 operation ID·READY·finish 결과가 없거나 한
+전환에 render 경로가 0개 또는 2개 이상이면 `missing_or_ambiguous`로 RED한다.
+
+이 구분으로 다음을 분리할 수 있다.
+
+| 관측 결과 | 해석 |
+| --- | --- |
+| delta 1회, full 0회 | sidebar 유지형 정상 render 후보 |
+| full 1회, delta 0회 | geometry/visibility fallback 후보 |
+| full+delta 2회 이상 | 중복 render/refresh 후보 |
+| operation 없음 또는 finish/READY 없음 | 관측 경계 또는 실제 전환 실패; PASS 금지 |
+| raw PTY 오류와 trace 오류 marker 동시 존재 | 사용자 오류 메시지와 production 원인 연결 |
+
+`metrics.log`는 launcher의 render/switch duration을 별도로 보존한다. private
+attached-PTY 실행은 raw byte offset과 함께 이 파일을 남기며, user-server 실행은
+raw PTY를 소유하지 않으므로 오류 부재를 판정하지 않고 `INCONCLUSIVE`로 기록한다.
+
+## 2026-07-30 structural production change
+
+`feature/single-sidebar`의 production path를 global single-sidebar model로
+전환했다. session 생성은 새 session window마다 sidebar를 provision하거나
+모든 managed window를 기다리지 않고, 현재 sidebar process의 model refresh만
+수행한다. session 전환은 target-local sidebar를 찾지 않고 기존 pane을
+`move-pane`으로 이동한 뒤 client를 전환한다.
+
+private attached-PTY 결과:
+
+```text
+session create row: average 701ms, maximum 766ms
+raw PTY switch: 3/3 completed, full clear=0, delta render path observed
+multi-pane correlation: operation finish=success, render_delta=1, render_full=0
+```
+
+single-work-pane transition은 약 0.8~1.1초로 감소했지만 500ms 목표에는 아직
+미달이다. 남은 시간은 tmux pane move/client hook settlement 경계에 집중되어
+있으며 후속 최적화 대상으로 남긴다.
+
+사용자 tmux live 검증은 기존 설치 hook과 현재 branch runner가 동시에 provision하는
+환경 race 때문에 duplicate sidebar를 재현했다. 이는 current checkout 기능 결과와
+분리해 `LIVE-HARNESS-INCONCLUSIVE`로 분류하며, runner는 hook 설치/cleanup 경계를
+명시적으로 정리해야 한다.
+
 ### 보조 진단
 
 - `test-keyboard-e2e-switch-render-phase.sh`: phase와 one-render invariant 보조
@@ -87,6 +197,45 @@ operation phase에 연결되고 target geometry 불일치 또는 READY 이후 �
 - `test-keyboard-e2e-switch-pty-render-measurement.sh`: 장시간 raw PTY baseline
 - `test-keyboard-e2e-switch-correlation.sh`: 기존 phase correlation 보조/legacy
 - `test-keyboard-e2e-switch-flicker-measurement.sh`: 기존 pane-buffer flicker 보조/legacy
+
+### Sidebar fixed/work-only contract
+
+`test-keyboard-e2e-sidebar-fixed-work-switch.sh`는 sidebar 영역과 work 영역을
+분리해 strict 고정 계약을 측정한다. 실제 attached PTY에서 서로 다른 2/3/4-pane
+topology를 가진 세 session을 `A → B → C → A`로 전환하며, 전환 sample마다
+sidebar pane ID/PID/geometry, canonical sidebar structural hash, blank/partial
+frame, target work signature, raw PTY bytes와 `render.full.begin` 수를 기록한다.
+
+선택 marker와 session age/status는 정상적으로 변하므로 session row identity만
+남기도록 canonicalize한다. 반면 sidebar identity/geometry/hash/frame과 full
+render 호출은 엄격히 판정하고, work signature는 stable target sample에서만
+expected topology와 비교한다.
+
+현재 기본 10-transition 실행 결과는 다음과 같다.
+
+```text
+sidebar_id_changes=0 sidebar_geometry_changes=0 sidebar_hash_changes=0
+blank_frames=0 partial_frames=0 work_signature_mismatches=0
+full_render_calls=10 latency_p50=3731ms latency_p95=5109ms
+```
+
+따라서 pane identity/geometry와 최종 work topology는 안정적이지만, 매 전환
+sidebar를 포함한 `render.full`이 발생해 strict sidebar 고정 계약은 RED다.
+이 테스트는 production 동작을 수정하지 않고 위반 지점을 정량적으로 고정한다.
+
+metrics가 활성화된 실행은 `sidebar-fixed-metrics.log`와
+`sidebar-fixed-timing.tsv`에 operation ID별 `sidebar_move_us`,
+`client_switch_us`, `final_force_refresh_us`, `total_us`를 보존한다. 최근 smoke
+실행에서 `sidebar_move_us` p95는 약 1.16초, `client_switch_us` p95는 약
+0.14초, transition metrics `total_us` p95는 약 2.17초였다. 전체 latency와
+launcher switch metrics의 차이는 readiness/render/PTY settlement 구간으로
+분리해 후속 분석할 수 있다.
+
+`test-keyboard-e2e-sidebar-fixed-work-failure.sh`는 `move`, `client-switch`,
+`transition` fault injection에서 sidebar identity/geometry, client session,
+rollback/FAILED phase를 PASS로 확인한다. `restore-layout` fault injection은
+target client로 전환된 뒤 rollback이 기록되지 않는 RED side-effect를 재현한다.
+이 결과는 failure path의 layout restore 순서가 아직 안전하지 않다는 기준선이다.
 
 ## 목적
 
@@ -194,6 +343,8 @@ redraw가 일관된 관측값이다. 다만 multi-pane topology에서의 server 
 - tests/tmux-single-sidebar/test-keyboard-e2e-switch-render-cause.sh
 - tests/tmux-single-sidebar/test-keyboard-e2e-switch-pty-render-measurement.sh
 - tests/tmux-single-sidebar/test-keyboard-e2e-switch-visual-layer-measurement.sh
+- tests/tmux-single-sidebar/test-keyboard-e2e-sidebar-fixed-work-switch.sh
+- tests/tmux-single-sidebar/test-keyboard-e2e-sidebar-fixed-work-failure.sh
 
 측정 전용 테스트는 production launcher/controller 동작을 monkey-patch하지 않는다.
 측정 실패 시 raw output과 전환별 TSV artifact를 보존해 재분석할 수 있도록 한다.
@@ -243,3 +394,40 @@ TSV에서 p50/p95(ms/us)로 기록한다. blank/partial frame은 raw correlation
   `INCONCLUSIVE`로 분류한다.
 - sidebar toggle contract는 고정 sleep 대신 sidebar count readiness를 기다리며
   remove/recreate 검증이 PASS했다.
+# 2026-07-30 production phase optimization result
+
+## 최신 측정
+
+현재 branch의 production 전환은 다음 경계를 기록한다.
+
+- `validate`: 약 25~44ms
+- `move-pane`: 약 0.24~0.29초
+- `switch-client`: 약 0.10~0.21초
+- `refresh-queue`: 약 0.07~0.16초
+- 전체 `transition.finish`: 약 0.63~0.86초
+- 성공 전환 `render_full`: 0회
+- 성공 전환 `render_delta`: 1회
+- sidebar pane identity 변경: 0회
+
+최신 user live 6회는 Enter 이후 736~911ms였고 target 변경 6/6, duplicate
+sidebar 0, identity 변경 0, known error 0이었다. session 생성 3회는
+667~997ms였다.
+
+반복 tmux 조회와 transition 중 hook 재진입은 보강으로 줄였지만 500ms
+acceptance는 아직 통과하지 못했다. 다음 production 개선은 `move-pane`와
+switch-client/refresh 경계를 별도 최적화 대상으로 다뤄야 한다.
+
+## 테스트 harness 보정
+
+user live runner는 sidebar 폭에서 잘리는 session 이름을 사용하지 않으며,
+selection 이동 완료 후 Enter 직전부터 switch latency를 측정한다. 따라서
+row navigation 시간과 production session switch 시간을 혼합하지 않는다.
+
+## Control-mode 경계
+
+FIFO-backed persistent control-mode adapter의 전용 socket query 테스트는
+통과했지만, 실제 pane 이동 후 tmux control client가 `%sessions-changed`와
+`%exit`를 발생시켜 후속 session/client context를 오염시켰다. 현재
+`TMUX_SESSION_SIDEBAR_CONTROL_MODE` 기본값은 `false`이며 CLI adapter가
+기본 production 경로다. control-mode를 승격하려면 사용자 session과 분리된
+dedicated internal control session/client 및 event isolation을 추가해야 한다.
