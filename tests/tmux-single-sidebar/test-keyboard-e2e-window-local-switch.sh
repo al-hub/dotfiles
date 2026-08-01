@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Attached-PTY RED contract for the window-local session switch path.
+# Attached-PTY contract for the window-local session switch path.
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 exec env TMUX_KEYBOARD_E2E_SCENARIO=window-local-switch \
     TMUX_KEYBOARD_E2E_SYSCALL_TRACE="${TMUX_KEYBOARD_E2E_SYSCALL_TRACE:-0}" \

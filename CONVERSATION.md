@@ -4013,3 +4013,155 @@
 - private smoke 실행은 fixture setup 후 focus 경계에서 transition row 없이
   종료되어 INCONCLUSIVE다. 이 결과를 다음 production 수정의 근거로 사용하지
   않고, focus/input boundary timeout 보강 대상으로 남긴다.
+
+# 2026-07-31 window-local production implementation
+
+- 사용자가 기대한 “sidebar는 유지되고 session pane만 전환”을 tmux 제약에
+  맞춰 구현했다. 논리 sidebar는 shared 상태로 유지하되 managed window마다
+  local pane/process를 cold provision하고, 전환 hot path에서는 `move-pane`,
+  layout restore, switch-requested full render를 사용하지 않는다.
+- 신규 pane readiness 이전 USR2 race를 차단하고, session 생성 후 각 local
+  sidebar의 snapshot을 갱신한다. master는 변경하지 않는다.
+- attached PTY window-local switch 검증에서 3회 전환, process identity 유지,
+  move/layout/full-render 0, 최대 465.8ms를 확인했다.
+
+# 2026-08-01 selection marker production follow-up
+
+- session 선택 후 Enter할 때 target sidebar가 이전 selection marker를 사용할
+  수 있는 경계를 production에서 수정했다. window-local sidebar를 재생성하거나
+  전체 화면을 지우지 않고 target pane의 선택 행만 delta 동기화한다.
+- 새 private tmux server의 attached-PTY 검증 결과: process identity 유지,
+  pane move/layout restore/switch-requested full render 없음, 최대 462.6ms.
+- 현재 branch에서만 작업했으며 master는 변경하지 않았다.
+
+# 2026-08-01 atomic marker/redraw production fix
+
+- session 전환 직전에 target window에 sync marker를 게시해 target sidebar가
+  pending refresh보다 먼저 native transition을 인지하도록 수정했다. current와
+  selected marker를 함께 계산하고 영향을 받는 row만 갱신한다.
+- 실제 geometry 변경이 없는 전환에서는 full render를 억제하고, geometry가
+  실제로 바뀐 경우만 예외로 허용했다. 중복 sidebar reconciliation은 hot path
+  밖의 provision/hook 경로로 이동했다.
+- isolated test는 최대 461.2ms PASS. 사용자 tmux live에서는 marker invariant
+  6/6, sidebar identity 6/6, known error 0건이며 latency는 343~593ms로 측정됐다.
+- 작업은 feature branch에만 남겼고 master는 변경하지 않았다.
+## 2026-08-01 pre-switch marker barrier
+
+- 사용자 tmux에서 Enter 직후 `* target`과 다른 row의 `>`가 함께 보이는
+  중간 redraw를 6회 입력으로 재현했다.
+- target sidebar의 marker delta를 client 전환 전에 처리하고 ACK를 확인하는
+  blocking barrier를 production에 추가했다. marker 정합성을 우선하며,
+  attached-PTY latency 623~838ms는 별도 개선 대상으로 기록했다.
+
+## 2026-08-01 archive geometry root cause
+
+- 사용자 조건의 split/archive/delete/restore에서 pane 수와 split topology는
+  복원되지만 원래 pane geometry가 달라지는 현상을 확인했다.
+- 원인은 archive snapshot의 `session/window/pane/.../title` 필드와
+  `prepare_window_for_archive_snapshot`의 읽기 순서가 달라 sidebar 제목을
+  감지하지 못한 것이었다. sidebar를 제외해 기록한 pane 목록에 sidebar 포함
+  layout이 섞이는 구조였다.
+- helper parser를 full snapshot schema에 맞추고, archive layout/geometry
+  record count 회귀 검증을 추가했다. restore readiness timeout은 별도 관측
+  경계 문제로 남겼으며, master는 변경하지 않는다.
+
+## 2026-08-01 clean user-tmux verification
+
+- 재설치 후 사용자 tmux에서 테스트 session을 정리하고 session `0`에 sidebar를
+  새로 만든 뒤, 실제 `c`/New/Enter 6회 생성은 모두 성공했다(654~4212ms).
+- 방향키/Enter를 readiness 대기 없이 연속 입력하면 marker selection과 실제
+  client session이 한 단계 어긋나는 현상이 재현됐다. 이는 입력 경계가 안정화되기
+  전 다음 key를 받는 live side-effect 후보다.
+- readiness를 기다린 6회 전환은 client와 `>*` target이 모두 일치했다. 단,
+  테스트가 global option을 읽어 5초 timeout을 포함했으므로 pane-scoped option을
+  사용한 정확한 latency 측정이 추가로 필요하다.
+
+## 2026-08-01 deleted numeric-zero stale row
+
+- `d` 후 Enter만 입력하면 `Delete 0? y/Enter/All` prompt의 빈 입력으로
+  삭제되지 않는다. 실제 삭제는 `d`/`y`/Enter가 필요했다.
+- 실제 삭제 후 tmux session 목록에는 `0`이 없는데 active sidebar 화면에는
+  `0` row가 남는 stale snapshot을 live에서 재현했다.
+- stale `0`을 선택해 Enter해도 client는 기존 session에 남았다. 반환 문자열은
+  capture에서 검출되지 않았지만, 삭제된 numeric session row와 전환 불능이
+  명확히 확인되었다. 후속 수정은 session snapshot invalidation과 target 존재
+  검증을 하나의 전환 경계로 묶어야 한다.
+
+## 2026-08-01 numeric-zero delete refresh fix
+
+- trace에서 `0` 삭제 실패의 직접 원인은 fallback 전환 후 archive의
+  `list-panes -t "=0"`가 빈 archive를 만들어 validation에 실패한 것이었다.
+  exact target `=0:`로 수정했다.
+- delete 완료 시 managed sidebar 전체에 refresh를 전파하고 explicit refresh가
+  input cooldown에 막히지 않도록 했다.
+- 신규 attached-PTY test는 `0` 삭제 후 모든 sidebar에서 stale row가 제거되고
+  다음 방향키/Enter가 유효 session으로 전환되는 것을 PASS했다.
+- 기존 numeric-session test의 owner-pane 이동 assertion은 window-local sidebar
+  모델과 불일치하므로 별도 legacy observer 문제로 남겼다.
+
+## 2026-08-01 live split geometry reproduction
+
+- 사용자 tmux에서 `c`로 session 생성, `|` split, `d`/`y`/Enter archive/delete,
+  `o`/Enter restore를 수행했다.
+- archive에는 원래 work geometry가 저장됐지만 restore 후 sidebar 폭이 33→35,
+  work panes가 21/20→28/11로 바뀌었다. topology 보존과 exact geometry 보존이
+  분리되어 있으며, 후자는 아직 해결되지 않은 production 문제다.
+
+## 2026-08-01 repeated switch sidebar width
+
+- 사용자 tmux에서 6개 session을 만든 뒤 Down/Enter와 Up/Enter를 반복하자
+  초기 sidebar 35열이 target session에서 33열로 바뀌었다.
+- 반복 전환 중 source sidebar가 잠시 사라지고 일부 client switch timeout도
+  발생했다. session별 window geometry와 sidebar layout 재적용 경계를 별도
+  production 문제로 기록한다.
+
+## 2026-08-01 sidebar width and vertical restore correction
+
+- sidebar 폭 drift의 원인은 target window의 transient pane width가 다음 provision의
+  기준으로 재사용되는 것이었다. global remembered width와 전환 직후 bounded resize
+  verification을 적용했다.
+- vertical split restore의 원인은 archive가 sidebar가 포함된 full layout과 work-only
+  pane geometry를 혼용하고, sidebar가 첫 row일 때 window record를 중복 기록하는 것이었다.
+- archive/restore를 work-only 단계와 sidebar 재생성 후 full-layout 단계로 분리했다.
+  geometry manifest는 `pane_id:` 없는 좌표만 저장하도록 수정했다.
+- attached-PTY arbitrary topology에서 archive metadata, 4-pane semantic mapping,
+  sidebar 포함 layout restore가 PASS했다. master에는 반영하지 않았다.
+
+## 2026-08-01 target sidebar disappearance repair
+
+- multi-pane 전환 직후 target sidebar가 pane 목록에서 사라지는 live 증상에 대비해
+  `switch-client` 직후 target sidebar 존재를 재검증하고, absent일 때만 bounded
+  provision/readiness repair를 수행하도록 production을 보강했다.
+- 사용자 client `/dev/pts/0`를 명시한 6회 전환에서 32개 관측 sample 모두
+  sidebar count 7, target missing 0으로 확인했다.
+- tmux 기본 display context를 사용한 이전 측정에는 입력 대상 오인 가능성이 있어,
+  live observer는 client tty 명시를 필수 조건으로 정리했다.
+
+## 2026-08-01 live archive-all restore regression
+
+- 사용자 live에서 6개 session 생성, vertical split, 개별 archive/delete, history
+  전체 선택 restore를 수행했다.
+- 빠른 session 생성/전환 직후 d 입력은 일부 유실되어 6개 중 4개만 삭제되었고,
+  input-ready를 기다린 재시도에서는 삭제가 수행됐다.
+- history Space/Down 연속 입력은 6개 중 5개만 marker가 남아 archive 하나가
+  restore되지 않았다. visible error 없이 selection이 누락되므로 별도 회귀다.
+- restore가 테스트 topology를 사용자 session 0에 남겨 추가 work pane이 생겼다.
+  미저장 작업 가능성으로 자동 제거하지 않았다.
+- target sidebar input-ready barrier를 production에 추가했지만 archive-all restore와
+  rapid history selection은 아직 개선 대상이다.
+
+## 2026-08-01 archive restore follow-up
+
+- history 전체선택을 `a`로 명시화하고 restore 결과를 selected/restored 수로 기록했다.
+  attached PTY에서 6개 선택과 6/6 복원을 확인했다.
+- 원인은 빈 window layout field의 Bash tab parser 이동과 sidebar provision race였다.
+  restore topology guard, no-layout sentinel, pane-count mismatch 차단을 추가했다.
+- master에는 적용하지 않았다.
+
+## 2026-08-01 restore history close
+
+- restore 후 history view가 남아 다음 Down이 archive 선택으로 처리되는 문제를 live에서
+  확인했다.
+- restore 완료 경계에서 sessions view 전환, history selection 초기화, session 재수집을
+  수행하도록 production을 수정했다.
+- private 및 사용자 tmux `/dev/pts/0`에서 `o` → Enter 후 자동 close를 PASS로 확인했다.

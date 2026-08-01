@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# RED contract for the planned tmux-native model:
+# Contract for the tmux-native window-local model:
 # one persistent sidebar pane per managed window, with native session
 # switching and no pane movement/layout restoration in the switch path.
 #
-# This test intentionally fails against the current global-pane implementation.
-# It becomes GREEN only after the window-local lifecycle is implemented.
+# It is GREEN only when every managed window has a stable local sidebar.
 
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "$TEST_DIR/../.." && pwd -P)"

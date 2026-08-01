@@ -8,22 +8,23 @@ implementation.
 
 ## Goal
 
-Keep one sidebar pane and one sidebar process for the active tmux client.
-When the client switches sessions, move the existing pane to the target
-session's active window instead of creating or respawning another sidebar.
+Keep one logical sidebar state while giving each managed tmux window one stable
+sidebar pane and process. When the client switches sessions, the target pane is
+already provisioned and tmux performs only the native `switch-client`; no
+physical pane is moved through the visible window.
 
-The implementation keeps the sidebar as a server-global singleton. Runtime
-`client-session-changed` and `after-select-window` hooks move the existing pane
-to the newly active session/window while preserving its pane ID and process.
-Session creation marks the new session immediately; sidebar provisioning is a
-lazy cold-path operation so the `New:` prompt is not blocked by preparation.
+This is the tmux-native compromise for “one sidebar”: state/ownership are
+shared, while physical panes are window-local because tmux cannot display one
+pane in two windows simultaneously. Session creation provisions the new
+window on a cold hook path and refreshes existing sidebar snapshots.
 
 ## Invariants
 
-1. The server has zero or one pane titled `dotfiles-session-sidebar`.
+1. Each managed window has zero or one pane titled `dotfiles-session-sidebar`;
+   the logical sidebar state is shared server-wide.
 2. The visible sidebar process is not respawned during session switching.
 3. A successful session switch preserves the sidebar pane ID.
-4. The sidebar is attached to the active client's target session and window.
+4. The active client always has a ready local sidebar pane after provisioning.
 5. Work layout snapshots exclude the sidebar pane.
 6. Split shortcuts always target a work pane.
 7. A failed move does not complete the client switch.
@@ -54,8 +55,8 @@ lazy cold-path operation so the `New:` prompt is not blocked by preparation.
 18. Transition readiness polling is observation-only: it must not issue
    `switch-client` or `select-pane` while waiting for the move to settle.
 19. Runtime hooks defer sidebar metadata/focus synchronization while a
-   transition is running or committed; `READY` is recorded only after the
-   single coalesced delta render completes.
+   transition is running; window-local switch completion does not synchronously
+   snapshot or restore layout.
 20. A normal session switch uses sidebar selection/state delta rendering and
    must not clear or fully repaint the sidebar pane; full render is reserved
    for geometry, topology, view-mode, or recovery fallback.
@@ -97,25 +98,19 @@ failure adapters.
 
 ## Session switch protocol
 
-1. Resolve the sidebar pane by pane ID/title.
+1. Resolve the active client and target window by stable IDs.
 2. Resolve the current client and its source window.
-3. Save the source work layout.
-4. Resolve the target session's active window and a work pane.
-5. Validate that the target window has a usable work pane and save its
-   work-only layout as the target baseline.
-6. Move the existing sidebar pane to the target window.
-7. Apply the sidebar width without replacing the target work layout.
-8. Switch the explicit client to the target session.
-9. Mark the transition `COMMIT` and let the coalesced sidebar delta enter
-   `RENDER_DELTA`; use `RENDER_ONCE` only for an explicit recovery fallback.
-10. Refresh the surviving TUI process and then mark the transition `READY`.
+3. Ensure and verify the target window's ready local sidebar pane.
+4. Switch the explicit client to the target session.
+5. Mark `STABILIZE`/`READY` after client verification; target pane rendering
+   remains local to that pane and is not requested as a whole-window redraw.
 
 If any step before client switching fails, keep the current client session and
 report the failure. A move must use stable pane/window IDs, not ambiguous
 session or window names.
 
-If the client switch itself fails after the pane move, move the sidebar back to
-the source window and restore the source work layout before reporting failure.
+If the client switch fails, keep the source client and preserve both
+window-local sidebar panes; there is no sidebar move rollback.
 
 Archive restore is transactional at the tmux topology boundary: layout and
 focus failures remove the partial restored session and switch the owning client
@@ -124,12 +119,11 @@ reapply pane titles/logical slots, and reselect the archived active pane. Paths
 and command signatures are restore metadata; the original running process,
 physical pane ID, and PID are not serialized or required to remain identical.
 
-Window selection invokes the same move protocol through the runtime hook. A
-hook guard prevents recursive move events while the pane is being relocated.
-Readiness polling does not repair focus or client state; those mutations belong
-to the transition protocol. Hook-triggered metadata synchronization is flushed
-once after the render barrier, so an intermediate hook cannot overwrite the
-target layout during movement.
+Window selection invokes the same local-provision protocol through the runtime
+hook. Readiness polling does not repair focus or client state; those mutations
+belong to the transition protocol. Hook-triggered metadata synchronization is
+deferred during switch-client and never performs a synchronous layout snapshot
+in the window-local hot path.
 
 ## On/off policy
 
@@ -148,20 +142,20 @@ The following bindings remain part of the public behavior contract:
 - pane navigation, mouse selection, session Enter, create, rename, delete,
   and history actions
 
-Window-to-window automatic relocation uses the same controller path as
-session-to-session movement and is guarded by the active-client hook.
+Window-to-window automatic selection ensures a local sidebar in the active
+window and is guarded by the active-client hook; it does not relocate a pane.
 
 ## Test contract
 
 The scenario suite must verify:
 
-- one global sidebar after opening and switching A -> B -> C;
-- unchanged sidebar pane ID and process PID across successful session switches;
+- one local sidebar per managed window after opening and switching A -> B -> C;
+- unchanged per-window sidebar pane ID and process PID across successful session switches;
 - on/off idempotence and layout restoration;
 - split shortcuts never split the sidebar;
 - rapid switching never creates duplicates;
-- target deletion and move failure have safe fallback behavior;
-- active-window hooks move the same pane to a selected window;
+- target deletion and target provisioning failure have safe fallback behavior;
+- active-window hooks provision or reuse the local pane without moving another window's pane;
 - `d All` removes only sessions marked as sidebar-managed and preserves external sessions;
 - current behavior on `master` remains untouched.
 - a multi-pane target without a saved sidebar layout fails closed and preserves the source sidebar;
@@ -172,8 +166,8 @@ The scenario suite must verify:
 - arbitrary topology archive/restore preserves semantic pane slot, title, path,
   geometry, and active focus while allowing new work-pane IDs/PIDs;
 
-Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify move,
-snapshot, restore-layout, focus, and transition rollback without leaving a
+Failure injection through `TMUX_SESSION_LAUNCHER_FAIL_STEP` must verify
+provisioning, snapshot, restore-layout, focus, and transition rollback without leaving a
 duplicate sidebar or an unrecoverable operation state.
 
 Archive/delete/restore stress coverage must verify operation-token ownership,

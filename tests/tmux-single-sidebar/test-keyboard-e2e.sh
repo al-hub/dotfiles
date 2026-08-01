@@ -126,7 +126,7 @@ cleanup()
         tmuxc switch-client -c "$VISIBLE_CLIENT" -t 0 >/dev/null 2>&1 || true
     fi
     if [ "$EXISTING_SERVER" = 1 ]; then
-        for cleanup_session in "$ANCHOR_SESSION" keyboard-1 keyboard-2 keyboard-3 keyboard-4 keyboard-5 keyboard-6; do
+        for cleanup_session in "$ANCHOR_SESSION" keyboard-1 keyboard-2 keyboard-3 keyboard-4 keyboard-5 keyboard-6 delete-zero-1 delete-zero-2 delete-zero-3 delete-zero-4 delete-zero-5 delete-zero-6; do
             tmuxc kill-session -t "=$cleanup_session" >/dev/null 2>&1 || true
         done
     else
@@ -188,9 +188,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle|direct-layout|rapid-operations|session-create-latency|arbitrary-topology|multi-window-topology|window-local-switch|window-local-lifecycle|window-local-toggle) ;;
+    full|minimal|split-cycle|direct-layout|rapid-operations|session-create-latency|arbitrary-topology|multi-window-topology|window-local-switch|window-local-lifecycle|window-local-toggle|delete-zero-stale-row|history-select-all) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, session-create-latency, arbitrary-topology, multi-window-topology, window-local-switch, window-local-lifecycle, or window-local-toggle\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, session-create-latency, arbitrary-topology, multi-window-topology, window-local-switch, window-local-lifecycle, window-local-toggle, delete-zero-stale-row, or history-select-all\n' >&2
         exit 2
         ;;
 esac
@@ -214,6 +214,154 @@ fi
 count_sessions()
 {
     tmuxc list-sessions -F '#{session_name}' 2>/dev/null | wc -l | tr -d ' '
+}
+
+run_delete_zero_stale_row_reproduction()
+{
+    local before_generation previous_session_count sidebar_pane capture stale_rows
+
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+    for index in 1 2 3 4 5 6; do
+        before_generation="$(action_generation)"
+        send_keys 'c'
+        wait_for_prompt_ready
+        send_keys "delete-zero-$index"
+        send_keys $'\r'
+        wait_for_prompt_complete
+        wait_for_action_generation_change "$before_generation"
+    done
+    wait_for_sessions 7 'delete-zero setup'
+
+    # c selects each newly created row. Move the real TUI selection back to
+    # the numeric anchor before issuing d, matching the user scenario.
+    for index in 1 2 3 4 5 6; do
+        before_generation="$(action_generation)"
+        send_keys $'\033[A'
+        wait_for_action_generation_change "$before_generation"
+        wait_for_sidebar_input_ready
+    done
+
+    # The anchor is the numeric session 0. Confirm deletion through the real
+    # prompt path, then wait for the asynchronous worker to finish.
+    previous_session_count="$(count_sessions)"
+    before_generation="$(action_generation)"
+    send_keys 'd'
+    wait_for_prompt_ready
+    send_keys $'y\r'
+    wait_for_prompt_complete
+    wait_for_action_generation_change "$before_generation"
+    wait_for_session_count_below "$previous_session_count"
+    wait_for_operation_quiet
+    wait_for_sidebar_input_ready
+    tmuxc has-session -t '=0:' 2>/dev/null && {
+        printf 'FAIL: numeric session 0 still exists after deletion\n' >&2
+        return 1
+    }
+
+    # Every surviving sidebar must have removed the deleted row before it can
+    # accept the next navigation/Enter input.
+    while IFS='|' read -r _session sidebar_pane _title; do
+        [ -n "$sidebar_pane" ] || continue
+        capture="$(tmuxc capture-pane -p -t "$sidebar_pane" 2>/dev/null || true)"
+        stale_rows="$(printf '%s\n' "$capture" | awk '$2 == "0" { count++ } END { print count + 0 }')"
+        [ "$stale_rows" -eq 0 ] || {
+            printf 'FAIL: deleted numeric session 0 remains in sidebar pane %s\n' "$sidebar_pane" >&2
+            return 1
+        }
+    done < <(tmuxc list-panes -a -F '#{session_name}|#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' '$3 == "dotfiles-session-sidebar"')
+
+    # Continue with a real direction + Enter action to prove the stale target
+    # cannot block the next valid session selection.
+    before_generation="$(action_generation)"
+    send_keys $'\033[B'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    wait_until 'delete-zero valid target switch' delete-zero-2 client_session
+    printf 'PASS: deleting numeric session 0 invalidates every sidebar snapshot\n'
+    printf 'PASS: navigation and Enter switch to a valid session after deletion\n'
+}
+
+run_history_select_all_reproduction()
+{
+    local index before_generation previous_session_count selected_marks restored_count
+
+    # The full keyboard scenario already covers c and d. This focused
+    # regression seeds the six archives through the production archive worker
+    # so selection/restore can be tested without a second flaky setup loop.
+    for index in 1 2 3 4 5 6; do
+        tmuxc new-session -d -s "select-all-$index" -c "$REPO_ROOT" 'sleep 60'
+        tmuxc run-shell -b "$LAUNCHER --delete-session-after-archive select-all-$index true select-all-op-$index"
+    done
+    wait_for_sessions 1 'history select-all setup cleanup'
+    wait_for_archives 6
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+
+    before_generation="$(action_generation)"
+    send_keys o
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    before_generation="$(action_generation)"
+    send_keys a
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
+    selected_marks="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
+        awk '/^[[:space:]]*>?x[[:space:]]/ { count++ } END { print count + 0 }')"
+    test_log "history.select-all.selected_marks=$selected_marks archives=6"
+    [ "$selected_marks" -eq 6 ] || {
+        printf 'FAIL: history select-all marked %s/6 archives\n' "$selected_marks" >&2
+        return 1
+    }
+
+    previous_session_count="$(count_sessions)"
+    before_generation="$(action_generation)"
+    send_keys $'\r'
+    wait_for_action_generation_change "$before_generation"
+    # Each restore waits for its newly provisioned sidebar. Six sequential
+    # restores can legitimately exceed the generic 20s polling budget; use a
+    # bounded operation-specific budget so a slow restore is distinguished
+    # from a missing selection.
+    local restore_deadline=$(( $(date +%s) + 90 ))
+    while [ "$(count_sessions)" -lt 7 ] && [ "$(date +%s)" -lt "$restore_deadline" ]; do
+        sleep 0.1
+    done
+    [ "$(count_sessions)" -eq 7 ] || {
+        printf 'FAIL: history select-all restore reached %s/7 sessions before 90s\n' "$(count_sessions)" >&2
+        return 1
+    }
+    wait_for_sidebar_input_ready
+    restored_count="$(count_sessions)"
+    test_log "history.select-all.restore selected=6 restored=$((restored_count - previous_session_count))"
+    [ "$restored_count" -eq 7 ] || {
+        printf 'FAIL: history select-all restored %s sessions (expected 6 archives plus anchor)\n' \
+            "$((restored_count - previous_session_count))" >&2
+        return 1
+    }
+    tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null | grep -Fxq 'sessions' || {
+        printf 'FAIL: restore left the sidebar in history view\n' >&2
+        return 1
+    }
+    tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null | grep -Fq 'open: Space mark' && {
+        printf 'FAIL: history footer remained after restore\n' >&2
+        return 1
+    }
+    local summary_deadline=$(( $(date +%s) + 30 ))
+    while ! grep -Fq 'history.restore.summary selected=6 restored=6 result=complete' \
+        "$RUN_DIR/trace.log" 2>/dev/null && [ "$(date +%s)" -lt "$summary_deadline" ]; do
+        sleep 0.1
+    done
+    grep -Fq 'history.restore.summary selected=6 restored=6 result=complete' \
+        "$RUN_DIR/trace.log" || {
+        printf 'FAIL: restore completion summary did not report 6/6\n' >&2
+        return 1
+    }
+    printf 'PASS: history a marks all six archives through attached PTY\n'
+    printf 'PASS: Enter restores all six selected archives with 6/6 summary\n'
 }
 
 launcher_ensure_error_scan()
@@ -668,6 +816,41 @@ pane_identity_snapshot()
         awk '$5 != "dotfiles-session-sidebar" { print }' | sort
 }
 
+assert_archive_work_layout_metadata()
+{
+    local archive_file window_line layout pane_count geometry_count layout_count full_layout_count sidebar_layout_count
+    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*-topology-1-*.tsv' -print 2>/dev/null | sort | tail -1)"
+    [ -n "$archive_file" ] || {
+        printf 'ERROR: topology archive file was not found\n' >&2
+        return 1
+    }
+    window_line="$(awk -F '\t' '$1 == "window" { print; exit }' "$archive_file")"
+    layout="$(printf '%s\n' "$window_line" | cut -f5)"
+    pane_count="$(awk -F '\t' '
+        $1 == "window" { in_window=1; next }
+        $1 == "endwindow" { exit }
+        in_window && $1 == "pane" { count++ }
+        END { print count + 0 }
+    ' "$archive_file")"
+    geometry_count="$(printf '%s\n' "$window_line" | cut -f6 | tr ' ' '\n' | awk 'NF { count++ } END { print count + 0 }')"
+    full_layout_count="$(awk -F '\t' '$1 == "sidebar_layout" { count++ } END { print count + 0 }' "$archive_file")"
+    sidebar_layout_count="$(awk -F '\t' '$1 == "sidebar_layout" { print $3; exit }' "$archive_file" | awk '{ count=0; while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) { count++; $0=substr($0, RSTART+RLENGTH) } print count }')"
+    layout_count="$(printf '%s\n' "$layout" | awk '{ count=0; while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) { count++; $0=substr($0, RSTART+RLENGTH) } print count }')"
+    test_log "archive.metadata file=$archive_file layout_panes=$layout_count pane_records=$pane_count geometry_records=$geometry_count"
+    [ "$layout_count" = "$pane_count" ] && [ "$geometry_count" = "$pane_count" ] || {
+        printf 'ERROR: archive layout contains sidebar or stale pane metadata\n' >&2
+        printf 'layout panes=%s pane records=%s geometry records=%s file=%s\n' \
+            "$layout_count" "$pane_count" "$geometry_count" "$archive_file" >&2
+        return 1
+    }
+    [ "$full_layout_count" -eq 1 ] && [ "$sidebar_layout_count" -eq $((pane_count + 1)) ] || {
+        printf 'ERROR: archive full-window sidebar layout metadata is missing or duplicated (records=%s panes=%s)\n' \
+            "$full_layout_count" "$sidebar_layout_count" >&2
+        return 1
+    }
+    printf 'PASS: archive stores work-only plus one full-window sidebar layout metadata\n'
+}
+
 focus_sidebar_via_prefix()
 {
     local attempt
@@ -687,7 +870,8 @@ focus_sidebar_via_prefix()
 sidebar_selected_name()
 {
     tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
-        awk '$1 ~ /^>/ { print $2; exit }'
+        sed $'s/\033\\[[0-9;]*m//g' |
+        awk '$1 == ">*" { print $2; exit } $1 == ">" { if ($2 == "*") print $3; else print $2; exit }'
 }
 
 run_arbitrary_topology_reproduction()
@@ -784,6 +968,7 @@ run_arbitrary_topology_reproduction()
     wait_for_action_generation_change "$before_generation"
     wait_for_session_count_below "$previous_session_count"
     wait_for_archives 1
+    assert_archive_work_layout_metadata
     restored_session_count="$(count_sessions)"
 
     # Restore through the actual history key and Enter path after the delete
@@ -1102,8 +1287,8 @@ window_local_input_ready()
 latest_native_switch_ms()
 {
     awk '
-        / switch\.begin mode=native / { begin=$1 }
-        / switch\.end mode=native / && begin != "" {
+        / switch\.begin mode=window-local / { begin=$1 }
+        / switch\.end mode=window-local / && begin != "" {
             end=$1
             printf "%.1f\n", (end - begin) * 1000
             begin=""
@@ -1114,8 +1299,9 @@ latest_native_switch_ms()
 run_window_local_switch_contract()
 {
     local before_count after_count target session_index before_trace after_trace switch_ms max_switch_ms=0
-    local row current delta key moves pane_record window_id pane_id pane_pid
+    local row current delta key moves pane_record window_id pane_id pane_pid selected_name selected_index target_index target_order_index
     local -a targets=(window-local-1 window-local-2 window-local-3)
+    local -a session_order=(keyboard-anchor window-local-1 window-local-2 window-local-3)
     declare -A sidebar_ids=()
     declare -A sidebar_pids=()
     declare -A sidebar_windows=()
@@ -1136,6 +1322,7 @@ run_window_local_switch_contract()
     done
     wait_for_sidebar_input_ready || true
 
+    wait_until 'all window-local sidebars provisioned' 4 window_local_sidebar_count
     before_count="$(window_local_sidebar_count)"
     test_log "window-local.contract sidebar_count=$before_count"
     [ "$before_count" -eq 4 ] || {
@@ -1157,22 +1344,38 @@ run_window_local_switch_contract()
     # coupled to ANSI cursor decoration in captured output.
     for target_index in 0 1 2; do
         target="${targets[$target_index]}"
+        target_order_index=$((target_index + 1))
         focus_sidebar_via_prefix
         [ -n "$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" |
             grep -F -- "$target")" ] || {
             printf 'FAIL: target %s was not visible in sidebar\n' "$target" >&2
             return 1
         }
-        case "$target_index" in
-            0) key=$'\033[A'; moves=2 ;;
-            1) key=$'\033[B'; moves=1 ;;
-            2) key=$'\033[B'; moves=1 ;;
-        esac
-        for _ in $(seq 1 "$moves"); do
+        # Use the visible selection marker as the synchronization boundary.
+        # A fixed number of arrows can lose one byte at a real PTY boundary;
+        # retrying from the observed marker keeps this user scenario honest
+        # without turning it into tmux send-keys orchestration.
+        for _ in $(seq 1 8); do
+            selected_name="$(sidebar_selected_name)"
+            [ "$selected_name" = "$target" ] && break
+            selected_index=0
+            for order_index in "${!session_order[@]}"; do
+                [ "${session_order[$order_index]}" = "$selected_name" ] && selected_index="$order_index"
+            done
+            if [ "$selected_index" -gt "$target_order_index" ]; then
+                key=$'\033[A'
+            else
+                key=$'\033[B'
+            fi
             before_generation="$(action_generation)"
             send_keys "$key"
             wait_for_action_generation_change "$before_generation"
+            wait_for_sidebar_input_ready
         done
+        [ "$(sidebar_selected_name)" = "$target" ] || {
+            printf 'FAIL: selection marker did not reach %s (actual=%s)\n' "$target" "$(sidebar_selected_name)" >&2
+            return 1
+        }
         before_generation="$(action_generation)"
         send_keys $'\r'
         wait_for_action_generation_change "$before_generation"
@@ -1193,11 +1396,18 @@ run_window_local_switch_contract()
         printf 'FAIL: trace accounting moved backwards\n' >&2
         return 1
     }
-    if grep -E 'sidebar\.move|move-pane|sidebar\.layout\.restore|restore\.layout\.begin|render_full' \
-        "$RUN_DIR/trace.log" >/dev/null 2>&1; then
-        printf 'FAIL: session switch used pane movement/layout restore/full render\n' >&2
-        grep -E 'sidebar\.move|move-pane|sidebar\.layout\.restore|restore\.layout\.begin|render_full' \
-            "$RUN_DIR/trace.log" >&2 || true
+    if awk '
+        /switch\.begin mode=window-local/ { in_switch=1 }
+        in_switch && /sidebar\.move|move-pane|sidebar\.layout\.restore|restore\.layout\.begin|render\.request reason=enter-session-switch|render\.full.*reason=enter-session-switch/ { bad=1 }
+        /switch\.end mode=window-local/ { in_switch=0 }
+        END { exit bad ? 0 : 1 }
+    ' "$RUN_DIR/trace.log"; then
+        printf 'FAIL: session switch used pane movement/layout restore or switch-requested full render\n' >&2
+        awk '
+            /switch\.begin mode=window-local/ { in_switch=1 }
+            in_switch { print }
+            /switch\.end mode=window-local/ { in_switch=0 }
+        ' "$RUN_DIR/trace.log" >&2 || true
         return 1
     fi
 
@@ -1210,7 +1420,7 @@ run_window_local_switch_contract()
         }
     done
     printf 'PASS: window-local session switch keeps every sidebar process stable\n'
-    printf 'PASS: session switch trace contains no pane move/layout restore/full render\n'
+    printf 'PASS: session switch trace contains no pane move/layout restore/switch-requested full render\n'
     printf 'PASS: native switch max latency %sms (p95 target <=500ms)\n' "$max_switch_ms"
 }
 
@@ -1474,6 +1684,16 @@ fi
 
 if [ "$SCENARIO" = window-local-toggle ]; then
     run_window_local_toggle_contract
+    exit 0
+fi
+
+if [ "$SCENARIO" = delete-zero-stale-row ]; then
+    run_delete_zero_stale_row_reproduction
+    exit 0
+fi
+
+if [ "$SCENARIO" = history-select-all ]; then
+    run_history_select_all_reproduction
     exit 0
 fi
 

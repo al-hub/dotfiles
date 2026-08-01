@@ -7,6 +7,290 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-08-01 - archive work-only layout and marker-column repaint
+
+- archive snapshot의 전체 `list-panes` 필드와 helper parser의 필드 순서를
+  일치시켰습니다. 이전에는 sidebar 제목을 pane 좌표로 읽어 sidebar 존재를
+  감지하지 못했고, sidebar를 제외한 pane records에 sidebar 포함 layout을
+  함께 저장했습니다. 그 결과 restore 후 topology는 유지되어도 pane geometry가
+  달라질 수 있었습니다.
+- archive metadata 회귀 테스트는 layout pane 수, pane records 수, geometry
+  records 수가 일치하는지 검증합니다. geometry mismatch는 계속 실패로
+  처리하여 조용한 복원을 허용하지 않습니다.
+- session 전환 시 marker column 전체를 2문자 폭으로 다시 칠해 이전 row의
+  stale `*`를 제거했습니다. 이는 full render가 아니라 marker 영역만 갱신하는
+  bounded repaint입니다.
+- 전용 arbitrary-topology 테스트는 restore session readiness timeout으로
+  아직 PASS하지 않았습니다. 해당 timeout은 archive geometry 수정과 분리해
+  restore client-switch 관측 경계를 후속 분석합니다.
+- master에는 반영하지 않았습니다.
+
+## 2026-08-01 - clean user-tmux verification after reinstall
+
+- 사용자 tmux server에서 기존 테스트 session/sidebar를 정리하고 session `0`만
+  남긴 뒤, 새 sidebar에서 실제 `c`/New/Enter로 6개 session을 생성했습니다.
+  생성은 6/6 PASS, 관측 시간은 654ms~4212ms였습니다.
+- 방향키/Enter 연속 입력에서는 1~3회 전환 후 다음 입력이 target sidebar
+  readiness 전에 도착해 marker는 다음 session인데 client는 이전 session에
+  남는 현상이 재현됐습니다. rapid-input 경계의 실제 side-effect로 기록합니다.
+- target sidebar readiness를 기다린 전환은 6/6 client 전환과 `>* target`을
+  확인했습니다. 다만 측정 helper가 global readiness option을 읽어 5초 timeout을
+  포함했으므로 표시된 6090~6354ms를 production latency로 해석하지 않습니다.
+  보정된 client 전환 구간은 대략 1.09~1.35초이며, pane-scoped readiness로
+  재측정해야 합니다.
+- cleanup 후 사용자 server에는 session `0`과 sidebar만 남겼습니다. master에는
+  반영하지 않았습니다.
+
+## 2026-08-01 - deleted numeric-zero stale-row reproduction
+
+- 사용자 tmux에서 sidebar를 새로 만들고 `delete-zero-1..6`을 실제 `c`/New/Enter로
+  생성한 뒤, session `0`을 `d`/`y`/Enter로 삭제했습니다. `d`/Enter만으로는
+  `Delete 0? y/Enter/All` prompt가 취소되어 삭제되지 않는 것도 확인했습니다.
+- tmux의 실제 session 목록에서 `0`이 사라진 뒤에도 다른 active sidebar capture에
+  `0` row가 남아 있는 stale snapshot을 확인했습니다. 목록과 tmux state가 불일치한
+  명확한 production side-effect입니다.
+- stale `0`을 방향키로 선택해 Enter해도 client는 기존 session에 남고 `0`은
+  복원되지 않았습니다. pane capture에서는 `--ensure-sidebar-window returned 1`
+  문자열은 검출되지 않았지만, stale row와 전환 불능은 재현되었습니다.
+- 테스트 session을 정리한 뒤 tmux server는 종료했습니다. master에는 반영하지
+  않았습니다.
+
+## 2026-08-01 - numeric-zero delete refresh fix
+
+- delete worker가 numeric session `0`을 fallback 전환 후 archive할 때
+  `list-panes -t "=0"`가 빈 snapshot을 만들어 archive validation에서 실패하던
+  문제를 exact target `=0:`로 수정했습니다.
+- 삭제 완료 후 모든 managed window-local sidebar에 refresh signal을 fan-out하고,
+  명시적 refresh signal은 최근 입력 cooldown 때문에 목록 재수집이 생략되지
+  않도록 보강했습니다.
+- `test-delete-zero-stale-row.sh` attached-PTY 회귀 테스트를 추가했습니다.
+  numeric `0` 삭제, 모든 sidebar stale row 제거, 삭제 후 방향키/Enter 전환이
+  PASS했습니다.
+- 기존 `test-session-name-zero.sh`는 pane owner가 session 간 이동해야 한다는
+  예전 global-sidebar 기대 때문에 FAIL합니다. 현재 window-local 설계의
+  sidebar ownership 계약과 맞지 않는 기존 관측 경계로 분류했습니다.
+- master에는 반영하지 않았습니다.
+
+## 2026-08-01 - live vertical split archive geometry reproduction
+
+- 사용자 tmux에서 session을 생성하고 `|` split을 적용한 뒤 `d`/`y`/Enter로
+  archive/delete하고 `o`/Enter로 restore하는 시나리오를 수행했습니다.
+- 원래 geometry는 sidebar `0,1,33,41`, work panes `34,1,21,41` 및
+  `56,1,20,41`이었고 archive metadata에도 동일하게 기록되었습니다.
+- restore 후 sidebar는 `0,1,35,41`, work panes는 `36,1,28,41` 및
+  `65,1,11,41`로 변경되었습니다. pane 수와 split 방향은 유지되지만
+  sidebar 폭과 work pane geometry가 달라지는 문제가 live에서 재현되었습니다.
+- 같은 archive 파일에 동일한 `window/endwindow` 블록이 두 번 기록된 것도
+  확인되어, geometry 문제와 별도로 archive window record 중복을 후속 수정
+  대상으로 남겼습니다.
+- 테스트 session은 정리하고 사용자 session `0`으로 복귀했습니다. master에는
+  반영하지 않았습니다.
+
+## 2026-08-01 - live repeated switch sidebar width reproduction
+
+- 사용자 tmux에서 session 6개를 생성하고 Down/Enter와 Up/Enter를 반복했습니다.
+- 초기 sidebar 폭은 모두 35열이었지만 첫 전환 후 target sidebar가 33열로
+  변경되었고 이후에도 33열로 유지되었습니다. 전환 중 source sidebar가
+  일시적으로 사라지는 상태와 client switch timeout도 관찰되었습니다.
+- session별 window size와 sidebar layout 재적용이 동일하지 않은 문제로
+  분류했으며, 테스트 session은 정리하고 session `0`으로 복귀했습니다.
+
+## 2026-08-01 - atomic marker and native transition redraw fix
+
+- target window에 selection-sync marker를 switch 시작 전에 게시하고, target
+  sidebar는 current/selected 상태를 함께 확정한 뒤 영향을 받는 marker 행만
+  delta render하도록 보강했습니다. `>*`는 current와 selected가 같은 하나의
+  row에서만 나타나도록 유지합니다.
+- native session 전환 중 pending refresh와 client-switch refresh는 full render를
+  생략합니다. 실제 geometry 변경에서만 full render를 허용하며, `WINCH`도
+  실제 pane geometry 변화가 있을 때만 이를 예약합니다.
+- 중복 sidebar 정리는 provision/hook cold path로 이동해 session 전환 latency
+  hot path에서 추가 `list-panes` 비용을 제거했습니다. 동일 window의 관리
+  sidebar만 canonical pane을 남기고 정리합니다.
+- marker parser와 live invariant test를 보강했습니다. 사용자 live 6회에서
+  marker invariant 6/6, target pane identity 6/6, known error 0건을 확인했고,
+  전환 trace는 343~593ms였습니다. user suite의 latency/create threshold
+  FAIL 및 observer INCONCLUSIVE는 별도 결과로 보존했습니다.
+- isolated attached-PTY window-local test는 process identity, pane/layout
+  이동 금지, 정상 전환 full render 0, 최대 461.2ms로 PASS했습니다.
+- attached-PTY correlation observer는 source pane을 target identity 기준으로
+  잘못 비교하고 허용된 geometry redraw까지 non-geometry redraw로 세던 결함을
+  수정했습니다. 각 Enter 직전 marker invariant를 확인하고 target pane 기준
+  identity/full-render를 측정하며 observer 안정화 상한을 둡니다. 보정 후 첫
+  5회 전환은 marker/identity 및 non-geometry full-render 0건으로 관측되었고,
+  6회차 이후에는 60초 실행 제한에 걸려 전체 10회 PASS로 판정하지 않았습니다.
+- master에는 반영하지 않았습니다.
+
+## 2026-08-01 - pre-switch selection marker barrier
+
+- target sidebar가 client 전환 전에 selection marker delta를 완료하도록
+  window option ACK barrier를 추가했습니다. `>* target`이 확정된 뒤 client를
+  전환하므로 `* target`과 stale `>`가 사용자 화면에 함께 노출되는 경계를
+  제거하는 구조입니다.
+- signal handler는 pending selection-sync를 즉시 처리하는 fast path를 가지며,
+  처리 불가 시 bounded fallback과 trace를 남깁니다.
+- attached-PTY 검증에서 marker barrier는 ACK를 확인했지만 전환 시간은
+  623~838ms로 500ms 목표를 초과했습니다. 정합성 개선과 latency 최적화는
+  분리된 후속 과제로 유지합니다.
+
+## 2026-08-01 - target sidebar selection delta synchronization
+
+- session 전환 후 target window sidebar가 stale selection marker를 유지할 수
+  있는 경계를 production에서 수정했습니다. target window option과 USR2를
+  사용해 target sidebar process가 선택 행만 delta render하도록 했습니다.
+- 정상 전환에서는 topology 재조회나 `render_full`을 수행하지 않고, create/delete
+  등으로 cached list가 무효화된 예외 경로에서만 재조회합니다. 진단용 client
+  state 조회도 사용자 전환 완료 경계 밖으로 이동했습니다.
+- 새 전용 attached-PTY tmux 검증에서 sidebar process identity 유지, pane
+  move/layout restore/switch-requested full render 0, 최대 462.6ms를 확인했습니다.
+- master에는 반영하지 않았습니다.
+
+## 2026-08-01 - six-switch hot-path trace optimization
+
+- 6회 live trace phase 분석에서 `trace_client_state`가 전후 각각
+  `list-clients`와 pane 조회를 수행하며 전환 tail에 50~94ms를 추가하는
+  공통 병목을 확인했습니다. client-targeted 단일 `display-message` 조회로
+  축소했습니다.
+- 개선 후 user `/dev/pts/0` 6회 correlation은 모두
+  `VALIDATE_TARGET,ENSURE_TARGET_SIDEBAR,VERIFY_TARGET_SIDEBAR,SWITCH_CLIENT,VERIFY_CLIENT,STABILIZE,READY`를 기록했고, 유효하게 상관된 5회는
+  370~433ms였습니다. sidebar gap 및 known error는 0건입니다.
+- 1회는 target sidebar의 local selection marker와 runner의 기대 target이
+  어긋나 runner가 다른 operation을 기록한 입력 correlation 문제로
+  분리했습니다. 다음 단계는 6회 모두 실제 keyboard selection marker와
+  operation target을 일치시키는 회귀 시나리오 보강입니다.
+
+## 2026-08-01 - user live observer v4 correlation stabilization
+
+- user tmux sampler를 client/pane 단일 batched tmux command로 변경하고,
+  Bash `EPOCHREALTIME` 기반 millisecond timestamp를 사용해 observer 자체의
+  subprocess 지연을 제거했습니다. 전환 안정화 시간과 trace의
+  `switch.begin`~`switch.end` 기능 지연을 분리 측정합니다.
+- tmux global trace/debug environment를 테스트 중에만 주입해 production hook이
+  생성한 window-local sidebar process도 동일 operation ID/phase trace를 남기게
+  했습니다. 종료 시 기존 environment와 사용자 client/session/pane을 복원합니다.
+- user `/dev/pts/0` 실행에서 6/6 전환 correlation 성공, phase는 모두
+  `VALIDATE_TARGET,ENSURE_TARGET_SIDEBAR,VERIFY_TARGET_SIDEBAR,SWITCH_CLIENT,VERIFY_CLIENT,STABILIZE,READY`, observer interval은 평균 73.4ms/max 198.7ms였습니다.
+- sidebar gap, `returned 1`, `session switch failed`는 0건이었습니다. 실제
+  transition은 370.2~583.6ms로 측정되어 2회는 500ms 목표 초과 FAIL,
+  4회는 기능 PASS이나 observer budget 초과 INCONCLUSIVE로 분류했습니다.
+
+## 2026-08-01 - user tmux live comparison after window-local switch fix
+
+- 실제 사용자 client `/dev/pts/0`를 추가 attach 없이 owner로 사용한 live
+  실행을 수행했습니다. 개선 후 첫 전환은 trace 기준 591.708ms에
+  `READY`까지 도달했고, sampling 기준 target 도달은 820.828ms였습니다.
+  sidebar pane `%17` identity가 유지되고 switch-requested full render와
+  `returned 1`/`session switch failed`/sidebar gap은 0건이었습니다.
+- 사용자 tmux의 관측 명령 지연으로 이후 sample interval이 243~1022ms가
+  되어 6회 전체 PASS 판정은 보류했습니다. 이후 5회는 target 도달 자체는
+  관측됐지만 안정화 sampler가 `OBSERVER_TOO_SLOW` 또는 target correlation
+  불일치로 종료되어 INCONCLUSIVE입니다.
+- 기존 user baseline의 15초 전환·`SIDEBAR_DISAPPEARED`와 비교하면 중간
+  sidebar gap과 client source 잔류는 제거됐지만, 사용자 tmux에서의 최종
+  정량 latency 계약은 추가 observer 개선이 필요합니다. runner에는 기존
+  attached capture client를 만들지 않는 `TMUX_USER_LIVE_CAPTURE_CLIENT=false`
+  모드를 추가했습니다.
+
+## 2026-07-31 - window-local sidebar session-switch production path
+
+- `move-pane`으로 하나의 물리 pane을 session 사이에서 이동하던 전환 hot
+  path를 제거했습니다. 논리 상태는 shared로 유지하고, managed window마다
+  안정적인 sidebar pane/process를 cold provisioning합니다.
+- target sidebar는 client 전환 전에 준비·검증되며, 전환 중 layout
+  snapshot/restore, sidebar 이동 rollback, switch-requested full render를
+  수행하지 않습니다. hook metadata flush도 window-local 전환에서는
+  비동기/생략되어 중간 sidebar gap을 만들지 않습니다.
+- 새 session 생성 hook은 모든 local sidebar의 session snapshot을 갱신하고,
+  readiness 이전 USR2 신호를 차단해 신규 pane이 조기 종료되는 race를
+  방지합니다. `Ctrl+a s` toggle은 managed window 전체를 대상으로 합니다.
+- attached PTY window-local switch test 결과: 3회 전환, sidebar process/PID
+  유지 PASS, pane move/layout restore/switch full render 0, 최대 465.8ms
+  PASS. master에는 반영하지 않았습니다.
+
+## 2026-07-30 - live session switch correlation test strengthening
+
+- production 코드는 변경하지 않고, attached PTY 키 입력을 사용하는 격리
+  session 전환 correlation 테스트를 추가했습니다. 각 전환을 operation ID,
+  input sequence, phase, client session, sidebar pane identity, geometry,
+  duration으로 연결하고 첫 실패 시 client/pane/trace/raw output snapshot을
+  보존합니다.
+- 격리 live 실행은 10/10 전환 PASS였습니다. 소요 시간은 986.088~1118.732ms,
+  평균 1063.805ms였고, 모든 전환에서
+  `VALIDATE_TARGET,SWITCH_CLIENT,VERIFY_CLIENT,COMMIT,RENDER_DELTA,READY`
+  phase와 sidebar pane `%2` identity가 유지되었으며 오류 match는 0건입니다.
+- 사용자 default tmux monitored 실행에서는 첫 전환이 FAIL로 재현되었습니다.
+  target `live-202607301`에 대해 controller trace는 `READY`까지 도달했지만
+  사용자 client는 source session `0`에 남고 sidebar가 사라졌습니다. 전환
+  시간은 15114.5ms였으며, 결과는
+  `/tmp/dotfiles-user-live-correlation-user-20260730/session-switch-manifest.tsv`
+  에 기록했습니다. 따라서 현재 테스트는 내부 controller 성공과 사용자에게
+  보이는 client 전환 성공을 분리해 측정합니다.
+
+## 2026-07-31 - live transition sampling and failure classification
+
+- production 코드는 변경하지 않고, Enter 직후부터 안정화까지 25ms 단위로
+  client session, sidebar pane/PID/geometry, 전체 pane topology, trace phase와
+  raw output offset을 기록하는 `transition-samples.tsv` 관측을 추가했습니다.
+- `TARGET_NOT_REACHED`, `CLIENT_REVERTED`, `SIDEBAR_DISAPPEARED`를 구분하며,
+  controller가 `READY`에 도달하더라도 중간 sidebar gap이 있으면 PASS로
+  숨기지 않습니다. manifest에는 first target/READY 시점과 failure class를
+  함께 기록합니다.
+- 격리 attached-PTY 실행에서 첫 전환 중 sidebar가 target window로 이동한
+  동안 원래 client는 source session에 남고, 약 0.68초 시점에 sidebar가
+  client window에서 사라졌다가 약 0.98초에 target client와 sidebar가
+  복귀하는 패턴을 관측했습니다. 이 전환은 `SIDEBAR_DISAPPEARED`로 분류되어
+  실패하며, 해당 중간 상태가 근본 수정의 검증 대상입니다.
+
+## 2026-07-31 - transition timeline and observer-quality metrics
+
+- 전환별 `transition-events.tsv`를 추가해 입력, transition begin, 안정화 종료
+  또는 실패를 operation ID로 연결했습니다.
+- 샘플 manifest에 실제 최대 sampling interval, switch 중 `render.full` 횟수,
+  hook event 횟수를 추가했습니다. 최근 attached-PTY 실행에서는 최대 관측
+  간격이 약 406ms였고 `render.full`은 0회, hook event는 6회였습니다.
+- user default tmux runner도 동일한 sample interval/render/hook/failure class
+  정보를 보존하도록 보강했습니다. observer overhead와 기능 실패를 별도
+  결과로 판정할 수 있습니다.
+
+## 2026-07-31 - topology-aware live correlation wrappers
+
+- single-pane correlation runner에 batched tmux observer를 추가해 client와
+  전체 pane topology를 한 번의 tmux command sequence에서 수집하고 실제
+  sample interval을 기록하도록 보강했습니다.
+- horizontal/vertical split target topology를 각각 구성하는 live wrapper와
+  `topology.tsv` artifact를 추가했습니다. horizontal 실행에서 target work
+  pane 두 개의 geometry가 기록되었고, 전환은 기존과 같이 sidebar lifecycle
+  failure class로 판정됩니다.
+
+## 2026-07-31 - user live observer and failure-priority correction
+
+- user default tmux runner를 batched client/pane observer로 전환하고, 관측
+  timeout을 15초로 제한했습니다.
+- sidebar gap이 관측된 경우 `TIMEOUT`보다 `SIDEBAR_DISAPPEARED`를 우선하도록
+  failure classification을 수정했습니다. 최신 user live 실행은 전환
+  15095.8ms, source session 잔류, sidebar gap, `READY` 내부 도달,
+  `returned 1` 0건으로 일관되게 분류되었습니다.
+
+## 2026-07-31 - observer sampling boundary optimization
+
+- user live sampler의 client/sidebar 조회를 분리한 batched 경계와 Bash 기반
+  field parsing으로 정리하고, timestamp/interval 계산을 샘플당 한 번으로
+  줄였습니다.
+- 15초 명시 timeout과 observer 품질 측정 경계를 유지하며, sample interval이
+  결과 manifest에 누락되지 않도록 보정했습니다. 마지막 측정 전 사용자
+  default tmux server가 종료되어 최종 interval 재측정은 별도 live 실행이
+  필요합니다.
+
+## 2026-07-31 - user live observer measurement
+
+- 사용자 default tmux에서 최신 observer를 실행했습니다. session 전환은
+  `SIDEBAR_GAP`으로 FAIL했고 client는 source session `0`에 남았으며,
+  controller trace는 `READY`까지 도달했습니다.
+- 120개 sample의 실제 interval은 평균 약 89.991ms, 최대 174.584ms로
+  평균은 100ms 이내였지만 worst-case 기준은 아직 미달입니다.
+- 전환 이전 trace가 full-render count에 섞일 수 있는 계측 경계를 확인하고,
+  전환 시작 이후 trace만 redraw/hook count에 포함하도록 수정했습니다.
+
 ## 2026-07-30 - hook target production fix
 
 - `after-new-window`/`after-link-window` 및 pane layout hook에서 비동기
@@ -4653,3 +4937,61 @@
   sidebars. The test harness now installs current hooks and normalizes the test
   window, while production provisioning rejects a second global pane.
 - master was not modified.
+
+## 2026-08-01 - sidebar width and vertical restore correction
+
+- sidebar 폭은 target window의 일시적인 pane 폭을 재사용하지 않고 tmux global
+  remembered width를 기준으로 하며, client 전환 직후 canonical 폭을 검증·보정한다.
+- archive의 window 수집에서 sidebar pane이 첫 row일 때 같은 window가 두 번 기록되던
+  문제를 제거했다. archive는 work-only layout/geometry와 full-window sidebar layout을
+  분리 저장하고, restore는 sidebar 생성 후 full layout을 재적용한다.
+- restore geometry manifest는 pane identity 접두사가 없는 순수 좌표 형식으로 저장한다.
+  attached-PTY arbitrary topology test에서 4개 work pane의 semantic mapping과
+  sidebar 포함 full layout 복원이 PASS했다.
+
+## 2026-08-01 - target sidebar disappearance repair
+
+- multi-pane session 전환 직후 target sidebar pane이 없어지는 live 증상에 대비해
+  `switch-client` 성공 직전 target window의 sidebar 존재를 재검증하도록 했다.
+- target pane이 race로 사라진 경우에만 bounded provision/readiness repair를 수행하고,
+  정상 전환에서는 추가 provision을 실행하지 않는다.
+- 사용자 client tty를 명시한 6회 multi-pane 전환에서 32개 observation sample 모두
+  sidebar count `7`, target missing `0`으로 PASS했다.
+- 이전 측정의 일부는 tmux 기본 context로 키 입력 대상을 조회해 false positive가
+  섞일 수 있었으므로, 후속 live test는 반드시 `display-message -c <client_tty>`를
+  사용한다.
+
+## 2026-08-01 - live archive-all restore regression
+
+- 사용자 sidebar에서 `c`로 6개 session을 만들고 vertical split 및
+  `d`/`y`/Enter archive/delete 후 `o` history 전체 선택/Enter restore를 수행했다.
+- session 생성 직후 client가 새 session으로 이동하고 일부 생성 입력이 유실되어
+  6개 중 5개만 생성되는 현상이 관찰됐다. 이후 보완 생성해 archive는 6개가 됐다.
+- 빠른 `d` 입력에서는 6개 중 4개만 archive/delete되고 2개는 조용히 남았다.
+  target input-ready 대기 후 재시도하면 성공했다.
+- history에서 Space/Down을 빠르게 반복하면 6개 중 5개만 선택 marker가 남고,
+  Enter 후 한 archive는 restore되지 않았다. 오류 문자열 없이 선택이 누락되는
+  regression으로 분류한다.
+- restore 후 테스트 archive topology가 사용자 session `0`에 남아 추가 work pane이
+  생겼다. 해당 pane은 미저장 작업 가능성 때문에 자동 종료하지 않고 사용자 확인
+  대상으로 남겼다.
+- 전환 후 target TUI input-ready barrier를 production에 추가했으며, 문법 검사는
+  PASS했다. full archive-all restore 회귀는 아직 FAIL이다.
+
+## 2026-08-01 - archive restore topology guard and select-all regression
+
+- restore 중 `after-new-session`/`after-new-window` hook과 명시적 sidebar provision이
+  동시에 topology를 변경하지 않도록 restore guard를 추가했다.
+- 빈/stale window layout이 Bash TSV parser에서 geometry 자리로 밀리던 문제를 `-`
+  sentinel과 pane-count 검증으로 차단했다. 불일치 layout은 복원하지 않는다.
+- attached-PTY `o` → `a` → Enter 시나리오에서 6개 archive 선택과 6/6 restore summary가
+  PASS했다. 변경은 `feature/single-sidebar`에만 적용했으며 master에는 반영하지 않았다.
+
+## 2026-08-01 - restore closes history view
+
+- archive Enter restore 후에도 history view가 남아 Down 입력이 session 이동이 아닌
+  archive 선택으로 소비되는 live 오류를 재현했다.
+- restore 완료 시 sessions view로 전환하고 history selection을 초기화한 뒤 session
+  목록을 다시 수집하도록 수정했다.
+- private attached-PTY와 사용자 `/dev/pts/0` live에서 `o` → Enter 후 `sessions` header
+  1개, history footer 0개를 확인했다.

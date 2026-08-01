@@ -3,10 +3,10 @@ set -euo pipefail
 
 TEST_DIR="$(cd -- "$(dirname -- "$BASH_SOURCE")" && pwd -P)"
 REPO_ROOT="$(cd -- "$TEST_DIR/../.." && pwd -P)"
-RUN_DIR="/tmp/dotfiles-$SCENARIO_NAME-$$"
+RUN_DIR="${TMUX_INTERACTIVE_RUN_DIR:-/tmp/dotfiles-$SCENARIO_NAME-$$}"
 HOME_DIR="$RUN_DIR/home"
 HISTORY_DIR="$RUN_DIR/history"
-SOCKET="dotfiles-$SCENARIO_NAME-$$"
+SOCKET="${TMUX_INTERACTIVE_SOCKET:-dotfiles-$SCENARIO_NAME-$$}"
 LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
 INPUT_LOG="$RUN_DIR/input.log"
 OUTPUT_LOG="$RUN_DIR/output.log"
@@ -16,6 +16,7 @@ timestamp_mono_ms() { perl -MTime::HiRes=time -e 'printf "%.3f", time * 1000'; }
 timestamp_wall() { date -u '+%Y-%m-%dT%H:%M:%S%z'; }
 TEST_RUN_ID="${TEST_RUN_ID:-${SCENARIO_NAME}-$(timestamp_mono_ms | tr -d .)-$$}"
 TEST_EVENT_SEQUENCE=0
+LAST_INPUT_EVENT_SEQUENCE=0
 TMUX_CMD=(tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf")
 CLIENT_PID=""
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
@@ -54,6 +55,7 @@ trap cleanup EXIT
 
 send_keys() {
   test_log "input.begin bytes=$(printf '%b' "$1" | od -An -tx1 | tr -d ' \n') client=$(client_tty 2>/dev/null || true) session=$(client_session 2>/dev/null || true) window=$(client_window_id 2>/dev/null || true) sidebar=$(sidebar_pane_id 2>/dev/null || true)"
+  LAST_INPUT_EVENT_SEQUENCE="$TEST_EVENT_SEQUENCE"
   eval 'exec 9>&"${ATTACHED[1]}"'
   printf '%b' "$1" >&9
   test_log "input.end"
@@ -171,7 +173,23 @@ sidebar_row_for() {
 sidebar_selected_name() {
   tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
     sed $'s/\033\\[[0-9;]*m//g' |
-    awk '$1 ~ /^>/ { print $2; exit }'
+    awk '$1 == ">*" { print $2; exit } $1 == ">" { if ($2 == "*") print $3; else print $2; exit }'
+}
+
+sidebar_marker_invariant() {
+  local expected="$1" state stars selected star_session selected_session actual
+  state="$(tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
+    sed $'s/\033\\[[0-9;]*m//g' |
+    awk '
+      $1 == ">*" { stars++; selected++; star=$2; choice=$2; next }
+      $1 == "*" { stars++; star=$2; next }
+      $1 == ">" { selected++; if ($2 == "*") { star=$3; choice=$3 } else { choice=$2 } }
+      END { printf "%d|%d|%s|%s\n", stars+0, selected+0, star, choice }
+    ')"
+  IFS='|' read -r stars selected star_session selected_session <<< "$state"
+  actual="$(client_session 2>/dev/null || true)"
+  [ "$stars" -eq 1 ] && [ "$selected" -eq 1 ] &&
+    [ "$star_session" = "$actual" ] && [ "$selected_session" = "$expected" ]
 }
 
 focus_sidebar() {
