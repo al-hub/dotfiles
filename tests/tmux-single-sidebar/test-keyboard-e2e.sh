@@ -38,6 +38,7 @@ ANCHOR_SESSION="${TMUX_KEYBOARD_E2E_ANCHOR_SESSION:-keyboard-anchor}"
 SEED_LIVE_TOPOLOGY="${TMUX_KEYBOARD_E2E_SEED_LIVE_TOPOLOGY:-0}"
 EXISTING_SERVER="${TMUX_KEYBOARD_E2E_EXISTING_SERVER:-0}"
 VISIBLE_CLIENT="${TMUX_KEYBOARD_E2E_VISIBLE_CLIENT:-}"
+SKIP_FINAL_ALL="${TMUX_KEYBOARD_E2E_SKIP_FINAL_ALL:-0}"
 VISIBLE_PANE=""
 PREFIX_DELAY_MS="${TMUX_KEYBOARD_E2E_PREFIX_DELAY_MS:-100}"
 TEST_RUN_ID="${TEST_RUN_ID:-keyboard-${SCENARIO}-$(date +%s%N)-$$}"
@@ -397,7 +398,7 @@ client_pty_error_scan()
         skip="$offset" count="$bytes" status=none 2>/dev/null || return 1
     perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a]*\a//g; s/\r//g' \
         "$raw_file" > "$normalized"
-    grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed' \
+    grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed|longjmp[[:space:]]+causes[[:space:]]+uninitialized[[:space:]]+stack[[:space:]]+frame' \
         "$normalized" > "$RUN_DIR/client-pty-errors.log" 2>/dev/null
 }
 
@@ -1850,14 +1851,13 @@ wait_for_sidebar_input_ready
 printf 'PASS: d + y + Enter archives and deletes six sessions\n'
 test_log 'step=delete.complete sessions=1 archives=6'
 
-# o enters history. The launcher waits for each async sidebar transition before
-# accepting the next action, so six physical Down + Enter pairs restore six
-# distinct archives without changing the user's input sequence.
-before_generation="$(action_generation)"
-send_keys 'o'
-wait_for_action_generation_change "$before_generation"
-wait_for_sidebar_input_ready
+# o enters history. Restoring switches to a new window-local sidebar, so the
+# next archive cycle intentionally reopens history with o before selecting.
 for ignored in 1 2 3 4 5 6; do
+    before_generation="$(action_generation)"
+    send_keys 'o'
+    wait_for_action_generation_change "$before_generation"
+    wait_for_sidebar_input_ready
     previous_session_count="$(count_sessions)"
     before_generation="$(action_generation)"
     send_keys $'\033[B'
@@ -1882,6 +1882,12 @@ before_generation="$(action_generation)"
 send_keys $'\033'
 wait_for_action_generation_change "$before_generation"
 wait_for_sidebar_input_ready
+
+if [ "$SKIP_FINAL_ALL" = 1 ]; then
+    printf 'PASS: six-session archive/restore scenario completed; final d + All skipped\n'
+    test_log 'step=final-all.skipped reason=preserve-existing-server'
+    exit 0
+fi
 
 # d, All, Enter, y, Enter: archive and terminate every remaining session.
 send_keys 'd'

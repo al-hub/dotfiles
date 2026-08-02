@@ -57,7 +57,7 @@ monitor_file()
             delta="$(normalize_delta "$file" "$offset" "$RUN_DIR/${name}-delta.raw" || true)"
             if [ -n "$delta" ]; then
                 normalized="$delta"
-                if grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed' "$normalized" > "$RUN_DIR/${name}-matches.log" 2>/dev/null; then
+                if grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed|longjmp[[:space:]]+causes[[:space:]]+uninitialized[[:space:]]+stack[[:space:]]+frame' "$normalized" > "$RUN_DIR/${name}-matches.log" 2>/dev/null; then
                     while IFS= read -r line; do
                         log "event.source=$name event.match=$line"
                     done < "$RUN_DIR/${name}-matches.log"
@@ -69,7 +69,7 @@ monitor_file()
     done
     if [ -f "$file" ]; then
         delta="$(normalize_delta "$file" "$offset" "$RUN_DIR/${name}-final-delta.raw" || true)"
-        if [ -n "$delta" ] && grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed' "$delta" > "$RUN_DIR/${name}-final-matches.log" 2>/dev/null; then
+        if [ -n "$delta" ] && grep -Ein -- 'ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed|longjmp[[:space:]]+causes[[:space:]]+uninitialized[[:space:]]+stack[[:space:]]+frame' "$delta" > "$RUN_DIR/${name}-final-matches.log" 2>/dev/null; then
             while IFS= read -r line; do
                 log "event.final_source=$name event.match=$line"
             done < "$RUN_DIR/${name}-final-matches.log"

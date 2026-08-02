@@ -9,6 +9,32 @@
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
 
+## 2026-08-02 반복 restore 및 duplicate sidebar 보강
+
+- 6-session keyboard E2E에서 첫 `o` restore 후 다음 `Down -> Enter`가 history
+  archive가 아닌 sessions view 동작으로 바뀌어 restore가 2회차에서 멈추는 원인을
+  확인했습니다.
+- restore 완료 후 history view를 유지하도록 launcher를 수정했고, sidebar
+  provision 완료 직후 concurrent hook 결과를 다시 reconcile하도록 보강했습니다.
+- 반복 restore와 sidebar count contract를 수정 후 재검증합니다.
+- window-local sidebar는 session 전환 시 새 프로세스로 시작하므로 반복 restore
+  시 각 cycle의 `o` 재입력을 회귀 시나리오에 포함했습니다. 기존 global count 1
+  contract는 managed window당 1개를 검증하도록 정정했습니다.
+- 새 sidebar의 history index를 현재 session archive에 맞춰 복원해 연속 `o` 이후
+  같은 archive가 중복 선택되지 않도록 보강했습니다.
+
+## 2026-08-02 six-session archive/topology verification
+
+- 재설치 후 사용자 tmux server에서 full real-PTY 시나리오를 직접 시도했으나,
+  기존 attached client와 임시 test client가 함께 있어 test client 선택이 충돌해
+  첫 `c` prompt readiness에서 중단했습니다. 사용자 server에는 임시 session을
+  남기지 않았습니다.
+- isolated checkout full 시나리오에서는 `c` 6회와 `d → y` archive/delete 6회가
+  통과했지만 `o` restore는 두 번째 반복에서 session count가 증가하지 않아
+  중단되었습니다.
+- isolated arbitrary-topology 시나리오의 horizontal/vertical/mixed 4-pane
+  archive/restore와 work-only/sidebar layout metadata 검증은 통과했습니다.
+
 ## 2026-07-30 global-sidebar production implementation follow-up
 
 - 목표는 sidebar pane/process를 유지하고 session 전환 시 work pane만 안정적으로
@@ -24,6 +50,18 @@
   전환 target 미변경 1건과 후속 전환 약 1.3초 지연으로 FAIL이다. 전용 contract는
   PASS했으므로 환경 차이는 줄었지만 전환 latency와 첫 Enter 경계는 아직 완료로
   판정하지 않는다.
+
+## 2026-08-02 rendered-sidebar readiness follow-up
+
+- 반복 이동·Enter에서 target sidebar pane disappearance와 blank-frame 가능성을
+  확인했습니다. 기존 readiness option만으로는 pane process가 살아 있어도 실제
+  `sessions` 헤더/target row/selection marker가 그려졌는지 보장하지 못했습니다.
+- 현재 launcher는 session switch 성공 전에 pane 존재, input readiness, 실제
+  rendered content와 selection marker를 모두 확인합니다. content/input timeout은
+  `switch.end result=ready`로 기록하지 않고 abort trace와 사용자 메시지를 냅니다.
+- 사용자 tmux live 검증에서는 `sidebar.content-ready`가 각 전환에 기록되었고,
+  기존 latency/observer/marker invariant 실패는 남아 있습니다. `longjmp` 문자열과
+  coredump는 이번 반복에서도 검출되지 않았습니다.
 
 ## 2026-07-30 production latency implementation follow-up
 

@@ -7,6 +7,41 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-08-02 - 반복 history restore와 sidebar provision race 보강
+
+- `o` history 화면에서 archive 하나를 복원한 뒤에도 history view를 유지하도록
+  수정했습니다. 이전에는 첫 restore 직후 sessions view로 강제 전환되어 다음
+  `Down -> Enter`가 archive 복원이 아닌 기존 session 전환으로 처리됐습니다.
+- sidebar provision 완료 직후 한 번 더 pane title을 기준으로 reconcile해
+  `after-new-session`/`after-new-window` hook과 명시적 provision이 동시에 실행될
+  때 중복 sidebar pane을 정리하도록 보강했습니다.
+- 반복 restore 및 duplicate sidebar contract 회귀를 다시 검증합니다.
+- 회귀 시나리오는 restore 후 새 window-local sidebar가 sessions view로 시작하는
+  실제 lifecycle에 맞춰 각 반복마다 `o`를 다시 입력하도록 명시했습니다.
+- 새 sidebar가 history selection을 0으로 되돌려 같은 archive를 다시 선택하던
+  문제를 현재 session과 archive metadata를 매칭하는 선택 위치 보정으로 수정했습니다.
+
+## 2026-08-02 - detect glibc longjmp abort in live PTY tests
+
+- 사용자 tmux attached-PTY 감시 테스트가 `longjmp causes uninitialized stack
+  frame`를 놓치지 않도록 raw pane/client 출력 오류 패턴에 추가했습니다.
+- 현재 사용자 tmux 재현에서는 해당 문자열이 관측되지 않았고, 기존 session 전환 및
+  latency invariant 실패만 확인되었습니다.
+
+## 2026-08-02 - require rendered sidebar content before switch success
+
+- session 전환 성공 조건에 pane process readiness만이 아니라 `sessions` 헤더,
+  target session row, selection marker가 실제 capture에 나타나는지 추가했습니다.
+- input/content readiness timeout은 더 이상 `switch.end result=ready`로 기록하지 않고
+  명시적인 abort trace와 사용자 메시지로 남깁니다.
+
+## 2026-08-02 - preserve existing tmux during full keyboard archive test
+
+- 6-session archive/restore 시나리오를 현재 사용자 tmux에서도 실행할 수 있도록
+  `TMUX_KEYBOARD_E2E_SKIP_FINAL_ALL=1` 안전 옵션을 추가했습니다.
+- 마지막 `d All` server 종료 단계만 생략하고, `c` 6회, topology split, `d/y`
+  archive, `o` restore 검증은 그대로 수행합니다.
+
 ## 2026-08-01 - archive work-only layout and marker-column repaint
 
 - archive snapshot의 전체 `list-panes` 필드와 helper parser의 필드 순서를

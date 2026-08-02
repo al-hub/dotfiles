@@ -11,7 +11,7 @@ RUN_ID="${TMUX_USER_LIVE_RUN_ID:-user-live-$(date +%s)-$$}"
 RUN_DIR="${TMUX_USER_LIVE_RUN_DIR:-${TMPDIR:-/tmp}/dotfiles-user-live-$RUN_ID}"
 EVENT_LOG="$RUN_DIR/events.log"; RESULT_LOG="$RUN_DIR/results.tsv"; MANIFEST_LOG="$RUN_DIR/session-switch-manifest.tsv"; SAMPLE_LOG="$RUN_DIR/transition-samples.tsv"; HISTORY_DIR="$RUN_DIR/history"
 ORIGINAL_SESSION=""; ORIGINAL_WINDOW=""; TEST_WINDOW_ID=""; SIDEBAR_PANE=""; TEST_SESSIONS=(); EVENT_SEQUENCE=0; INPUT_SEQUENCE=0; FAILURES=0; INCONCLUSIVE_COUNT=0; INITIAL_PANES=""; ORIGINAL_SIDEBAR_ENABLED=""; ORIGINAL_SIDEBAR_MANAGED=""; ORIGINAL_TRACE_ENV=""; ORIGINAL_TRACE_FILE_ENV=""; ORIGINAL_DEBUG_ENV=""; ORIGINAL_DEBUG_FILE_ENV=""; CLIENT_CAPTURE_PID=""; CLIENT_STREAM_OFFSET=0; CAPTURE_CLIENT="${TMUX_USER_LIVE_CAPTURE_CLIENT:-true}"
-ERROR_PATTERN='ensure-sidebar-window.*returned 1|--ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed'
+ERROR_PATTERN='ensure-sidebar-window.*returned 1|--ensure-sidebar-window.*returned 1|session[[:space:]]+switch.*failed|longjmp[[:space:]]+causes[[:space:]]+uninitialized[[:space:]]+stack[[:space:]]+frame'
 mkdir -p "$HISTORY_DIR"; : > "$EVENT_LOG"; : > "$RESULT_LOG"; : > "$MANIFEST_LOG"; : > "$SAMPLE_LOG"
 printf '%b\n' 'iteration\telapsed_ms\toperation_id\tphase\tclient_session\tsidebar_pane\tsidebar_pid\tsidebar_geometry\tbefore_sidebar\tsample_interval_ms\tfull_render_count\thook_event_count\tfailure_class' > "$SAMPLE_LOG"
 tmuxc() { tmux -L default "$@"; }

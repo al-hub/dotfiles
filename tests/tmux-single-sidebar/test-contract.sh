@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Contract test for the global single-sidebar design. It exercises one
-# persistent pane/process across managed session targets.
+# Contract test for the window-local sidebar design. It exercises one sidebar
+# per managed window and verifies that ensuring another window does not replace
+# the existing pane/process.
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
@@ -50,17 +51,18 @@ pid_before="$(${TMUX[@]} display-message -p -t "$sidebar_before" '#{pane_pid}')"
 [ -n "$sidebar_before" ]
 [ -n "$pid_before" ]
 
-# Ensuring another session must not create a second sidebar.
+# Ensuring another managed window creates its own local sidebar; the existing
+# sidebar in contract-a must remain unchanged.
 "${TMUX[@]}" run-shell "$LAUNCHER --ensure-sidebar-session contract-b"
-wait_for_sidebar_count 1
+wait_for_sidebar_count 2
 
-[ "$(count_sidebars)" -eq 1 ]
+[ "$(count_sidebars)" -eq 2 ]
 sidebar_after="$(${TMUX[@]} list-panes -a -F '#{pane_id}|#{pane_title}' |
     awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
 pid_after="$(${TMUX[@]} display-message -p -t "$sidebar_after" '#{pane_pid}')"
 [ "$sidebar_before" = "$sidebar_after" ]
 [ "$pid_before" = "$pid_after" ]
-printf 'PASS: target ensure preserves one global sidebar\n'
+printf 'PASS: target ensure creates one sidebar per managed window\n'
 printf 'PASS: target ensure preserves sidebar pane identity/process\n'
 
 # This contract test has no attached client, so an implicit active session is

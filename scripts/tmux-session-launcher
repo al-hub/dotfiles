@@ -1554,6 +1554,15 @@ provision_sidebar_window()
     # Keep the target window ready for immediate client switch and keyboard
     # input. This is provisioning-time focus, never a session-switch mutation.
     tmux select-pane -t "$pane_id" 2>/dev/null || true
+    # after-new-session/after-new-window hooks can race an explicit provision.
+    # Reconcile once after the title is visible so concurrent creators converge
+    # on one canonical pane instead of leaving two titled sidebar panes.
+    reconcile_sidebar_window "$window_id"
+    existing_pane="$(sidebar_window_pane "$window_id" || true)"
+    if [ -n "$existing_pane" ] && [ "$existing_pane" != "$pane_id" ]; then
+        trace_event "sidebar.window.provision.raced window=$window_id created=$pane_id canonical=$existing_pane"
+        return 0
+    fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
     trace_event "sidebar.window.provision.end window=$window_id pane=$pane_id"
     return 0
@@ -2043,6 +2052,34 @@ wait_for_sidebar_input_ready()
     return 1
 }
 
+sidebar_content_ready()
+{
+    local window_id="$1" session_name_value="$2" pane_id content
+    pane_id="$(sidebar_window_pane "$window_id" || true)"
+    [ -n "$pane_id" ] || return 1
+    content="$(tmux capture-pane -p -J -t "$pane_id" 2>/dev/null || true)"
+    printf '%s\n' "$content" | grep -Fxq 'sessions' || return 1
+    printf '%s\n' "$content" | grep -Fq -- "$session_name_value" || return 1
+    # The selection marker is the user-visible proof that the repaired pane
+    # has rendered the target state, rather than merely starting a shell.
+    printf '%s\n' "$content" | grep -Eq '^>[*]?([[:space:]]|$)'
+}
+
+wait_for_sidebar_content_ready()
+{
+    local window_id="$1" session_name_value="$2" attempt
+    for attempt in $(seq 1 100); do
+        if sidebar_window_ready "$window_id" &&
+            sidebar_content_ready "$window_id" "$session_name_value"; then
+            trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=$attempt result=ready"
+            return 0
+        fi
+        sleep 0.01
+    done
+    trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=100 result=timeout"
+    return 1
+}
+
 signal_managed_sidebar_refresh()
 {
     local window_id sidebar_pane sidebar_pid
@@ -2179,8 +2216,13 @@ switch_session()
     # target so subsequent switches do not inherit the reflowed width.
     enforce_sidebar_width "$sidebar_pane" "$(sidebar_width)" ||
         trace_event "switch.sidebar-width-unresolved session=$session_name pane=$sidebar_pane"
-    wait_for_sidebar_input_ready "$target_window" "$sidebar_pane" ||
-        trace_event "switch.sidebar-input-unresolved session=$session_name pane=$sidebar_pane"
+    if ! wait_for_sidebar_input_ready "$target_window" "$sidebar_pane"; then
+        transition_context_finish failed sidebar-input-unready "$operation_id"
+        sidebar_operation_set idle "$operation_id"
+        message_line "session switch failed: sidebar input is not ready"
+        trace_event "switch.abort reason=sidebar-input-unready session=$session_name window=$target_window pane=${sidebar_pane:-none}"
+        return 1
+    fi
     if [ -n "$METRICS_FILE" ]; then
         metrics_switch_phase "$operation_id" switch-client "$switch_phase_start_us"
         switch_phase_start_us="$(metrics_now_us)"
@@ -2197,6 +2239,13 @@ switch_session()
         trace_event "switch.target-sidebar.selection-sync-fallback session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none} ack=${selection_sync_ack:-pending}"
     else
         trace_event "switch.target-sidebar.selection-sync-complete session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none}"
+    fi
+    if ! wait_for_sidebar_content_ready "$target_window" "$session_name"; then
+        transition_context_finish failed sidebar-content-unready "$operation_id"
+        sidebar_operation_set idle "$operation_id"
+        message_line "session switch failed: sidebar content is not ready"
+        trace_event "switch.abort reason=sidebar-content-unready session=$session_name window=$target_window pane=${sidebar_pane:-none}"
+        return 1
     fi
     [ -n "$METRICS_FILE" ] && metrics_write "op=switch phase=dispatch operation_id=$operation_id session=$session_name client_switch_us=$client_switch_us elapsed_us=$(( $(metrics_now_us) - switch_metrics_start_us ))"
     transition_phase_set STABILIZE "$operation_id"
@@ -3453,6 +3502,20 @@ EOF
     elif [ "$history_index" -ge "${#history_files[@]}" ]; then
         history_index=$((${#history_files[@]} - 1))
     fi
+}
+
+align_history_selection_to_session()
+{
+    local target_session="$1" index archive_session
+    [ -n "$target_session" ] || return 0
+    for index in "${!history_files[@]}"; do
+        archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "${history_files[$index]}" 2>/dev/null || true)"
+        if [ "$archive_session" = "$target_session" ]; then
+            history_index="$index"
+            trace_event "history.selection.align session=$target_session index=$index"
+            return 0
+        fi
+    done
 }
 
 ensure_history_visible()
@@ -5620,6 +5683,7 @@ toggle_history_mode()
     else
         view_mode="history"
         collect_history
+        align_history_selection_to_session "$current_session"
         ensure_history_visible
     fi
     render_full history-toggle
@@ -5862,15 +5926,11 @@ run_tui()
                     history_restore_in_progress=true
                     restore_selected_archives
                     collect_history
-                    # Restoring an archive is a session action, not a request
-                    # to keep browsing history. Return to the normal session
-                    # list before the next physical key is read; otherwise
-                    # Down/Enter continues to operate on archive rows after
-                    # the client has already switched sessions.
-                    view_mode="sessions"
-                    history_checked=()
-                    history_index=0
-                    collect_sessions false "$current_session"
+                    # Keep the history view open after a single restore. The
+                    # user can continue with Down + Enter to restore another
+                    # archive; switching back to sessions here made the next
+                    # Enter merely switch an existing session and looked like
+                    # a stalled duplicate restore.
                     history_restore_in_progress=false
                     request_full_render history-restore
                 else
