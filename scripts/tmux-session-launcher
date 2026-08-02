@@ -23,6 +23,7 @@ source "$SIDEBAR_ADAPTER_PATH"
 
 SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
+SIDEBAR_WIDTH_STATE_FILE="${TMUX_SESSION_SIDEBAR_WIDTH_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-width}"
 SIDEBAR_BUSY_SECONDS="${TMUX_SESSION_SIDEBAR_BUSY_SECONDS:-10}"
 SIDEBAR_ANIMATION_ENABLED="${TMUX_SESSION_SIDEBAR_ANIMATION_ENABLED:-true}"
 SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.15}"
@@ -58,6 +59,8 @@ SIDEBAR_FAST_TRANSITION_OPTION="@dotfiles_sidebar_fast_transition"
 SIDEBAR_SELECTION_SYNC_OPTION="@dotfiles_sidebar_selection_sync"
 SIDEBAR_SELECTION_SYNC_ACK_OPTION="@dotfiles_sidebar_selection_sync_ack"
 SIDEBAR_RESTORE_TOPOLOGY_OPTION="@dotfiles_sidebar_restore_topology"
+SIDEBAR_WIDTH_APPLY_GUARD_OPTION="@dotfiles_sidebar_width_apply_guard"
+SIDEBAR_PROVISION_OPTION="@dotfiles_sidebar_provisioning"
 FAIL_STEP="${TMUX_SESSION_LAUNCHER_FAIL_STEP:-}"
 SIDEBAR_ASYNC_RESTORE="${TMUX_SESSION_SIDEBAR_ASYNC_RESTORE:-true}"
 METRICS_FILE="${TMUX_SESSION_LAUNCHER_METRICS_FILE:-}"
@@ -812,15 +815,15 @@ install_sidebar_hooks()
     tmux set-hook -g after-new-session "run-shell -b '$quoted_script --ensure-sidebar-session #{session_name} >/dev/null 2>&1'" 2>/dev/null || true
     tmux set-hook -g after-new-window "run-shell -b '$quoted_script --ensure-sidebar-window #{window_id} >/dev/null 2>&1'" 2>/dev/null || true
     tmux set-hook -g after-link-window "run-shell -b '$quoted_script --ensure-sidebar-window #{window_id} >/dev/null 2>&1'" 2>/dev/null || true
-    tmux set-hook -g after-split-window "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-resize-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-select-layout "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-join-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-break-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-kill-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-rotate-window "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g after-swap-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
-    tmux set-hook -g window-resized "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id}'" 2>/dev/null || true
+    tmux set-hook -g after-split-window "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} split'" 2>/dev/null || true
+    tmux set-hook -g after-resize-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} manual-resize'" 2>/dev/null || true
+    tmux set-hook -g after-select-layout "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} select-layout'" 2>/dev/null || true
+    tmux set-hook -g after-join-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} join-pane'" 2>/dev/null || true
+    tmux set-hook -g after-break-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} break-pane'" 2>/dev/null || true
+    tmux set-hook -g after-kill-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} kill-pane'" 2>/dev/null || true
+    tmux set-hook -g after-rotate-window "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} rotate-window'" 2>/dev/null || true
+    tmux set-hook -g after-swap-pane "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} swap-pane'" 2>/dev/null || true
+    tmux set-hook -g window-resized "run-shell -b '$quoted_script --sync-sidebar-layout #{window_id} window-resized'" 2>/dev/null || true
     tmux set-hook -g window-pane-changed "run-shell -b '$quoted_script --sync-sidebar-focus #{window_id}'" 2>/dev/null || true
 }
 
@@ -841,13 +844,15 @@ sidebar_layout_hook_guard_active()
 
 sync_sidebar_layout()
 {
-    local window_id="$1" sidebar_pane sidebar_count
+    local window_id="$1" source="${2:-internal}" sidebar_pane sidebar_count
     [ -n "$window_id" ] || return 0
     if transition_is_active; then
         transition_defer_hook_sync layout
         return 0
     fi
-    sidebar_layout_hook_guard_active && return 0
+    if [ "$source" != manual-resize ] && sidebar_layout_hook_guard_active; then
+        return 0
+    fi
     sidebar_operation_busy && {
         trace_event "sidebar.layout.sync.skip window=$window_id reason=operation-busy state=$(sidebar_operation_state)"
         return 0
@@ -864,6 +869,11 @@ sync_sidebar_layout()
 
     tmux set-option -gq "$SIDEBAR_LAYOUT_HOOK_GUARD_OPTION" "$(( $(date +%s%N) + 500000000 ))" 2>/dev/null || true
     sleep "${TMUX_SESSION_SIDEBAR_LAYOUT_DEBOUNCE:-0.05}"
+    if [ "$source" = manual-resize ] && ! sidebar_width_apply_guard_active; then
+        remember_sidebar_width_for_window "$window_id"
+    else
+        trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
+    fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
         return 1
@@ -969,10 +979,25 @@ find_global_sidebar_pane()
 
 sidebar_window_pane()
 {
-    local window_id="$1"
-    sidebar_tmux_cmd list-panes -t "$window_id" \
+    local window_id="$1" actual_pane stored_pane
+    actual_pane="$(sidebar_tmux_cmd list-panes -t "$window_id" \
         -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }' || true)"
+    if [ -z "$actual_pane" ]; then
+        stored_pane="$(sidebar_tmux_cmd show-option -wqv -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" 2>/dev/null || true)"
+        if [ -n "$stored_pane" ]; then
+            sidebar_tmux_cmd set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "" 2>/dev/null || true
+            sidebar_tmux_cmd set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
+            trace_event "sidebar.stale-metadata window=$window_id stored_pane=$stored_pane ready=0 reason=pane-missing"
+        fi
+        return 0
+    fi
+    printf '%s\n' "$actual_pane"
+}
+
+sidebar_provisioning_active()
+{
+    [ "$(tmux show-option -gqv "$SIDEBAR_PROVISION_OPTION" 2>/dev/null || true)" = 1 ]
 }
 
 sidebar_window_ids()
@@ -1454,7 +1479,7 @@ current_sidebar_width()
 
 sidebar_width()
 {
-    local remembered width
+    local remembered width persisted
 
     # A target window can be narrower while detached. Its live pane width is
     # therefore not a stable sidebar width source for the next transition.
@@ -1462,6 +1487,16 @@ sidebar_width()
     case "$remembered" in
         ''|*[!0-9]*) ;;
         *) printf '%s\n' "$remembered"; return 0 ;;
+    esac
+
+    persisted="$(read_persisted_sidebar_width || true)"
+    case "$persisted" in
+        ''|*[!0-9]*) ;;
+        *)
+            tmux set-option -gq '@dotfiles-session-sidebar-width' "$persisted" 2>/dev/null || true
+            printf '%s\n' "$persisted"
+            return 0
+            ;;
     esac
 
     width="$(current_sidebar_width)"
@@ -1475,11 +1510,77 @@ sidebar_width()
 
 remember_sidebar_width()
 {
+    local width
     width="$(current_sidebar_width)"
 
     case "$width" in
         ''|*[!0-9]*) return 0 ;;
-        *) tmux set-option -gq '@dotfiles-session-sidebar-width' "$width" ;;
+        *)
+            tmux set-option -gq '@dotfiles-session-sidebar-width' "$width"
+            persist_sidebar_width "$width" ||
+                trace_event "sidebar.width.persist.skip width=$width reason=state-write-failed"
+            ;;
+    esac
+}
+
+remember_sidebar_width_for_window()
+{
+    local window_id="$1" sidebar_pane width
+    sidebar_pane="$(find_sidebar_pane "$window_id" || true)"
+    [ -n "$sidebar_pane" ] || return 0
+    width="$(tmux display-message -p -t "$sidebar_pane" '#{pane_width}' 2>/dev/null || true)"
+    case "$width" in
+        ''|*[!0-9]*) return 0 ;;
+        *)
+            tmux set-option -gq '@dotfiles-session-sidebar-width' "$width" 2>/dev/null || true
+            persist_sidebar_width "$width" ||
+                trace_event "sidebar.width.persist.skip width=$width reason=state-write-failed"
+            trace_event "sidebar.width.global-save window=$window_id pane=$sidebar_pane width=$width"
+            ;;
+    esac
+}
+
+read_persisted_sidebar_width()
+{
+    local width
+    [ -r "$SIDEBAR_WIDTH_STATE_FILE" ] || return 1
+    IFS= read -r width < "$SIDEBAR_WIDTH_STATE_FILE" || true
+    case "$width" in
+        ''|*[!0-9]*) return 1 ;;
+        *) printf '%s\n' "$width" ;;
+    esac
+}
+
+persist_sidebar_width()
+{
+    local width="$1" state_dir tmp_file
+    case "$width" in ''|*[!0-9]*) return 1 ;; esac
+    state_dir="$(dirname "$SIDEBAR_WIDTH_STATE_FILE")"
+    mkdir -p "$state_dir" 2>/dev/null || return 1
+    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-width.XXXXXX" 2>/dev/null || true)"
+    [ -n "$tmp_file" ] || return 1
+    if ! printf '%s\n' "$width" > "$tmp_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+    if ! mv -f -- "$tmp_file" "$SIDEBAR_WIDTH_STATE_FILE"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+}
+
+sidebar_width_apply_guard_active()
+{
+    local guard now
+    guard="$(tmux show-option -gqv "$SIDEBAR_WIDTH_APPLY_GUARD_OPTION" 2>/dev/null || true)"
+    now="$(date +%s%N)"
+    case "$guard" in
+        ''|*[!0-9]*) return 1 ;;
+        *)
+            if [ "$guard" -gt "$now" ]; then return 0; fi
+            tmux set-option -gq "$SIDEBAR_WIDTH_APPLY_GUARD_OPTION" 0 2>/dev/null || true
+            return 1
+            ;;
     esac
 }
 
@@ -1495,6 +1596,7 @@ enforce_sidebar_width()
             return 0
         fi
         trace_event "sidebar.width.reconcile pane=$pane_id expected=$expected actual=${actual:-none} attempt=$attempt"
+        tmux set-option -gq "$SIDEBAR_WIDTH_APPLY_GUARD_OPTION" "$(( $(date +%s%N) + 1000000000 ))" 2>/dev/null || true
         tmux resize-pane -t "$pane_id" -x "$expected" 2>/dev/null || true
         sleep 0.02
     done
@@ -1530,11 +1632,13 @@ provision_sidebar_window()
     local window_id="$1" width="${2:-$(sidebar_width)}"
     local existing_pane global_pane global_window work_pane pane_path pane_id
     [ -n "$window_id" ] || return 1
+    trace_event "sidebar.provision.begin window=$window_id width=$width"
     reconcile_sidebar_window "$window_id"
     existing_pane="$(sidebar_window_pane "$window_id" || true)"
     if [ -n "$existing_pane" ]; then
         tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$existing_pane" 2>/dev/null || true
         enforce_sidebar_width "$existing_pane" "$width" || true
+        trace_event "sidebar.provision.end window=$window_id pane=$existing_pane result=existing"
         return 0
     fi
     work_pane="$(sidebar_tmux_any_work_pane "$window_id" || true)"
@@ -1566,6 +1670,7 @@ provision_sidebar_window()
     fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
     trace_event "sidebar.window.provision.end window=$window_id pane=$pane_id"
+    trace_event "sidebar.provision.end window=$window_id pane=$pane_id result=created"
     return 0
 }
 
@@ -1811,6 +1916,11 @@ ensure_sidebar_for_session()
 toggle_current_sidebar()
 {
     local existing_count
+    if sidebar_provisioning_active; then
+        trace_event "sidebar.toggle.suppressed reason=provisioning"
+        return 0
+    fi
+
     existing_count="$(sidebar_tmux_sidebar_pane_count)"
     if [ "$existing_count" -gt 0 ]; then
         remove_managed_sidebars || {
@@ -1824,10 +1934,13 @@ toggle_current_sidebar()
     local current_session_name
     current_session_name="$(tmux display-message -p '#S' 2>/dev/null || true)"
     mark_session_managed "$current_session_name" || true
-    provision_managed_sidebars || {
+    tmux set-option -gq "$SIDEBAR_PROVISION_OPTION" 1 2>/dev/null || true
+    if ! provision_managed_sidebars; then
+        tmux set-option -gq "$SIDEBAR_PROVISION_OPTION" 0 2>/dev/null || true
         trace_event "sidebar.toggle.abort reason=provision-failed"
         return 1
-    }
+    fi
+    tmux set-option -gq "$SIDEBAR_PROVISION_OPTION" 0 2>/dev/null || true
     trace_event "sidebar.toggle.end mode=on windows=$(sidebar_window_ids | wc -l | tr -d ' ')"
 }
 
@@ -6474,7 +6587,7 @@ main()
             return 0
             ;;
         --sync-sidebar-layout)
-            sync_sidebar_layout "${2:-}"
+            sync_sidebar_layout "${2:-}" "${3:-internal}"
             return $?
             ;;
         --sync-sidebar-focus)

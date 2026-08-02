@@ -32,9 +32,26 @@
 - 6개 window-local sidebar 모두 전체 session 목록과 올바른 selection marker를
   표시했다. 이전 `select-all-2/3` 누락 stale snapshot은 재현되지 않았다.
 - 생성한 테스트 session/archive만 정리하고 기존 사용자 session은 보존했다.
+
+## 2026-08-02 global sidebar width decision
+
+- 사용자가 조정한 마지막 sidebar 폭을 전역 기본값으로 유지하도록 요구했다.
+- `after-resize-pane`의 manual source에서만 현재 sidebar 폭을 global option과
+  state 파일에 저장하고, split/layout/window reflow는 저장하지 않도록 source를
+  분리했다. 내부 `resize-pane`에는 operation guard를 적용했다.
+- 사용자 tmux에서 47열 조정 후 sidebar `j → Enter` 이동 및 복귀를 수행해 source와
+  target 모두 47열 유지됨을 확인했다.
 - 사용자 요청, 해석, 결정, 작업 결과, 남은 질문을 분리해서 적습니다.
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
+
+## 2026-08-02 minimal sidebar disappearance repair
+
+- sidebar 전체 lifecycle이나 mouse binding은 변경하지 않고, 실제 pane이 없는
+  상태에서 남는 stale pane ID/ready metadata만 무효화하기로 결정했다.
+- `Ctrl+a s` provisioning 중 중복 toggle은 무시하고, provision begin/end와
+  stale-metadata 이벤트를 trace에 남긴다.
+- stale metadata repair 및 provisioning 중 toggle 억제 contract가 통과했다.
 
 ## 2026-08-02 반복 restore 및 duplicate sidebar 보강
 

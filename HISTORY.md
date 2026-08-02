@@ -40,6 +40,31 @@
 - 테스트 session과 생성 archive는 정리했으며 사용자 기존 `0`, `aaaa`, `bbbb`, `ccc`
   session은 보존했다.
 
+## 2026-08-02 - persist last manual sidebar width globally
+
+- 기존 전역 폭 option은 있었지만 manual `after-resize-pane` hook이 이를 갱신하지
+  않아 초기 폭이 session 이동 때 재적용되는 문제를 수정했다.
+- `after-resize-pane`의 수동 resize source에서만 현재 window sidebar 폭을 전역
+  option과 영속 state 파일에 기록하고, split/layout/reflow hook은 기록하지 않도록
+  source를 분리했다.
+- 내부 `resize-pane` 보정에는 operation guard를 두어 자동 보정 hook이 사용자의
+  마지막 폭을 덮어쓰지 않도록 했다.
+- state 파일은 임시 파일 작성 후 rename하며 tmux server 재시작 뒤에도 마지막 폭을
+  복원할 수 있다.
+- contract와 사용자 tmux에서 47열 수동 조정 후 sidebar Enter 이동·복귀 시 target과
+  source 모두 47열 유지, 사용자 session 0 보존을 확인했다.
+
+## 2026-08-02 - repair stale sidebar metadata and suppress duplicate provisioning
+
+- 실제 sidebar pane이 없는 window에서 저장된 pane ID/ready metadata를 즉시
+  무효화하고 기존 provision 경로로 복구하도록 보강했다.
+- `Ctrl+a s` provisioning 전체 구간에는 최소 global guard를 두어 생성 중 중복
+  toggle이 sidebar를 제거하지 않도록 했다.
+- provision 시작/종료, stale metadata, suppressed toggle을 trace에서 확인할 수
+  있도록 진단 이벤트를 추가했다.
+- contract에서 pane 소실 후 stale metadata 복구와 provisioning 중 toggle 억제를
+  검증했다.
+
 ## 2026-08-02 - 반복 history restore와 sidebar provision race 보강
 
 - `o` history 화면에서 archive 하나를 복원한 뒤에도 history view를 유지하도록
