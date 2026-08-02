@@ -5,6 +5,33 @@
 ## 작성 규칙
 
 - 새 대화 주제는 위에 추가합니다.
+
+## 2026-08-02 fresh visible verification result
+
+- 새 사용자 tmux session `0`에서 archive 6개를 실제 sidebar의 `o → a → Enter`로
+  복원했다. 6개 session과 window-local sidebar는 모두 생성됐고 longjmp/abort는
+  없었다.
+- 다만 일부 복원 sidebar는 전체 session 목록을 표시했지만 `select-all-5/6`에서는
+  `select-all-2/3` 행이 누락됐다. deferred batch provision에서 기존 sidebar에 대한
+  refresh fan-out을 생략한 것이 stale snapshot의 유력 원인이다.
+- 테스트 session은 정리하고 사용자 session `0`을 보존했다. 다음 작업은 batch
+  finalize 후 managed sidebar 전체 refresh와 각 pane content invariant 검증이다.
+
+## 2026-08-02 sidebar snapshot repair decision
+
+- visible 검증에서 복원 session은 모두 생성됐지만 일부 sidebar에 `select-all-2/3`가
+  누락된 stale snapshot을 확인했다.
+- batch finalize가 모든 managed sidebar pane을 직접 refresh하고, 전체 managed session
+  이름이 각 sidebar capture에 존재하는지 확인한 뒤에만 restore complete를 보고하도록
+  수정했다.
+- 전용 attached-PTY 재검증은 6/6 restore, refresh barrier PASS, known error 0건이었다.
+
+## 2026-08-02 fresh user tmux post-repair result
+
+- 새 사용자 tmux에서 6개 archive를 실제 `o → a → Enter`로 복원했다.
+- 6개 window-local sidebar 모두 전체 session 목록과 올바른 selection marker를
+  표시했다. 이전 `select-all-2/3` 누락 stale snapshot은 재현되지 않았다.
+- 생성한 테스트 session/archive만 정리하고 기존 사용자 session은 보존했다.
 - 사용자 요청, 해석, 결정, 작업 결과, 남은 질문을 분리해서 적습니다.
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
@@ -4203,3 +4230,8 @@
 - restore 완료 경계에서 sessions view 전환, history selection 초기화, session 재수집을
   수행하도록 production을 수정했다.
 - private 및 사용자 tmux `/dev/pts/0`에서 `o` → Enter 후 자동 close를 PASS로 확인했다.
+- 2026-08-02 batch restore optimization decision: 다중 선택 restore에서 중간
+  client 전환/history append를 제거하고 preparation을 기본 2개씩 병렬화한 뒤
+  readiness·target 전환·history import를 한 번의 finalize로 묶는다. worker가
+  shared operation owner를 덮어쓰지 않도록 parent ownership을 고정하고 phase
+  metrics를 추가한다. 동시성 3과 duplicate sidebar reconcile은 후속 과제로 남긴다.

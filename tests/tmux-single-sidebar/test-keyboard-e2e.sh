@@ -41,6 +41,7 @@ VISIBLE_CLIENT="${TMUX_KEYBOARD_E2E_VISIBLE_CLIENT:-}"
 SKIP_FINAL_ALL="${TMUX_KEYBOARD_E2E_SKIP_FINAL_ALL:-0}"
 VISIBLE_PANE=""
 PREFIX_DELAY_MS="${TMUX_KEYBOARD_E2E_PREFIX_DELAY_MS:-100}"
+ACTION_TIMEOUT_SECONDS="${TMUX_KEYBOARD_E2E_ACTION_TIMEOUT_SECONDS:-20}"
 TEST_RUN_ID="${TEST_RUN_ID:-keyboard-${SCENARIO}-$(date +%s%N)-$$}"
 
 tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" "$@"; }
@@ -1438,7 +1439,7 @@ run_window_local_toggle_contract()
 
 wait_for_action_generation_change()
 {
-    local previous="$1" deadline=$(( $(date +%s) + 20 ))
+    local previous="$1" deadline=$(( $(date +%s) + ACTION_TIMEOUT_SECONDS ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         [ "$(action_generation)" != "$previous" ] && return 0
         sleep 0.05

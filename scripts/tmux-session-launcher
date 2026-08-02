@@ -165,6 +165,7 @@ prompt_result=""
 prompt_cancelled=false
 view_mode="sessions"
 history_restore_in_progress=false
+restore_batch_mode=false
 animation_frame=0
 animation_tick_counter=0
 key_result=""
@@ -1790,19 +1791,21 @@ ensure_session_sidebar()
 
 ensure_sidebar_for_session()
 {
-    local session_name_value="$1" window_id width="${2:-$(sidebar_width)}" existing_pane
+    local session_name_value="$1" window_id width="${2:-$(sidebar_width)}" defer_ready="${3:-false}" existing_pane
     [ -n "$session_name_value" ] || return 1
     mark_session_managed "$session_name_value" || return 1
     window_id="$(tmux list-windows -t "=$session_name_value:" -F '#{window_id}' 2>/dev/null | head -n 1)"
     [ -n "$window_id" ] || return 1
     provision_sidebar_window "$window_id" "$width" || return 1
-    wait_for_sidebar_window_ready "$window_id" || return 1
+    if [ "$defer_ready" != true ]; then
+        wait_for_sidebar_window_ready "$window_id" || return 1
+    fi
     set_sidebar_enabled 1
     # Other window-local sidebar processes have their own session snapshots.
     # Refresh them after a new managed session is provisioned so a later
     # keyboard selection sees the same list in every window. This is a
     # creation-time model update, not part of the native switch hot path.
-    signal_managed_sidebar_refresh
+    [ "$defer_ready" = true ] || signal_managed_sidebar_refresh
 }
 
 toggle_current_sidebar()
@@ -2102,6 +2105,18 @@ signal_managed_sidebar_refresh()
     done < <(sidebar_window_ids)
 }
 
+signal_managed_sidebar_refresh_batch()
+{
+    local session_name_value pane_id pane_pid
+    while IFS='|' read -r session_name_value pane_id pane_pid; do
+        [ -n "$pane_id" ] || continue
+        session_is_managed "$session_name_value" || continue
+        [ -n "$pane_pid" ] && kill -USR2 "$pane_pid" 2>/dev/null &&
+            trace_event "sidebar.window.refresh.batch-signal session=$session_name_value pane=$pane_id pid=$pane_pid"
+    done < <(tmux list-panes -a -F '#{session_name}|#{pane_id}|#{pane_title}|#{pane_pid}|#{pane_dead}' 2>/dev/null |
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$3 == title && $5 == 0 { print $1 "|" $2 "|" $4 }')
+}
+
 wait_for_managed_sidebar_session()
 {
     local session_name_value="$1" target_window="${2:-}" window_id sidebar_pane attempt ready
@@ -2122,6 +2137,46 @@ wait_for_managed_sidebar_session()
         sleep 0.05
     done
     trace_event "sidebar.window.refresh.timeout session=$session_name_value"
+    return 1
+}
+
+wait_for_managed_sidebar_snapshot()
+{
+    local attempt window_id sidebar_pane session_name_value content ready managed_sessions window_ids deadline_ms
+    managed_sessions="$(managed_session_names)"
+    window_ids="$(tmux list-panes -a -F '#{session_name}|#{pane_id}|#{pane_title}' 2>/dev/null |
+        awk -F '|' -v title="$SIDEBAR_TITLE" '$3 == title { print $1 "|" $2 }')"
+    deadline_ms=$(( $(date +%s%N) / 1000000 + 15000 ))
+    attempt=0
+    while [ "$(( $(date +%s%N) / 1000000 ))" -lt "$deadline_ms" ]; do
+        attempt=$((attempt + 1))
+        ready=1
+        while IFS='|' read -r session_name_value sidebar_pane; do
+            session_is_managed "$session_name_value" || continue
+            [ -n "$sidebar_pane" ] || continue
+            content="$(tmux capture-pane -p -J -t "$sidebar_pane" 2>/dev/null || true)"
+            if [ -z "$sidebar_pane" ] ||
+                ! printf '%s\n' "$content" | grep -Fxq 'sessions' ||
+                ! printf '%s\n' "$content" | grep -Eq '^>[*]?([[:space:]]|$)'; then
+                ready=0
+                break
+            fi
+            while IFS= read -r session_name_value; do
+                [ -n "$session_name_value" ] || continue
+                if ! printf '%s\n' "$content" | grep -Fq -- "$session_name_value"; then
+                    ready=0
+                    break
+                fi
+            done <<< "$managed_sessions"
+            [ "$ready" -eq 1 ] || break
+        done < <(sidebar_window_ids)
+        if [ "$ready" -eq 1 ]; then
+            trace_event "sidebar.managed-snapshot-ready attempts=$attempt result=ready"
+            return 0
+        fi
+        sleep 0.05
+    done
+    trace_event "sidebar.managed-snapshot-ready attempts=$attempt result=timeout"
     return 1
 }
 
@@ -5008,7 +5063,8 @@ archive_selected_indices()
 restore_abort()
 {
     local reason="$1"
-    tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+    [ "${restore_batch_mode:-false}" = true ] ||
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
     trace_event "restore.abort session=${restore_name:-unknown} reason=$reason"
     if [ -n "${restore_client_tty:-}" ] && [ -n "${restore_original_session:-}" ] &&
         session_exists "$restore_original_session"; then
@@ -5020,7 +5076,9 @@ restore_abort()
     elif [ "${created:-false}" = true ] && [ -n "${restore_name:-}" ]; then
         trace_event "operation.conflict.restore-preserved operation_id=${restore_operation_id:-none} session=$restore_name"
     fi
-    sidebar_operation_finish failed "${restore_operation_id:-${metrics_restore_operation_id:-restore-$reason}}" || true
+    if [ "${restore_batch_mode:-false}" != true ]; then
+        sidebar_operation_finish failed "${restore_operation_id:-${metrics_restore_operation_id:-restore-$reason}}" || true
+    fi
     return 1
 }
 
@@ -5029,6 +5087,7 @@ restore_archive()
     archive_path="$1"
     [ -f "$archive_path" ] || return 1
     local metrics_restore_start="" metrics_restore_operation_id="" restore_operation_id="${2:-}"
+    restore_batch_mode="${3:-false}"
     local restore_client_tty="" restore_original_session="" sidebar_pane_before="" sidebar_pid_before=""
     local restore_original_identity="" restore_owner_identity="" restore_created_identity=""
     declare -A restore_window_targets=()
@@ -5047,7 +5106,10 @@ restore_archive()
         metrics_restore_operation_id="$metrics_operation_id_result"
     fi
     trace_event "operation.begin operation_id=$restore_operation_id type=restore archive=$archive_path"
-    sidebar_operation_set restoring "$restore_operation_id"
+    # The parent owns the shared operation state during a batch. Background
+    # workers must not overwrite that owner ID or the finalizer would observe
+    # a false ownership conflict.
+    [ "$restore_batch_mode" = true ] || sidebar_operation_set restoring "$restore_operation_id"
     # tmux fires after-new-session/after-new-window asynchronously while the
     # archive is being materialized. Those hooks must not provision or move a
     # sidebar in the middle of the restore transaction; the explicit restore
@@ -5062,7 +5124,7 @@ restore_archive()
     esac
     if { [ "$archive_version" = 2 ] || [ "$archive_version" = 3 ]; } && ! validate_archive_file "$archive_path"; then
         trace_event "restore.abort session=${restore_name:-unknown} reason=invalid-archive"
-        sidebar_operation_finish failed "$restore_operation_id" || true
+        [ "$restore_batch_mode" = true ] || sidebar_operation_finish failed "$restore_operation_id" || true
         return 1
     fi
     restore_client_tty="$(sidebar_owner_client)"
@@ -5081,7 +5143,7 @@ restore_archive()
     restore_owner_identity="$(owner_client_fingerprint "$restore_client_tty")"
     if session_exists "$restore_name"; then
         message_line "Exists: $restore_name"
-        sidebar_operation_finish failed "$restore_operation_id" || true
+        [ "$restore_batch_mode" = true ] || sidebar_operation_finish failed "$restore_operation_id" || true
         return 1
     fi
 
@@ -5247,18 +5309,20 @@ restore_archive()
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
     trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local"
-    if ! ensure_sidebar_for_session "$restore_name"; then
+    if ! ensure_sidebar_for_session "$restore_name" "$(sidebar_width)" "$restore_batch_mode"; then
         restore_abort ensure-sidebar
         return 1
     fi
     # Restore is a cold path. Do not expose the restored session until every
     # local sidebar has rendered the restored session name and the active
     # window has a ready input boundary.
-    wait_for_managed_sidebar_session "$restore_name" "$active_window_target" || {
-        trace_event "restore.sidebar.ready-timeout session=$restore_name"
-        restore_abort ensure-sidebar-ready
-        return 1
-    }
+    if [ "$restore_batch_mode" != true ]; then
+        wait_for_managed_sidebar_session "$restore_name" "$active_window_target" || {
+            trace_event "restore.sidebar.ready-timeout session=$restore_name"
+            restore_abort ensure-sidebar-ready
+            return 1
+        }
+    fi
     # The work-only layout is needed while panes are created, but the final
     # user-visible geometry also includes the sidebar. Reapply the archived
     # full-window layout only after the new sidebar pane has been provisioned
@@ -5282,41 +5346,49 @@ restore_archive()
         restore_abort external-conflict
         return 1
     }
-    trace_event "restore.switch-client.begin session=$restore_name client=$restore_client_tty"
-    if [ -n "$restore_client_tty" ]; then
-        if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
-            restore_abort switch-client
-            return 1
-        fi
+    if [ "$restore_batch_mode" = true ]; then
+        trace_event "restore.prepare.complete operation_id=$restore_operation_id session=$restore_name"
     else
-        if ! tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
-            restore_abort switch-client
+        trace_event "restore.switch-client.begin session=$restore_name client=$restore_client_tty"
+        if [ -n "$restore_client_tty" ]; then
+            if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
+                restore_abort switch-client
+                return 1
+            fi
+        else
+            if ! tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
+                restore_abort switch-client
+                return 1
+            fi
+        fi
+        trace_event "restore.switch-client.end session=$restore_name"
+        restore_active_window="$(tmux display-message -p -t "$restore_client_tty" '#{window_id}' 2>/dev/null || true)"
+        if [ -n "$restore_active_window" ]; then
+            wait_for_sidebar_window_ready "$restore_active_window" || {
+                trace_event "restore.sidebar.active-ready-timeout session=$restore_name window=$restore_active_window"
+                restore_abort ensure-active-sidebar-ready
+                return 1
+            }
+        fi
+        current_session="$restore_name"
+        trace_event "restore.history.begin session=$restore_name"
+        if ! append_archive_history_once "$archive_path"; then
+            restore_abort history-import
             return 1
         fi
+        trace_event "restore.history.end session=$restore_name"
     fi
-    trace_event "restore.switch-client.end session=$restore_name"
-    restore_active_window="$(tmux display-message -p -t "$restore_client_tty" '#{window_id}' 2>/dev/null || true)"
-    if [ -n "$restore_active_window" ]; then
-        wait_for_sidebar_window_ready "$restore_active_window" || {
-            trace_event "restore.sidebar.active-ready-timeout session=$restore_name window=$restore_active_window"
-            restore_abort ensure-active-sidebar-ready
-            return 1
-        }
-    fi
-    current_session="$restore_name"
-    trace_event "restore.history.begin session=$restore_name"
-    if ! append_archive_history_once "$archive_path"; then
-        restore_abort history-import
-        return 1
-    fi
-    trace_event "restore.history.end session=$restore_name"
     if [ -n "$metrics_restore_start" ]; then
         metrics_write "op=restore phase=complete operation_id=$metrics_restore_operation_id session=$restore_name duration_us=$(( $(metrics_now_us) - metrics_restore_start )) sidebar_mode=$SIDEBAR_ASYNC_RESTORE"
     fi
-    sidebar_operation_finish idle "$restore_operation_id" || true
-    tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
-    trace_event "restore.topology-guard.end operation_id=$restore_operation_id result=complete"
-    trace_event "operation.complete operation_id=$restore_operation_id type=restore session=$restore_name"
+    if [ "$restore_batch_mode" = true ]; then
+        trace_event "operation.prepare.complete operation_id=$restore_operation_id type=restore session=$restore_name"
+    else
+        sidebar_operation_finish idle "$restore_operation_id" || true
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        trace_event "restore.topology-guard.end operation_id=$restore_operation_id result=complete"
+        trace_event "operation.complete operation_id=$restore_operation_id type=restore session=$restore_name"
+    fi
 }
 
 wait_for_sidebar_transition()
@@ -5378,26 +5450,201 @@ wait_for_sidebar_transition()
     return 1
 }
 
+wait_for_batch_sidebar_content()
+{
+    local attempt archive_path session_name_value window_id ready
+    for attempt in $(seq 1 200); do
+        ready=1
+        for archive_path in "$@"; do
+            session_name_value="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
+            window_id="$(sidebar_tmux_session_window "$session_name_value" || true)"
+            if [ -z "$window_id" ] || ! sidebar_content_ready "$window_id" "$session_name_value"; then
+                ready=0
+                break
+            fi
+        done
+        if [ "$ready" -eq 1 ]; then
+            trace_event "sidebar.batch-content-ready archives=$# attempts=$attempt result=ready"
+            return 0
+        fi
+        sleep 0.01
+    done
+    trace_event "sidebar.batch-content-ready archives=$# attempts=200 result=timeout"
+    return 1
+}
+
+restore_batch_finalize()
+{
+    local operation_id="$1" target_session="$2" restored_count="$3"
+    local selected_count="$4" client_tty target_window restore_active_window
+    local archive_path history_imported=0 history_failed=0 finalize_start
+    shift 4
+    finalize_start="$(metrics_now_us)"
+    client_tty="$(sidebar_owner_client || true)"
+    [ -n "$client_tty" ] || client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
+        awk -F '|' '$1 != 1 { print $2; exit }' || true)"
+    trace_event "restore.batch.finalize.begin operation_id=$operation_id target=$target_session client=$client_tty restored=$restored_count selected=$selected_count"
+
+    local expected_owner="$(owner_client_fingerprint "$client_tty")"
+    if [ -z "$target_session" ] || [ -z "$client_tty" ] ||
+        [ "$(owner_client_fingerprint)" != "$expected_owner" ] ||
+        ! session_exists "$target_session"; then
+        trace_event "operation.precondition operation_id=$operation_id kind=restore phase=batch-finalize expected-owner=$expected_owner actual-owner=$(owner_client_fingerprint) target=$target_session"
+        trace_event "restore.batch.finalize.error operation_id=$operation_id reason=precondition"
+        restore_batch_mode=false
+        sidebar_operation_finish failed "$operation_id" || true
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        return 1
+    fi
+
+    trace_event "sidebar.batch-refresh.begin operation_id=$operation_id"
+    signal_managed_sidebar_refresh_batch
+    if ! wait_for_managed_sidebar_snapshot; then
+        trace_event "restore.batch.finalize.error operation_id=$operation_id reason=managed-sidebar-snapshot-not-ready"
+        restore_batch_mode=false
+        sidebar_operation_finish failed "$operation_id" || true
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        return 1
+    fi
+    trace_event "sidebar.batch-refresh.end operation_id=$operation_id result=ready"
+    if ! sidebar_tmux_switch_client "$client_tty" "$target_session" 2>/dev/null; then
+        trace_event "restore.batch.finalize.error operation_id=$operation_id reason=switch-client target=$target_session"
+        restore_batch_mode=false
+        sidebar_operation_finish failed "$operation_id" || true
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        return 1
+    fi
+    restore_active_window="$(tmux display-message -p -t "$client_tty" '#{window_id}' 2>/dev/null || true)"
+    target_window="$(sidebar_tmux_session_window "$target_session" || true)"
+    wait_for_managed_sidebar_session "$target_session" "${restore_active_window:-$target_window}" || {
+        trace_event "restore.batch.finalize.error operation_id=$operation_id reason=sidebar-not-ready target=$target_session"
+        restore_batch_mode=false
+        sidebar_operation_finish failed "$operation_id" || true
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        return 1
+    }
+    [ -n "$restore_active_window" ] && wait_for_sidebar_window_ready "$restore_active_window" || true
+    current_session="$target_session"
+
+    while [ "$#" -gt 0 ]; do
+        archive_path="$1"
+        shift
+        if append_archive_history_once "$archive_path"; then
+            history_imported=$((history_imported + 1))
+        else
+            history_failed=$((history_failed + 1))
+            trace_event "restore.batch.history.error operation_id=$operation_id archive=$archive_path"
+        fi
+    done
+    restore_batch_mode=false
+    sidebar_operation_finish idle "$operation_id" || true
+    tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+    local finalize_duration_us=$(( $(metrics_now_us) - finalize_start ))
+    [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=finalize operation_id=$operation_id target=$target_session restored=$restored_count selected=$selected_count history=$history_imported/$restored_count history_failed=$history_failed duration_us=$finalize_duration_us"
+    trace_event "restore.batch.finalize.end operation_id=$operation_id target=$target_session history=$history_imported/$restored_count history_failed=$history_failed duration_us=$finalize_duration_us"
+    return 0
+}
+
 restore_selected_archives()
 {
-    local selected_count=0 restored_count=0 index
-    while IFS= read -r index; do
-        [ -n "$index" ] && selected_count=$((selected_count + 1))
-    done <<EOF
-$(archive_selected_indices)
-EOF
-    debug_log "history restore selected count=$selected_count index=$history_index file=${history_files[$history_index]:-none}"
+    local selected_count=0 restored_count=0 index archive_path archive_session
+    local batch_operation_id target_session batch_start batch_duration_us concurrency active_count=0
+    local wait_pid wait_status
+    local -a selected_indices=() restored_archives=() restored_sessions=()
+    local -a batch_pids=()
+    declare -A batch_pid_archives=() batch_pid_sessions=()
     while IFS= read -r index; do
         [ -n "$index" ] || continue
-        new_sidebar_operation_id
-        if restore_archive "${history_files[$index]}" "$sidebar_operation_id_result"; then
-            restored_count=$((restored_count + 1))
-        else
-            message_line "Restore failed: ${history_titles[$index]:-archive-$index}"
-        fi
+        selected_indices+=("$index")
     done <<EOF
 $(archive_selected_indices)
 EOF
+    selected_count="${#selected_indices[@]}"
+    debug_log "history restore selected count=$selected_count index=$history_index file=${history_files[$history_index]:-none}"
+
+    if [ "$selected_count" -le 1 ]; then
+        for index in "${selected_indices[@]}"; do
+            new_sidebar_operation_id
+            if restore_archive "${history_files[$index]}" "$sidebar_operation_id_result" false; then
+                restored_count=$((restored_count + 1))
+            else
+                message_line "Restore failed: ${history_titles[$index]:-archive-$index}"
+            fi
+        done
+    else
+        batch_start="$(metrics_now_us)"
+        new_sidebar_operation_id
+        batch_operation_id="$sidebar_operation_id_result"
+        sidebar_operation_set restoring "$batch_operation_id"
+        tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 1 2>/dev/null || true
+        trace_event "restore.batch.begin operation_id=$batch_operation_id selected=$selected_count"
+        [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=begin operation_id=$batch_operation_id selected=$selected_count"
+        message_line "Restoring: 0/$selected_count"
+        concurrency="${TMUX_SESSION_RESTORE_CONCURRENCY:-2}"
+        case "$concurrency" in
+            ''|*[!0-9]*) concurrency=2 ;;
+        esac
+        [ "$concurrency" -gt 0 ] || concurrency=1
+        for index in "${selected_indices[@]}"; do
+            archive_path="${history_files[$index]}"
+            archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
+            while [ "$active_count" -ge "$concurrency" ]; do
+                wait_pid="${batch_pids[0]}"
+                if wait "$wait_pid"; then
+                    wait_status=0
+                else
+                    wait_status=$?
+                fi
+                if [ "$wait_status" -eq 0 ]; then
+                    restored_count=$((restored_count + 1))
+                    restored_archives+=("${batch_pid_archives[$wait_pid]}")
+                    restored_sessions+=("${batch_pid_sessions[$wait_pid]}")
+                    trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                else
+                    message_line "Restore failed: ${batch_pid_sessions[$wait_pid]:-archive}"
+                fi
+                unset 'batch_pid_archives[$wait_pid]' 'batch_pid_sessions[$wait_pid]'
+                batch_pids=("${batch_pids[@]:1}")
+                active_count=$((active_count - 1))
+            done
+            (restore_archive "$archive_path" "$batch_operation_id" true >/dev/null 2>&1) &
+            wait_pid=$!
+            batch_pids+=("$wait_pid")
+            batch_pid_archives["$wait_pid"]="$archive_path"
+            batch_pid_sessions["$wait_pid"]="$archive_session"
+            active_count=$((active_count + 1))
+        done
+        while [ "$active_count" -gt 0 ]; do
+            wait_pid="${batch_pids[0]}"
+            if wait "$wait_pid"; then
+                wait_status=0
+            else
+                wait_status=$?
+            fi
+            if [ "$wait_status" -eq 0 ]; then
+                restored_count=$((restored_count + 1))
+                restored_archives+=("${batch_pid_archives[$wait_pid]}")
+                restored_sessions+=("${batch_pid_sessions[$wait_pid]}")
+                trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+            else
+                message_line "Restore failed: ${batch_pid_sessions[$wait_pid]:-archive}"
+            fi
+            unset 'batch_pid_archives[$wait_pid]' 'batch_pid_sessions[$wait_pid]'
+            batch_pids=("${batch_pids[@]:1}")
+            active_count=$((active_count - 1))
+        done
+        if [ "$restored_count" -gt 0 ]; then
+            target_session="${restored_sessions[0]}"
+            restore_batch_finalize "$batch_operation_id" "$target_session" "$restored_count" "$selected_count" "${restored_archives[@]}" || true
+        else
+            restore_batch_mode=false
+            sidebar_operation_finish failed "$batch_operation_id" || true
+            tmux set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
+        fi
+        batch_duration_us=$(( $(metrics_now_us) - batch_start ))
+        [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=complete operation_id=$batch_operation_id selected=$selected_count restored=$restored_count concurrency=$concurrency duration_us=$batch_duration_us"
+        trace_event "restore.batch.end operation_id=$batch_operation_id selected=$selected_count restored=$restored_count duration_us=$batch_duration_us"
+    fi
     if [ "$restored_count" -ne "$selected_count" ]; then
         trace_event "history.restore.summary selected=$selected_count restored=$restored_count result=incomplete"
         message_line "Restore incomplete: $restored_count/$selected_count"
@@ -5807,7 +6054,13 @@ run_tui()
     mark_session_managed "$current_session" || true
     set_sidebar_enabled 1
     install_sidebar_hooks
-    sidebar_operation_set idle startup
+    # A newly provisioned sidebar can start while an archive restore owns the
+    # shared operation. Do not let its startup initialization erase that
+    # operation before the parent finalizer completes.
+    case "$(sidebar_operation_state)" in
+        ''|idle:*) sidebar_operation_set idle startup ;;
+        *) trace_event "operation.state.skip state=$(sidebar_operation_state) reason=sidebar-startup" ;;
+    esac
     trace_event "sidebar.collect.begin pane=${TMUX_PANE:-none}"
     collect_sessions
     trace_event "sidebar.collect.end pane=${TMUX_PANE:-none}"

@@ -7,6 +7,39 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-08-02 - fresh user tmux visible batch restore verification
+
+- 새로 시작한 사용자 tmux session `0`에서 기존 session을 보존한 채 6개 archive를
+  `o → a → Enter`로 visible 복원했다.
+- 6개 session과 각 session의 sidebar 1개는 모두 생성됐고 known abort/error 문자열은
+  없었다. 그러나 복원 완료 후 일부 sidebar snapshot에는 `select-all-2/3` 행이
+  누락되고 다른 sidebar에는 전체 6개 행이 보여, batch refresh fan-out stale-row
+  문제가 남아 있음을 확인했다.
+- 테스트 session은 종료하고 사용자 session `0`으로 복귀했다.
+
+## 2026-08-02 - batch restore sidebar snapshot repair
+
+- batch restore finalize에서 기존 managed sidebar 전체에 직접 refresh signal을 보내고,
+  모든 sidebar가 managed session 목록·`sessions` 헤더·selection marker를 표시할 때까지
+  완료로 인정하도록 보강했다.
+- 기존 adapter 조회가 병렬 restore 중 지연되는 문제를 피하기 위해 batch refresh는
+  pane snapshot을 한 번 읽어 직접 signal하고, snapshot barrier도 고정된 pane 목록을
+  사용한다.
+- 전용 attached-PTY 6개 전체복원에서 6/6, refresh barrier 1회 PASS, known error 0건을
+  확인했다. batch 총 시간은 동시성 4 기준 약 17.5초, finalize 약 7.1초였다.
+- keyboard E2E action timeout은 환경변수로 조정 가능하게 했다
+  (`TMUX_KEYBOARD_E2E_ACTION_TIMEOUT_SECONDS`, 기본 20초).
+
+## 2026-08-02 - fresh user tmux post-repair verification
+
+- 새 사용자 tmux session `0`에서 6개 `visible-recheck` archive를 생성하고 실제
+  sidebar의 `o → a → Enter`로 복원했다.
+- 복원된 6개 sidebar 모두에서 기존 session과 `visible-recheck-1~6` 전체 행 및
+  각 session selection marker를 확인했다. 이전에 관찰된 stale row 누락은 재현되지
+  않았고 longjmp/abort/segfault도 없었다.
+- 테스트 session과 생성 archive는 정리했으며 사용자 기존 `0`, `aaaa`, `bbbb`, `ccc`
+  session은 보존했다.
+
 ## 2026-08-02 - 반복 history restore와 sidebar provision race 보강
 
 - `o` history 화면에서 archive 하나를 복원한 뒤에도 history view를 유지하도록
@@ -5030,3 +5063,8 @@
   목록을 다시 수집하도록 수정했다.
 - private attached-PTY와 사용자 `/dev/pts/0` live에서 `o` → Enter 후 `sessions` header
   1개, history footer 0개를 확인했다.
+- 2026-08-02 batch archive restore optimization: 다중 archive restore를 prepare/finalize
+  경로로 분리하고 기본 동시성 2로 preparation을 병렬화했다. attached-PTY 6개
+  전체선택 restore는 6/6 및 known error 0건, 약 28.5초에서 약 21.7초로 단축됐다.
+  동시성 3은 timeout 경계로 기본 채택하지 않았으며 duplicate sidebar reconcile은
+  후속 serialization 과제로 추적한다.
