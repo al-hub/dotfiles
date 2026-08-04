@@ -50,6 +50,7 @@
 - `tests/tmux-single-sidebar/test-keyboard-e2e-window-local-switch.sh`: attached PTY window-local session switch contract
 - `tests/tmux-single-sidebar/test-window-local-lifecycle-contract.sh`, `test-window-local-multi-client.sh`: archive/lifecycle와 linked-window/multi-client 경계 contract
 - `docs/tmux-window-local-test-plan.md`: window-local sidebar 테스트 경계·정량 기준·RED/GREEN 정책
+- `docs/tmux-sidebar-test-matrix.md`: 기존 sidebar 테스트의 Gate A~E 분류, 변경 범위별 최소 실행 세트와 승격 기준
 - `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
 - `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
 - `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit

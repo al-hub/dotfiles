@@ -7,6 +7,72 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-08-04 - Gate C multi-client/lifecycle 완료
+
+- 다중 client owner, window-local lifecycle, linked-window, managed session,
+  hook target, metadata, failure injection, archive/restore conflict 경계를
+  timestamp debug/trace ON으로 검증했다.
+- `toggle_current_sidebar`에 owner client guard를 추가해 owner가 아닌 client나
+  client context가 없는 background 실행이 shared sidebar를 닫지 않도록 했다.
+- multi-client 테스트는 stale 가상 tty 대신 실제 owner client를 사용하도록 정리했고,
+  현재 window-local contract와 맞지 않던 metadata 테스트 기대값을 수정했다.
+- Gate C 전체 유효 시나리오 PASS. external attach는 owner policy가 사전에 redirect하고,
+  target deletion 및 restore name collision은 operation precondition conflict로 검증됐다.
+
+## 2026-08-04 - Gate B sidebar disappearance race repair and diagnostics
+
+- attached-PTY trace에서 client switch 직후 `select-layout/window-resized` hook과
+  겹쳐 target sidebar pane이 사라지고 `switch.sidebar-focus-failed`로 종료되는
+  race를 확인했다. layout reconcile 직후 pane 안정성을 bounded 확인하고, 실제
+  부재일 때만 target sidebar를 재-provision하도록 최소 복구를 추가했다.
+- transition 중 사용자가 입력한 유효한 sidebar selection을 session refresh가
+  current session으로 덮어쓰던 race도 보존 경로로 수정했다.
+- `TMUX_SESSION_LAUNCHER_DEBUG=1`/`TRACE=1` timestamp 로그와 파일 경로를 문서화하고,
+  pane-reorder 테스트의 window-local sidebar 계약 및 복원 직후 sidebar focus 경계를
+  보강했다.
+- attached-PTY full E2E 3회 연속 PASS와 Gate B 주요 시나리오를 재검증했다.
+
+## 2026-08-02 - sidebar 테스트 실행 체계 정리
+
+- 기존 `tests/tmux-single-sidebar` 테스트를 빠른 계약(Gate A), isolated attached-PTY
+  기능 회귀(Gate B), multi-client/lifecycle(Gate C), 전환 관측·성능(Gate D),
+  사용자-visible 최종 검증(Gate E)로 분류했다.
+- sidebar 폭 저장, 6개 archive 복원 cardinality, cold provisioning readiness와
+  실패 artifact에서 현재 보강이 필요한 assertion을 정리했다.
+- pane 소멸의 근본 수정은 후순위로 두되, live observer의 pane identity/content/layout
+  invariant와 첫 실패 trace 보존은 계속 승격 기준에 포함했다.
+- 상세 실행표는 `docs/tmux-sidebar-test-matrix.md`에 추가했다.
+
+## 2026-08-02 - target sidebar cold-start readiness race repair
+
+- isolated attached-PTY multi-window 회귀에서 target sidebar pane은 생성됐지만
+  TUI readiness option이 아직 1이 되기 전에 `ensure_target_sidebar_window`가
+  `verify-failed`로 전환을 중단하는 race를 재현했다.
+- 기존 pane이 존재하고 dead 상태가 아닌 경우 bounded readiness wait를 거친 뒤
+  검증하도록 최소 수정했다. 이미 ready인 전환의 hot path는 그대로 유지한다.
+- direct-layout, arbitrary-topology, history-select-all은 수정 전에도 PASS했으며,
+  multi-window topology는 수정 후 재검증한다.
+- multi-window attached-PTY fixture의 session 이름이 sidebar 폭에서 잘려 marker
+  비교를 방해하던 테스트 데이터도 폭에 맞는 짧은 이름으로 정리했다.
+
+## 2026-08-02 - suppress active-window provisioning during restore
+
+- multi-window restore trace에서 topology guard 중에도 `sync_active_window` hook이
+  restore worker의 명시적 sidebar provision과 경쟁하는 것을 확인했다.
+- restore topology guard가 활성화된 동안 active-window hook을 건너뛰도록 수정해
+  duplicate sidebar reconcile과 stale metadata 생성을 막았다.
+
+## 2026-08-02 - provision every restored window-local sidebar
+
+- multi-window restore가 session-level helper로 첫 window만 sidebar를 provision해
+  두 번째 window의 archived full layout을 sidebar 없이 적용하던 문제를 확인했다.
+- restore 대상 window 전체에 sidebar를 provision하고, non-batch restore에서는 각
+  pane의 readiness를 확인한 뒤 archived sidebar layout을 적용하도록 보강했다.
+- multi-window test의 pane labeling helper가 snapshot 직전에 active pane을 바꾸지
+  않도록 labeling 전후 active pane을 보존한다.
+- rapid operations test 반복 경계에 operation settle, sidebar focus, Escape action
+  generation barrier를 추가해 이전 `ESC`와 다음 `c` 입력이 결합되지 않도록 했다.
+
 ## 2026-08-02 - fresh user tmux visible batch restore verification
 
 - 새로 시작한 사용자 tmux session `0`에서 기존 session을 보존한 채 6개 archive를
@@ -5093,3 +5159,28 @@
   전체선택 restore는 6/6 및 known error 0건, 약 28.5초에서 약 21.7초로 단축됐다.
   동시성 3은 timeout 경계로 기본 채택하지 않았으며 duplicate sidebar reconcile은
   후속 serialization 과제로 추적한다.
+2026-08-02
+- Multi-window regression logging now records active panes immediately before semantic labeling, separating restore focus drift from test-fixture labeling effects.
+- Restore trace now records each window's active pane after client switch and immediately before completion to isolate focus overwrite timing.
+- Archive now falls back to the live full-window layout when sidebar layout metadata has not reached the window option yet, preserving sidebar and active-pane restore metadata.
+- Restore now preserves each recreated work window's active pane ID and reselects it after client switch without touching layout or sidebar provisioning.
+- Rapid attached-PTY regression coverage now selects the newly deleted archive explicitly after history aligns to the current session, preventing a restore-name collision with an already restored archive.
+- Session switch now performs a bounded post-switch sidebar presence recheck and repair. This covers the narrow client-session-changed/after-select-window race that could leave a target window with one fewer sidebar after returning from a horizontal split session.
+- Session switch now explicitly focuses the ready target sidebar before returning control to the TUI, preventing the next arrow/Enter byte from landing in a retained work pane.
+- Post-switch sidebar repair now includes a short stability barrier after `client-session-changed`/`after-select-window`; a pane that disappears immediately after the first check is reprovisioned before switch success is published.
+- Debug output now uses microsecond timestamps with PID/pane identity, and [docs/tmux-sidebar-debugging.md](docs/tmux-sidebar-debugging.md) documents explicit on/off controls and attached-PTY artifact collection.
+- Session switching now rejects duplicate transitions while another window-local sidebar owns the active transition, preventing concurrent Enter handlers from invalidating target sidebar metadata.
+- Window-local switch regression now reports latency above 500ms as a Gate D performance warning while still requiring the functional client/sidebar invariant for Gate B.
+- Attached-PTY navigation barriers now treat per-window action generation as advisory when the active sidebar is still ready; concrete selection/session/archive assertions remain authoritative. The main repeat scenario also retries toward the visible selection marker.
+- Updated the active-window contract regression to match the window-local sidebar design: switching windows preserves the original sidebar and provisions one distinct sidebar in the target window.
+- Session switch now repairs an absent managed source-window sidebar after target readiness, closing the source-pane disappearance gap without changing the normal existing-pane path.
+- Attached-PTY test cleanup now tolerates a late observer artifact write after a passed scenario, preventing a cleanup-only `Directory not empty` race from masking functional results.
+- Multi-window attached-PTY return now aligns to the visible target marker before Enter, avoiding a stale shared selection row after a peer session switch.
+- Gate B revalidation: full repeat passed 3 consecutive runs and the isolated multi-window/rapid reruns passed, but the strict full-matrix batch still intermittently observed a direct-layout work-pane geometry change after session round-trip. Gate B is therefore not promoted yet; `/tmp/gate-b-final.log` and `/tmp/gate-b-matrix-final.log` retain the timestamped run output.
+- Native switch now snapshots the target layout and reconciles it only when tmux changes the detached target geometry during switch-client; unchanged switches retain the fast path.
+- Split-cycle attached-PTY setup now aligns to the visible `split-cycle-1` marker before Enter, eliminating a fixed-arrow selection race in repeated Gate B runs.
+- Split-cycle geometry validation now compares semantic work-pane geometry rather than tmux's checksum-bearing layout string; the raw layout remains in timestamped diagnostics.
+- Split-cycle now verifies/retries sidebar focus after the public prefix-o rotation, preventing an active work pane from being mistaken for an input-ready sidebar.
+- Latest split-cycle trace still captures the selected target reverting to `keyboard-anchor` during the async refresh-to-Enter interval. Gate B remains incomplete pending preservation of an explicit user selection across refresh; artifact `/tmp/dotfiles-single-sidebar-keyboard-3118053` records the boundary.
+- Sidebar refresh no longer overwrites a valid explicit selection on a delayed client-attach transition; actual client switches still align selection to the current session. Reset/preserve decisions now emit timestamped trace events.
+- Delayed client-list changes now also skip the second `align_selection_to_session` path when a valid explicit selection exists, closing the remaining selection-to-anchor reset window.

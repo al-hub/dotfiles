@@ -33,7 +33,7 @@ for attempt in $(seq 1 50); do
 done
 sleep 0.5
 
-sidebar_before="$("${TMUX[@]}" list-panes -a -F '#{pane_id}|#{pane_title}' | awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
+sidebar_before="$("${TMUX[@]}" list-panes -t '=hook-a:0' -F '#{pane_id}|#{pane_title}' | awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
 "${TMUX[@]}" select-window -t '=hook-a:1'
 for attempt in $(seq 1 50); do
     sidebar_window="$("${TMUX[@]}" list-panes -t '=hook-a:1' -F '#{pane_id}|#{pane_title}' | awk -F '|' '$2 == "dotfiles-session-sidebar" { print $1; exit }')"
@@ -41,7 +41,9 @@ for attempt in $(seq 1 50); do
     sleep 0.05
 done
 
-[ "$sidebar_before" = "$sidebar_window" ]
-[ "$("${TMUX[@]}" list-panes -t '=hook-a:0' -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 0 ]
-[ "$("${TMUX[@]}" list-panes -a -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 1 ]
-printf 'PASS: active window hook moves the same sidebar pane and preserves uniqueness\n'
+[ -n "$sidebar_before" ]
+[ "$sidebar_before" != "$sidebar_window" ]
+[ "$("${TMUX[@]}" list-panes -t '=hook-a:0' -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 1 ]
+[ "$("${TMUX[@]}" list-panes -t '=hook-a:1' -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 1 ]
+[ "$("${TMUX[@]}" list-panes -a -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 2 ]
+printf 'PASS: active window hook provisions one local sidebar per managed window\n'

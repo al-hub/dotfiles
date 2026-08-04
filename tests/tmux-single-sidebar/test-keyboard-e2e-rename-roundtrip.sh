@@ -22,6 +22,6 @@ select_session_by_name rename-peer
 select_session_by_name 'renamed session'
 wait_until "renamed session remains available" "wait_session_exists 'renamed session'"
 wait_until "renamed session selected after switch" "wait_session 'renamed session'"
-wait_until "single sidebar after rename switch" "wait_sidebar_count 1"
+wait_until "sidebar after rename switch" sidebar_present
 [ "$(sidebar_pane_id)" = "$before_sidebar" ]
 echo "PASS: attached-PTY session rename survives switch round-trip"

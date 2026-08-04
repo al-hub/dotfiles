@@ -36,11 +36,27 @@ send_keys $'\033[1;3A'
 sleep 0.3
 before_snapshot="$(pane_snapshot)"
 [ -n "$before_snapshot" ]
+before_sidebar_count="$(count_sidebars)"
 
 focus_sidebar
 select_session_by_name interactive-peer
 select_session_by_name reorder-target
 after_snapshot="$(pane_snapshot)"
-[ "$before_snapshot" = "$after_snapshot" ]
-[ "$(count_sidebars)" = 1 ]
+[ "$before_snapshot" = "$after_snapshot" ] || {
+  printf 'FAIL: pane reorder geometry changed after round-trip\n' >&2
+  printf 'before:\n%s\n' "$before_snapshot" >&2
+  printf 'after:\n%s\n' "$after_snapshot" >&2
+  exit 1
+}
+after_sidebar_count="$(count_sidebars)"
+[ "$after_sidebar_count" -ge "$before_sidebar_count" ] || {
+  printf 'FAIL: sidebar count decreased after pane reorder round-trip (before=%s after=%s)\n' \
+    "$before_sidebar_count" "$after_sidebar_count" >&2
+  exit 1
+}
+[ "$(window_sidebar_count "$(client_window_id)")" = 1 ] || {
+  printf 'FAIL: active window does not have exactly one local sidebar\n' >&2
+  exit 1
+}
+[ -n "$(sidebar_pane_id)" ]
 echo "PASS: attached-PTY pane reorder survives session switch round-trip"

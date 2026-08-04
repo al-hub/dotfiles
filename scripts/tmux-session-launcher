@@ -901,6 +901,10 @@ sync_sidebar_focus()
 sync_active_window()
 {
     local active_session active_window hook_client="${1:-}" local_pane
+    if restore_topology_guard_active; then
+        trace_event "sidebar.hook.sync.skip reason=restore-topology-guard"
+        return 0
+    fi
     if transition_is_active; then
         trace_event "sidebar.hook.sync.skip reason=transition-active state=$(sidebar_tmux_cmd show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
         transition_defer_hook_sync active-window
@@ -1736,6 +1740,15 @@ ensure_target_sidebar_window()
             printf '%s\n' "$pane_id"
             return 0
         fi
+        # A new session hook can publish the pane metadata before the sidebar
+        # process has installed its readiness option. Do not treat that short
+        # cold-start interval as a missing target; wait within the existing
+        # bounded provisioning budget and verify the pane again below.
+        trace_event "sidebar.target.ensure.wait session=$session_name_value window=$window_id pane=$pane_id ready=${ready:-none} dead=${pane_dead:-none} pid=${pane_pid:-none}"
+        wait_for_sidebar_window_ready "$window_id" || {
+            trace_event "sidebar.target.ensure.end session=$session_name_value window=$window_id pane=$pane_id result=not-ready-existing"
+            return 1
+        }
     fi
     if [ -z "$pane_id" ]; then
         trace_event "sidebar.target.ensure.begin session=$session_name_value window=$window_id width=$width"
@@ -1915,7 +1928,15 @@ ensure_sidebar_for_session()
 
 toggle_current_sidebar()
 {
-    local existing_count
+    local existing_count owner_client current_client
+    owner_client="$(sidebar_owner_client)"
+    if [ -n "$owner_client" ]; then
+        current_client="$(current_client_tty || true)"
+        if [ -z "$current_client" ] || [ "$current_client" != "$owner_client" ]; then
+            trace_event "sidebar.toggle.skip reason=non-owner owner=$owner_client client=${current_client:-none}"
+            return 0
+        fi
+    fi
     if sidebar_provisioning_active; then
         trace_event "sidebar.toggle.suppressed reason=provisioning"
         return 0
@@ -2295,7 +2316,8 @@ wait_for_managed_sidebar_snapshot()
 
 switch_session()
 {
-    local session_name="$1" client_tty target_window sidebar_pane sidebar_pid
+    local session_name="$1" client_tty target_window source_window sidebar_pane sidebar_pid
+    local target_layout_before target_layout_after
     local source_session="$current_session" operation_id metrics_start=""
     local client_switch_us=0 switch_metrics_start_us=0 switch_phase_start_us=0
     local selection_sync_ready=false selection_sync_ack=""
@@ -2307,12 +2329,21 @@ switch_session()
     client_tty="$(current_client_tty || true)"
     [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_client_tty_for_session "$source_session" || true)"
     target_window="$(sidebar_tmux_session_window "$session_name" || true)"
+    source_window="$(sidebar_tmux_session_window "$source_session" || true)"
     if [ -z "$client_tty" ] || [ -z "$target_window" ]; then
         message_line "session switch failed: target session is not available"
         trace_event "switch.abort reason=target-session-missing session=$session_name window=${target_window:-none}"
         return 1
     fi
     [ "$source_session" = "$session_name" ] && return 0
+    # Multiple window-local sidebar processes observe the same shared
+    # selection transition. Only the first process may own the client switch;
+    # a duplicate Enter must not start a second transaction that can race
+    # sidebar provision/reconcile and invalidate target pane metadata.
+    if transition_is_active; then
+        trace_event "switch.skip reason=transition-active source=$source_session target=$session_name state=$(tmux show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
+        return 0
+    fi
     new_sidebar_operation_id
     operation_id="$sidebar_operation_id_result"
     # Publish before target readiness work. A target sidebar can already have
@@ -2349,6 +2380,8 @@ switch_session()
     fi
     transition_phase_set VERIFY_TARGET_SIDEBAR "$operation_id"
     sidebar_pid="$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}' 2>/dev/null || true)"
+    target_layout_before="$(tmux display-message -p -t "$target_window" '#{window_layout}' 2>/dev/null || true)"
+    trace_event "switch.target-layout.snapshot session=$session_name window=$target_window layout=${target_layout_before:-none}"
     trace_event "switch.target-sidebar.ready session=$session_name window=$target_window pane=$sidebar_pane pid=${sidebar_pid:-none}"
     if wait_for_sidebar_selection_sync "$session_name" "$target_window" "$sidebar_pane" "$sidebar_pid"; then
         selection_sync_ready=true
@@ -2364,26 +2397,120 @@ switch_session()
     fi
     [ -n "$METRICS_FILE" ] && client_switch_us=$(( $(metrics_now_us) - metrics_start ))
     # A client-session-changed/after-select-window hook can race the final
-    # switch boundary while tmux is reflowing a multi-pane target. If that
-    # race removed the target's local sidebar, repair the target window before
-    # publishing switch success. This is deliberately bounded and only runs
-    # when the pane is absent; normal switches keep the hot path unchanged.
-    if [ -z "$(sidebar_window_pane "$target_window" || true)" ]; then
-        trace_event "switch.sidebar-repair.begin session=$session_name window=$target_window reason=target-pane-absent"
+    # switch boundary while tmux is reflowing a multi-pane target. A single
+    # presence check can lose that race between the check and switch finish,
+    # leaving the user on a target with no sidebar. Recheck a small bounded
+    # number of times and repair only when the pane is absent; normal switches
+    # still take the fast path without provisioning or sleeping.
+    for repair_attempt in 1 2 3 4 5; do
+        sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+        if [ -n "$sidebar_pane" ] && sidebar_window_ready "$target_window"; then
+            # Let the client-session-changed/after-select-window hook settle.
+            # It can remove a just-visible target pane after the first check.
+            sleep 0.05
+            stable_sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+            if [ "$stable_sidebar_pane" = "$sidebar_pane" ] &&
+                sidebar_window_ready "$target_window"; then
+                trace_event "switch.sidebar-repair.stable session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
+                break
+            fi
+            sidebar_pane="$stable_sidebar_pane"
+        fi
+        trace_event "switch.sidebar-repair.begin session=$session_name window=$target_window attempt=$repair_attempt reason=target-pane-absent"
         if provision_sidebar_window "$target_window" "$(sidebar_width)" &&
             wait_for_sidebar_window_ready "$target_window"; then
             sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
             sidebar_pid="$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}' 2>/dev/null || true)"
-            trace_event "switch.sidebar-repair.end session=$session_name window=$target_window pane=$sidebar_pane result=ready"
-        else
-            trace_event "switch.sidebar-repair.end session=$session_name window=$target_window result=failed"
+            trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
+            break
         fi
+        trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt result=failed"
+        sleep 0.02
+    done
+    # tmux can reflow a detached multi-pane target during switch-client even
+    # though the target pane set is unchanged. Restore only when the actual
+    # layout changed; normal switches keep the zero-cost path.
+    target_layout_after="$(tmux display-message -p -t "$target_window" '#{window_layout}' 2>/dev/null || true)"
+    if [ -n "$target_layout_before" ] && [ -n "$target_layout_after" ] &&
+        [ "$target_layout_before" != "$target_layout_after" ]; then
+        trace_event "switch.target-layout.reconcile.begin session=$session_name window=$target_window before=$target_layout_before after=$target_layout_after"
+        if tmux select-layout -t "$target_window" "$target_layout_before" >/dev/null 2>&1; then
+            target_layout_after="$(tmux display-message -p -t "$target_window" '#{window_layout}' 2>/dev/null || true)"
+            trace_event "switch.target-layout.reconcile.end session=$session_name window=$target_window after=${target_layout_after:-none} result=$([ "$target_layout_after" = "$target_layout_before" ] && printf ok || printf mismatch)"
+        else
+            trace_event "switch.target-layout.reconcile.end session=$session_name window=$target_window result=select-layout-failed"
+        fi
+    fi
+    # A concurrent tmux layout hook can remove the target sidebar while the
+    # detached window is being reconciled. Repair only this observed failure;
+    # the normal path keeps the existing pane and does no extra provisioning.
+    # Let after-select-layout/window-resized hooks settle before deciding that
+    # the pane survived; tmux can publish the new layout before the pane map is
+    # stable.
+    for target_layout_stability_attempt in 1 2 3; do
+        sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+        [ -n "$sidebar_pane" ] && break
+        sleep 0.05
+    done
+    if [ -z "$sidebar_pane" ]; then
+        trace_event "switch.target-sidebar.repair-after-layout.begin session=$session_name window=$target_window"
+        for target_layout_repair_attempt in 1 2 3; do
+            provision_sidebar_window "$target_window" "$(sidebar_width)" || true
+            wait_for_sidebar_window_ready "$target_window" || true
+            sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+            if [ -n "$sidebar_pane" ] && sidebar_window_ready "$target_window"; then
+                break
+            fi
+            sleep 0.05
+        done
+        trace_event "switch.target-sidebar.repair-after-layout.end session=$session_name window=$target_window attempt=${target_layout_repair_attempt:-0} pane=${sidebar_pane:-none} result=$([ -n "$sidebar_pane" ] && printf ready || printf failed)"
+    fi
+    # Window-local sidebars must remain provisioned in managed source windows
+    # as well as in the target. A client switch can expose a narrow hook/pane
+    # teardown race where the source sidebar disappears while the target is
+    # made ready. Repair only the absent source pane; an existing source pane
+    # stays on the zero-cost path.
+    if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ] &&
+        session_is_managed "$source_session" &&
+        [ -z "$(sidebar_window_pane "$source_window" || true)" ]; then
+        trace_event "switch.source-sidebar.repair.begin session=$source_session window=$source_window"
+        source_repair_ready=false
+        for source_repair_attempt in 1 2 3 4 5; do
+            source_sidebar_pane="$(sidebar_window_pane "$source_window" || true)"
+            if [ -z "$source_sidebar_pane" ]; then
+                provision_sidebar_window "$source_window" "$(sidebar_width)" || true
+                wait_for_sidebar_window_ready "$source_window" || true
+                source_sidebar_pane="$(sidebar_window_pane "$source_window" || true)"
+            fi
+            if [ -n "$source_sidebar_pane" ] && sidebar_window_ready "$source_window"; then
+                sleep 0.1
+                if [ "$source_sidebar_pane" = "$(sidebar_window_pane "$source_window" || true)" ] &&
+                    sidebar_window_ready "$source_window"; then
+                    source_repair_ready=true
+                    break
+                fi
+            fi
+            sleep 0.05
+        done
+        trace_event "switch.source-sidebar.repair.end session=$source_session window=$source_window pane=${source_sidebar_pane:-none} result=$([ "$source_repair_ready" = true ] && printf ready || printf failed)"
     fi
     # tmux may reflow a detached target to its smaller cached width during
     # switch-client. Re-assert the canonical width after the client is on the
     # target so subsequent switches do not inherit the reflowed width.
     enforce_sidebar_width "$sidebar_pane" "$(sidebar_width)" ||
         trace_event "switch.sidebar-width-unresolved session=$session_name pane=$sidebar_pane"
+    # A target window can retain its previous work-pane focus across
+    # switch-client. The selection loop remains in the sidebar after a
+    # successful session switch, so make that input boundary explicit.
+    if [ -n "$sidebar_pane" ]; then
+        tmux select-pane -t "$sidebar_pane" >/dev/null 2>&1 || {
+            transition_context_finish failed sidebar-focus "$operation_id"
+            sidebar_operation_set idle "$operation_id"
+            trace_event "switch.abort reason=sidebar-focus-failed session=$session_name window=$target_window pane=$sidebar_pane"
+            return 1
+        }
+        trace_event "switch.sidebar-focus session=$session_name window=$target_window pane=$sidebar_pane"
+    fi
     if ! wait_for_sidebar_input_ready "$target_window" "$sidebar_pane"; then
         transition_context_finish failed sidebar-input-unready "$operation_id"
         sidebar_operation_set idle "$operation_id"
@@ -3064,13 +3191,23 @@ collect_sessions()
     fi
 
     if [ "$is_my_session_attached" = "true" ] && [ "${was_my_session_attached:-}" != "true" ]; then
-        selected_session="$my_session"
-        old_selected="$my_session"
+        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+            selected_session="$my_session"
+            old_selected="$my_session"
+            trace_event "selection.refresh.reset reason=client-session-attached session=$my_session"
+        else
+            trace_event "selection.refresh.preserve reason=client-session-attached selected=$selected_session current=$my_session"
+        fi
         mark_full_render_required client-session-attached
     fi
     if [ "$client_switch_occurred" = "true" ] && [ "$client_session_is_my_session" = "true" ]; then
-        selected_session="$my_session"
-        old_selected="$my_session"
+        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+            selected_session="$my_session"
+            old_selected="$my_session"
+            trace_event "selection.refresh.reset reason=client-list-change session=$my_session"
+        else
+            trace_event "selection.refresh.preserve reason=client-list-change selected=$selected_session current=$my_session"
+        fi
         mark_full_render_required client-session-switch
     fi
     was_my_session_attached="$is_my_session_attached"
@@ -3459,14 +3596,21 @@ EOF
         # selection can therefore belong to the session we just left. Align
         # the marker with the newly observed current session before rendering
         # so returning to a multi-window target never leaves a stale peer
-        # selected for the next Enter/delete/archive action.
-        found_selected=false
+        # selected for the next Enter/delete/archive action. During an active
+        # transition, however, preserve a valid physical selection update
+        # that arrived after switch-client and before this refresh completed.
+        if transition_is_active && [ -n "${selected_session:-}" ] &&
+            session_exists "$selected_session" && [ "$selected_session" != "$old_current_session" ]; then
+            trace_event "selection.refresh.preserve reason=transition-selection selected=$selected_session current=$current_session"
+        else
+            found_selected=false
+        fi
         for index in "${!session_names[@]}"; do
             if [ "${session_names[$index]}" = "$old_current_session" ] ||
                 [ "${session_names[$index]}" = "$current_session" ]; then
                 session_animation_refresh_indexes+=("$index")
             fi
-            if [ "${session_names[$index]}" = "$current_session" ]; then
+            if [ "${session_names[$index]}" = "$current_session" ] && [ "$found_selected" != true ]; then
                 selected_index="$index"
                 selected_session="$current_session"
                 found_selected=true
@@ -3492,7 +3636,12 @@ EOF
 
     selected_session="${session_names[$selected_index]}"
     if [ "$client_switch_occurred" = "true" ] && [ "$client_session_is_my_session" = "true" ]; then
-        align_selection_to_session "$my_session"
+        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+            align_selection_to_session "$my_session"
+            trace_event "selection.refresh.align reason=client-list-change session=$my_session"
+        else
+            trace_event "selection.refresh.align-skip reason=valid-selection selected=$selected_session current=$my_session"
+        fi
     fi
     ensure_selection_visible
     trace_event "collect.sessions.end count=${#session_names[@]} selected=$selected_session"
@@ -4420,7 +4569,8 @@ debug_log()
     fi
 
     {
-        printf '%s %s\n' "$(date '+%F %T')" "$*"
+        printf '%s pid=%s pane=%s %s\n' "$(debug_now_us)" "${BASHPID:-$$}" \
+            "${TMUX_PANE:-${SELF_PANE:-none}}" "$*"
     } >> "$debug_file" 2>/dev/null || true
 }
 
@@ -4806,10 +4956,20 @@ archive_session()
             [ -n "$window_layout" ] || window_layout="-"
             window_created="${archive_window_created[$window_index]}"
             [ -n "$created_value" ] || created_value="$window_created"
-            window_pane_count="${archive_window_pane_counts["$window_index"]:-0}"
-            [ "$window_pane_count" -gt 0 ] || continue
-            window_count=$((window_count + 1))
-            original_window_layout="$window_layout"
+        window_pane_count="${archive_window_pane_counts["$window_index"]:-0}"
+        [ "$window_pane_count" -gt 0 ] || continue
+        window_count=$((window_count + 1))
+        # A sidebar may be fully live while its cached window option is still
+        # empty (for example immediately after a direct tmux layout change).
+        # Archive the live full-window layout as the fallback so restore can
+        # map the sidebar and active pane instead of provisioning a fresh
+        # sidebar and losing focus metadata.
+        if [ -n "${archive_window_sidebar_pane[$window_index]:-}" ] &&
+            [ -z "${archive_window_sidebar_layout[$window_index]:-}" ]; then
+            archive_window_sidebar_layout["$window_index"]="$(tmux display-message -p -t "=$session_name:$window_index" '#{window_layout}' 2>/dev/null || true)"
+            trace_event "archive.sidebar-layout.fallback session=$session_name window=$window_index layout=${archive_window_sidebar_layout[$window_index]:-none}"
+        fi
+        original_window_layout="$window_layout"
             window_layout="$(prepare_window_for_archive_snapshot "$session_name" "$window_index" "$window_layout")"
             [ -n "$window_layout" ] || window_layout="-"
             work_geometry="$(tmux show-option -wqv -t "=$session_name:$window_index" "$WORK_LAYOUT_GEOMETRY_OPTION" 2>/dev/null || true)"
@@ -5209,6 +5369,7 @@ restore_archive()
     declare -A restore_window_sidebar_panes=()
     declare -A restore_window_sidebar_active=()
     declare -A restore_window_sidebar_pane=()
+    declare -A restore_window_active_work_panes=()
     if [ -z "$restore_operation_id" ]; then
         new_sidebar_operation_id
         restore_operation_id="$sidebar_operation_id_result"
@@ -5390,6 +5551,7 @@ restore_archive()
                     trace_event "restore.window.end session=$restore_name index=$window_index target=$current_window_target name=$current_window"
                 fi
                 restore_window_work_panes["$window_index"]="$current_window_pane_ids"
+                restore_window_active_work_panes["$window_index"]="$current_window_active_pane"
                 current_window=""
                 current_window_target=""
                 current_window_pane_ids=""
@@ -5426,6 +5588,23 @@ restore_archive()
         restore_abort ensure-sidebar
         return 1
     fi
+    # A restored session can contain more than one window. The session-level
+    # helper provisions the first window only, so explicitly provision every
+    # restored target before applying each archived full-window layout.
+    for restore_window_target in "${restore_window_targets[@]}"; do
+        [ -n "$restore_window_target" ] || continue
+        if ! provision_sidebar_window "$restore_window_target" "$(sidebar_width)"; then
+            trace_event "restore.sidebar.provision.error session=$restore_name window=$restore_window_target"
+            restore_abort ensure-sidebar
+            return 1
+        fi
+        if [ "$restore_batch_mode" != true ] &&
+            ! wait_for_sidebar_window_ready "$restore_window_target"; then
+            trace_event "restore.sidebar.ready-timeout session=$restore_name window=$restore_window_target"
+            restore_abort ensure-sidebar-ready
+            return 1
+        fi
+    done
     # Restore is a cold path. Do not expose the restored session until every
     # local sidebar has rendered the restored session name and the active
     # window has a ready input boundary.
@@ -5475,6 +5654,20 @@ restore_archive()
             fi
         fi
         trace_event "restore.switch-client.end session=$restore_name"
+        for restore_window_index in "${!restore_window_targets[@]}"; do
+            restore_focus_target="${restore_window_active_work_panes[$restore_window_index]:-}"
+            [ -n "$restore_focus_target" ] || continue
+            tmux select-pane -t "$restore_focus_target" >/dev/null 2>&1 || {
+                restore_abort sidebar-focus
+                return 1
+            }
+            restore_focus_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}' 2>/dev/null | awk -F '|' '$2 == 1 { print $1; exit }')"
+            trace_event "restore.focus.after-switch target=${restore_window_targets[$restore_window_index]} expected=$restore_focus_target actual=${restore_focus_now:-none}"
+        done
+        for restore_window_index in "${!restore_window_targets[@]}"; do
+            restore_window_active_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}|#{pane_title}' 2>/dev/null | awk -F '|' '$2 == 1 { print; exit }')"
+            trace_event "restore.window-active phase=after-switch index=$restore_window_index target=${restore_window_targets[$restore_window_index]} active=${restore_window_active_now:-none}"
+        done
         restore_active_window="$(tmux display-message -p -t "$restore_client_tty" '#{window_id}' 2>/dev/null || true)"
         if [ -n "$restore_active_window" ]; then
             wait_for_sidebar_window_ready "$restore_active_window" || {
@@ -5490,6 +5683,10 @@ restore_archive()
             return 1
         fi
         trace_event "restore.history.end session=$restore_name"
+        for restore_window_index in "${!restore_window_targets[@]}"; do
+            restore_window_active_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}|#{pane_title}' 2>/dev/null | awk -F '|' '$2 == 1 { print; exit }')"
+            trace_event "restore.window-active phase=before-complete index=$restore_window_index target=${restore_window_targets[$restore_window_index]} active=${restore_window_active_now:-none}"
+        done
     fi
     if [ -n "$metrics_restore_start" ]; then
         metrics_write "op=restore phase=complete operation_id=$metrics_restore_operation_id session=$restore_name duration_us=$(( $(metrics_now_us) - metrics_restore_start )) sidebar_mode=$SIDEBAR_ASYNC_RESTORE"
