@@ -7,6 +7,32 @@
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 - 새 항목은 위에 추가합니다.
 
+## 2026-08-05 - Gate D native switch hook suppression
+
+- native session switch 직후 `select-layout`을 다시 호출하지 않고 layout 차이만
+  timestamp trace/debug로 기록하도록 변경했다. 전환 중 `after-select-layout` 및
+  `window-resized` hook 재진입과 중복 full render를 줄인다.
+- selection-sync가 진행 중인 geometry/topology invalidation은 full redraw 대신
+  delta 동기화를 우선하도록 조정했다.
+- `TMUX_SESSION_LAUNCHER_DEBUG=1`일 때 microsecond timestamp, PID, pane ID가
+  기록되고 기본값 `0`에서는 기록하지 않는 기존 on/off 계약을 유지한다.
+- 여러 window-local sidebar가 동시에 Enter를 처리하는 경쟁을 서버별 atomic
+  transition lock으로 직렬화하고, 종료된 소유 PID의 stale lock만 회수한다.
+- lock release/reclaim 시 PID sentinel을 먼저 제거하도록 수정해 정상 완료 후
+  lock directory가 남아 이후 전환을 영구 차단하던 결함을 제거했다.
+- render-cause observer가 debug event의 pane ID로 trace를 scope하도록 수정해
+  다른 sidebar의 비동기 render를 원인 후보로 섞지 않도록 했다.
+- detached window의 sidebar가 전역 `current_client_tty` fallback으로 owner client를
+  전환하던 결함을 수정했다. 이제 pane의 window에 실제 client가 연결된 경우에만
+  session switch를 시작한다.
+- live correlation observer가 `transition.finish` 이후의 정상 target force-refresh를
+  전환 중 full redraw로 오판하지 않도록 transaction 경계를 기준으로 집계한다.
+- native transition 성공 직후 target sidebar에서 발생하는 첫 geometry full render를
+  target-scoped one-shot pending marker로 coalesce하고, 소비 후 자동 해제하도록 했다.
+- 단일 client Gate D fixture에서는 detached interactive peer를 생성하지 않도록 해
+  multi-client 관측과 전환 latency 관측을 분리했다. multi-client coverage는 Gate C가
+  계속 담당한다.
+
 ## 2026-08-04 - Gate C multi-client/lifecycle 완료
 
 - 다중 client owner, window-local lifecycle, linked-window, managed session,
@@ -5184,3 +5210,26 @@
 - Latest split-cycle trace still captures the selected target reverting to `keyboard-anchor` during the async refresh-to-Enter interval. Gate B remains incomplete pending preservation of an explicit user selection across refresh; artifact `/tmp/dotfiles-single-sidebar-keyboard-3118053` records the boundary.
 - Sidebar refresh no longer overwrites a valid explicit selection on a delayed client-attach transition; actual client switches still align selection to the current session. Reset/preserve decisions now emit timestamped trace events.
 - Delayed client-list changes now also skip the second `align_selection_to_session` path when a valid explicit selection exists, closing the remaining selection-to-anchor reset window.
+# Gate D lifecycle diagnostics follow-up
+
+- Limited post-switch sidebar `SIGUSR2` fallback to cases where the target
+  content marker is not already rendered, reducing the pane-loss race observed
+  at the client-switch boundary.
+- Corrected live correlation observer identity checks to compare the target
+  sidebar pane/PID rather than the source pane, and scoped redraw detection to
+  the active transition operation.
+- Gate D live correlation remains open because repeated attached-PTY runs still
+  expose flaky selection/setup behavior; timestamped DEBUG/TRACE artifacts are
+  retained under `/tmp` for root-cause analysis.
+- Resolved source-session lookup from stale TUI cache by deriving it from the
+  owning pane/window, and require the target selection marker before skipping
+  the refresh fallback. A queued target force-refresh flag is consumed at
+  transition start; live observer termination still needs follow-up.
+- Separated `SIGUSR2` and `SIGWINCH` handlers from tmux IPC, rendering, and
+  tracing. Signal handlers now publish flags only; the main loop performs
+  selection/geometry work. Live correlation reached 10/10 and eliminated the
+  observed longjmp pane death in that suite.
+- Stabilized attached-PTY regression setup by waiting for transition settle
+  before the next selection, and added visible marker/input recovery traces.
+  Render-cause correlation completed 4/4 and a final live correlation run
+  completed 10/10.

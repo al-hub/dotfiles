@@ -7,6 +7,7 @@ set -euo pipefail
 
 SCENARIO_NAME=switch-render-cause
 export SCENARIO_NAME
+export TMUX_INTERACTIVE_CREATE_PEER=false
 export TMUX_SESSION_LAUNCHER_TRACE=1
 export TMUX_SESSION_LAUNCHER_DEBUG=1
 source "$(dirname -- "$BASH_SOURCE")/test-interactive-common.sh"
@@ -20,10 +21,25 @@ DEBUG_FILE="$RUN_DIR/debug.log"
 
 file_lines() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 
+transition_settled() {
+  local state
+  state="$(tmuxc show-option -gqv '@dotfiles_sidebar_transition' 2>/dev/null || true)"
+  case "$state" in
+    *result=running*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 setup_interactive_test
 create_session cause-a
 create_session cause-b
-select_session_by_name cause-a
+# This test measures render causality, not the setup transition. Establish
+# the starting client/window directly and wait for the visible marker so the
+# first measured Down+Enter cannot consume a stale setup event.
+tmuxc switch-client -c "$CLIENT_TTY" -t '=cause-a:'
+wait_until "initial render-cause session" "wait_session 'cause-a'"
+focus_sidebar
+wait_until "initial render-cause selection" "[ \"\$(sidebar_selected_name 2>/dev/null || true)\" = cause-a ]"
 
 : > "$TRACE_FILE"
 : > "$DEBUG_FILE"
@@ -31,7 +47,7 @@ select_session_by_name cause-a
 : > "$TIMELINE_FILE"
 
 classify_trace_history() {
-  local trace_file="$1" from_line="$2" to_line="$3" marker
+  local trace_file="$1" from_line="$2" to_line="$3" pane_id="$4" marker
   [ "$to_line" -gt "$from_line" ] || {
     printf '%s\n' unclassified
     return 0
@@ -62,7 +78,8 @@ classify_trace_history() {
         return 0
         ;;
     esac
-  done < <(sed -n "$((from_line + 1)),$to_line p" "$trace_file" 2>/dev/null | tac)
+  done < <(sed -n "$((from_line + 1)),$to_line p" "$trace_file" 2>/dev/null |
+    awk -v pane="$pane_id" 'pane == "" || $0 ~ ("pane=" pane " ")' | tac)
   printf '%s\n' unclassified
 }
 
@@ -73,6 +90,7 @@ normalize_render_reason() {
     enter-session-switch) printf '%s\n' enter-dispatch ;;
     force-refresh) printf '%s\n' force-refresh ;;
     history-restore|history-toggle|history-exit) printf '%s\n' layout-restore ;;
+    initial) printf '%s\n' initial ;;
     full-render-required) printf '%s\n' full-render-required ;;
     periodic-refresh) printf '%s\n' periodic-refresh ;;
     *) printf '%s\n' "" ;;
@@ -83,7 +101,7 @@ start_sampler() {
   local iteration="$1" trace_start="$2" debug_start="$3"
   (
     local debug_seen="$debug_start" trace_seen="$trace_start"
-    local trace_before_debug trace_now debug_now line candidate_pre candidate_observed timestamp
+    local trace_before_debug trace_now debug_now line candidate_pre candidate_observed timestamp pane_id
     while :; do
       trace_before_debug="$trace_seen"
       trace_now="$(file_lines "$TRACE_FILE")"
@@ -95,9 +113,10 @@ start_sampler() {
               timestamp="$(date +%s%N)"
               candidate_pre="$(normalize_render_reason "$line")"
               candidate_observed="$candidate_pre"
+              pane_id="$(printf '%s\n' "$line" | sed -n 's/.* pane=\([^ ]*\) .*/\1/p')"
               if [ -z "$candidate_pre" ]; then
-                candidate_pre="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_before_debug")"
-                candidate_observed="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_now")"
+                candidate_pre="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_before_debug" "$pane_id")"
+                candidate_observed="$(classify_trace_history "$TRACE_FILE" "$trace_start" "$trace_now" "$pane_id")"
               fi
               printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "$iteration" "$timestamp" "$debug_seen" "$trace_before_debug" \
@@ -147,7 +166,10 @@ for iteration in $(seq 1 "$EXPECTED"); do
     send_keys $'\033[A'
     target=cause-a
   fi
-  sleep 0.02
+  # Establish the visible selection boundary before starting the observer.
+  # A fixed sleep allowed the previous session's marker to be submitted when
+  # the TUI was still processing a geometry/refresh signal.
+  wait_until "selection target $target" "[ \"\$(sidebar_selected_name 2>/dev/null || true)\" = \"$target\" ]"
 
   trace_before="$(file_lines "$TRACE_FILE")"
   debug_before="$(file_lines "$DEBUG_FILE")"
@@ -158,6 +180,10 @@ for iteration in $(seq 1 "$EXPECTED"); do
     break
   fi
   if ! wait_until "render cause sidebar ready $target" sidebar_ready; then
+    stop_sampler
+    break
+  fi
+  if ! wait_until "render cause transition settled $target" transition_settled; then
     stop_sampler
     break
   fi

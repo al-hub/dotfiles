@@ -241,7 +241,9 @@ select_session_by_name() {
 
 setup_interactive_test() {
   tmuxc new-session -d -s interactive-anchor -c "$REPO_ROOT" 'sleep 300'
-  tmuxc new-session -d -s interactive-peer -c "$REPO_ROOT" 'sleep 300'
+  if [ "${TMUX_INTERACTIVE_CREATE_PEER:-true}" = true ]; then
+    tmuxc new-session -d -s interactive-peer -c "$REPO_ROOT" 'sleep 300'
+  fi
   if [ "${TMUX_SESSION_LAUNCHER_TRACE:-0}" = 1 ]; then
     tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE 1
     tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "$TRACE_FILE"

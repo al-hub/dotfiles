@@ -282,6 +282,14 @@ sidebar_tmux_client_tty_for_session()
         awk -F '|' -v session="$session_name" '$1 != 1 && $3 == session { print $2; exit }'
 }
 
+sidebar_tmux_client_tty_for_window()
+{
+    local window_id="$1"
+    [ -n "$window_id" ] || return 1
+    sidebar_tmux_cmd list-clients -F '#{client_control_mode}|#{client_tty}|#{window_id}' 2>/dev/null |
+        awk -F '|' -v window="$window_id" '$1 != 1 && $3 == window { print $2; exit }'
+}
+
 sidebar_tmux_move_pane()
 {
     local sidebar_pane="$1"

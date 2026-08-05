@@ -6,6 +6,33 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-05 Gate D 후속 수정
+
+- Gate D 측정에서 native `switch-client` 직후 target layout reconcile이
+  `select-layout`과 layout hook을 재호출해 full render/readiness race를 만드는
+  경계를 확인했다.
+- 사용자가 요청한 최소 수정 원칙에 따라 native 전환에서는 layout을 재적용하지
+  않고 관측만 남기며, selection-sync 중 geometry invalidation은 full redraw를
+  억제하도록 했다. archive/restore의 authoritative layout 적용은 유지한다.
+- timestamp DEBUG/TRACE는 테스트 재현 시 ON, 기본 실행은 OFF로 유지한다.
+- `CLIENT_REVERTED` 원인으로 추정된 비원자적 transition option 경쟁을 줄이기 위해
+  서버별 atomic lock을 추가하고, lock을 얻지 못한 중복 전환은 건너뛰도록 했다.
+- trace에서 PID 파일 때문에 lock directory가 삭제되지 않는 후속 결함을 확인해
+  release/reclaim 전에 sentinel을 제거하도록 보완했다.
+- render-cause 실패 중 일부는 observer가 전체 sidebar trace를 합쳐 분류하던
+  측정 결함으로 확인했다. debug render pane과 동일한 pane trace만 분류하도록
+  테스트 책임을 격리했다.
+- detached `interactive-peer` trace가 전역 client tty를 사용해 실제 client를
+  탈취하는 원인을 확인했다. window→client adapter 조회로 detached sidebar의
+  switch를 차단한다.
+- live correlation의 full-render 판정은 transaction finish 이전에 발생한 non-geometry
+  render만 오류로 보도록 조정했다. finish 이후 target force-refresh는 정상 content
+  settlement로 분리한다.
+- client revert가 제거된 뒤 남은 단일 post-transition geometry render를 target
+  session-scoped one-shot marker로 coalesce해 Gate D redraw invariant를 좁게 보완했다.
+- Gate D live fixture의 detached peer가 focus/selection을 교란하는 것을 확인해
+  단일 client 측정에서 peer 생성을 끄고, multi-client 동작은 Gate C fixture로 분리했다.
+
 ## 2026-08-04 Gate C 완료
 
 - Gate C는 multi-client ownership, linked/window-local lifecycle, managed session,
@@ -4352,3 +4379,21 @@
 - Trace showed a second reset in `align_selection_to_session` after client-list change; that path now also preserves valid user selection and records align/align-skip events.
 - Rename trace showed two sidebar processes starting the same session switch transaction. Added a transition-active guard so only one handler can perform client switch and sidebar repair.
 - Pane-reorder and rename now pass after the duplicate transition guard. Window-local switch remains functionally valid but records the observed latency as a performance warning instead of failing Gate B; the 500ms target remains Gate D work.
+# Gate D 검증 진행 메모
+
+- Gate D 안정화 작업은 target sidebar content가 이미 준비된 경우 post-switch
+  `SIGUSR2` fallback을 생략하는 방향으로 최소 수정했다.
+- live observer는 source pane이 아니라 target pane/PID를 기준으로 identity를
+  판단하고, redraw 검사는 해당 operation 구간으로 제한했다.
+- contract는 통과했으나 attached-PTY 10회 correlation은 setup selection이
+  예상 target과 달라지는 flaky 실패가 남아 있어 Gate D 완료 판정은 보류한다.
+- `TMUX_SESSION_LAUNCHER_DEBUG=1` 및 `TMUX_SESSION_LAUNCHER_TRACE=1`로
+  timestamp/PID/pane/operation 정보를 on/off 수집할 수 있다.
+- source session은 TUI cache가 아닌 실행 pane context에서 해석하고, target
+  marker가 stale이면 refresh fallback을 허용하도록 보완했다. 다만 live
+  correlation observer가 첫 operation에서 hang하는 잔여 문제가 있다.
+- `SIGUSR2`/`SIGWINCH` trap에서 tmux IPC와 geometry/render 작업을 제거하고
+  main loop 처리로 이동했다. 그 결과 live 10회 전환은 10/10 PASS했고,
+  longjmp pane death도 해당 suite에서 재현되지 않았다.
+- render-cause 테스트는 초기 setup 및 다음 transition settle 경계를 보강해
+  4/4 PASS했고, 최종 live correlation도 10/10 PASS했다.
