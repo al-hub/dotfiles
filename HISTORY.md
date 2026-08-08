@@ -5,6 +5,16 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Single Sidebar 방안 A 실질적 부채 정리 및 중복 로직 통합 완수
+
+- **순수 사장 코드 정리 (Dead Functions Removal)**:
+  - `prepare_window_for_archive`, `wait_for_sidebar_refresh`, `wait_for_sidebar_selection_sync`, `row_screen_line`, `row_mark`, `history_title_from_file`, `row_name_width`, `render_session_name_cell` 등 15개 불필요 함수 본문 완전 삭제.
+- **중복 로직 통합 (Deduplication)**:
+  - `tui_delete_session()` 내부의 `Yy`/`Enter` 확인 처리 중복 30줄을 `execute_tui_session_delete_action()` 공통 헬퍼로 완벽히 통합.
+- **프로덕션 번들 갱신 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh` 실행으로 약 480줄의 순수 코드 부채가 제거된 배포 바이너리 갱신.
+- **전체 단위/계약 스위트 7종 전원 PASS 입증**.
+
 ## 2026-08-08 - Single Sidebar M7 계층적 위임 및 프로덕션 설치 파이프라인 완비
 
 - **M7 계층화 절체 완수**:
