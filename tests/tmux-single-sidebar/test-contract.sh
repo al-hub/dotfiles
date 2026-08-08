@@ -112,6 +112,6 @@ printf 'PASS: toggle during provisioning is suppressed\n'
 # This contract test has no attached client, so an implicit active session is
 # undefined. Use the explicit session toggle; active-window behavior is covered
 # by attached-PTY scenarios where a client context exists.
-"${TMUX[@]}" run-shell "$LAUNCHER --open-sidebar"
+"${TMUX[@]}" run-shell "$LAUNCHER --toggle-sidebar"
 wait_for_sidebar_count 0
 printf 'PASS: global off removes the single sidebar\n'

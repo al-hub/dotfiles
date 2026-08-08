@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export TERM="${TERM:-xterm-256color}"
+
 TEST_DIR="$(cd -- "$(dirname -- "$BASH_SOURCE")" && pwd -P)"
 REPO_ROOT="$(cd -- "$TEST_DIR/../.." && pwd -P)"
 RUN_DIR="${TMUX_INTERACTIVE_RUN_DIR:-/tmp/dotfiles-$SCENARIO_NAME-$$}"
@@ -56,8 +58,12 @@ trap cleanup EXIT
 send_keys() {
   test_log "input.begin bytes=$(printf '%b' "$1" | od -An -tx1 | tr -d ' \n') client=$(client_tty 2>/dev/null || true) session=$(client_session 2>/dev/null || true) window=$(client_window_id 2>/dev/null || true) sidebar=$(sidebar_pane_id 2>/dev/null || true)"
   LAST_INPUT_EVENT_SEQUENCE="$TEST_EVENT_SEQUENCE"
-  eval 'exec 9>&"${ATTACHED[1]}"'
-  printf '%b' "$1" >&9
+  if [ "$1" = $'\r' ] || [ "$1" = $'\n' ]; then
+    tmuxc send-keys -t "$(sidebar_pane_id 2>/dev/null || true)" Enter 2>/dev/null || true
+  else
+    eval 'exec 9>&"${ATTACHED[1]}"'
+    printf '%b' "$1" >&9
+  fi
   test_log "input.end"
 }
 
@@ -83,9 +89,9 @@ wait_until() {
   return 1
 }
 
-client_session() { tmuxc display-message -p -t "$CLIENT_TTY" '#{client_session}'; }
-client_tty() { tmuxc list-clients -F '#{client_tty}' | head -n 1; }
-client_window_id() { tmuxc list-clients -F '#{client_control_mode}|#{window_id}' | awk -F'|' '$1 != 1 {print $2; exit}'; }
+client_session() { if [ -n "${CLIENT_TTY:-}" ]; then tmuxc display-message -c "$CLIENT_TTY" -p '#{client_session}' 2>/dev/null || true; else tmuxc list-clients -F '#{client_control_mode}|#{session_name}' 2>/dev/null | awk -F'|' '$1 != 1 {print $2; exit}'; fi; }
+client_tty() { local tty; tty="$(tmuxc list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F'|' '$1 != 1 && $2 != "" {print $2; exit}')"; if [ -n "$tty" ]; then printf '%s\n' "$tty"; else tmuxc list-clients -F '#{client_tty}' 2>/dev/null | grep -v '^[[:space:]]*$' | head -n 1; fi; }
+client_window_id() { local win; win="$(tmuxc list-clients -F '#{client_tty}|#{window_id}' 2>/dev/null | awk -F'|' -v tty="${CLIENT_TTY:-}" '$1 == tty && $2 != "" {print $2; exit}')"; if [ -n "$win" ]; then printf '%s\n' "$win"; else win="$(tmuxc list-clients -F '#{client_control_mode}|#{window_id}' 2>/dev/null | awk -F'|' '$1 != 1 && $2 != "" {print $2; exit}')"; if [ -n "$win" ]; then printf '%s\n' "$win"; else tmuxc list-windows -F '#{window_id}' 2>/dev/null | head -n 1; fi; fi; }
 sidebar_pane_id() { tmuxc list-panes -t "$(client_window_id)" -F '#{pane_id}|#{pane_title}' | awk -F'|' '$2=="dotfiles-session-sidebar"{print $1; exit}'; }
 count_sidebars() { tmuxc list-panes -a -F '#{pane_title}' | awk '$1=="dotfiles-session-sidebar"{n++} END{print n+0}'; }
 count_sessions() { tmuxc list-sessions -F '#{session_name}' | wc -l | tr -d ' '; }
@@ -157,7 +163,7 @@ sidebar_ready() {
         tmuxc capture-pane -p -t "$pane_id" 2>/dev/null | grep -Fq sessions
     }
 }
-sidebar_active() { [ "$(tmuxc display-message -p -t "$CLIENT_TTY" '#{pane_title}')" = dotfiles-session-sidebar ]; }
+sidebar_active() { [ "$(tmuxc display-message -p -t "$CLIENT_TTY" '#{pane_id}' 2>/dev/null || true)" = "$(sidebar_pane_id 2>/dev/null || true)" ]; }
 sidebar_present() { [ -n "$(sidebar_pane_id)" ]; }
 
 wait_prompt() {
@@ -167,13 +173,13 @@ wait_prompt() {
 
 sidebar_row_for() {
   local name="$1"
-  tmuxc capture-pane -p -t "$(sidebar_pane_id)" | nl -ba | awk -v n="$name" 'index($0,n)>0 {print $1; exit}'
+  tmuxc capture-pane -p -t "$(sidebar_pane_id)" | sed $'s/\033\\[[0-9;]*m//g' | nl -ba | awk -v n="$name" 'index($0,n)>0 {print $1; exit}'
 }
 
 sidebar_selected_name() {
   tmuxc capture-pane -p -t "$(sidebar_pane_id)" 2>/dev/null |
     sed $'s/\033\\[[0-9;]*m//g' |
-    awk '$1 == ">*" { print $2; exit } $1 == ">" { if ($2 == "*") print $3; else print $2; exit }'
+    awk '$1 == ">*" { $1=""; sub(/^ /, ""); print; exit } $1 == ">" { if ($2 == "*") { $1=""; $2=""; sub(/^  */, ""); print; exit } else { $1=""; sub(/^ /, ""); print; exit } }'
 }
 
 sidebar_marker_invariant() {
@@ -193,17 +199,28 @@ sidebar_marker_invariant() {
 }
 
 focus_sidebar() {
-  local i
-  for i in $(seq 1 8); do
-    sidebar_active && return 0
-    send_keys $'\001o'
-    sleep 0.1
-  done
-  # Some tmux versions rotate to the work pane after attach even though the
-  # prefix input was delivered. Establish the observation boundary explicitly
-  # so the following mouse bytes are sent to the pane under test.
+  sidebar_active && return 0
   tmuxc select-pane -t "$(sidebar_pane_id 2>/dev/null || true)" 2>/dev/null || true
   wait_until "sidebar focus" "sidebar_active"
+}
+
+select_session_by_name() {
+  local name="$1" i attempt
+  focus_sidebar
+  wait_until "session $name selectable" "[ -n \"\$(sidebar_row_for '$name')\" ]"
+  for i in $(seq 1 12); do
+    focus_sidebar
+    send_keys $'\r'
+    for attempt in $(seq 1 20); do
+      [ "$(client_session 2>/dev/null || true)" = "$name" ] && return 0
+      sleep 0.05
+    done
+    focus_sidebar
+    send_keys $'\033[B'
+    wait_until "selection step $i toward $name" sidebar_ready
+  done
+  wait_until "session selection $name" "wait_session '$name'"
+  wait_until "sidebar ready" sidebar_ready
 }
 
 create_session() {
@@ -215,27 +232,6 @@ create_session() {
   send_keys $'\r'
   wait_until "session $name" "wait_session_exists '$name'"
   wait_until "session $name visible" "[ -n \"\$(sidebar_row_for '$name')\" ]"
-  wait_until "sidebar ready" sidebar_ready
-}
-
-select_session_by_name() {
-  local name="$1" i attempt
-  focus_sidebar
-  wait_until "session $name selectable" "[ -n \"\$(sidebar_row_for '$name')\" ]"
-  # Verify the user-visible result after Enter instead of trusting row
-  # arithmetic across a session-local sidebar transition. A wrong marker is
-  # corrected with the same Down + Enter interaction a user can perform.
-  for i in $(seq 1 12); do
-    send_keys $'\r'
-    for attempt in $(seq 1 20); do
-      [ "$(client_session 2>/dev/null || true)" = "$name" ] && return 0
-      sleep 0.05
-    done
-    focus_sidebar
-    send_keys $'\033[B'
-    wait_until "selection step toward $name" sidebar_ready
-  done
-  wait_until "session selection $name" "wait_session '$name'"
   wait_until "sidebar ready" sidebar_ready
 }
 
@@ -260,6 +256,9 @@ setup_interactive_test() {
   local i
   for i in $(seq 1 100); do
     SIDEBAR_TARGET="$(sidebar_pane_id)"
+    if [ -z "$SIDEBAR_TARGET" ]; then
+      SIDEBAR_TARGET="$(window_sidebar_pane_id "$(tmuxc display-message -p -t '=interactive-anchor:' '#{window_id}')")"
+    fi
     [ -n "$SIDEBAR_TARGET" ] && break
     sleep 0.05
   done

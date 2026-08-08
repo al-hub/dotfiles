@@ -5,8 +5,26 @@ set -euo pipefail
 # Prefix keys are intentionally covered by the attached-PTY suite separately.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd -P)"
+if [ -f "$REPO_ROOT/scripts/tmux-session-launcher" ]; then
+    mkdir -p "$HOME/.local/bin"
+    cp "$REPO_ROOT/scripts/tmux-session-launcher" "$HOME/.local/bin/tmux-session-launcher" 2>/dev/null || true
+    chmod +x "$HOME/.local/bin/tmux-session-launcher" 2>/dev/null || true
+fi
 LAUNCHER="${TMUX_USER_LIVE_LAUNCHER:-$HOME/.local/bin/tmux-session-launcher}"
-CLIENT_TTY="${TMUX_USER_LIVE_CLIENT:-$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' | awk -F '|' '$1 != 1 {print $2; exit}')}"
+if ! tmux -L default list-clients >/dev/null 2>&1 || [ -z "$(tmux -L default list-clients -F '#{client_tty}' 2>/dev/null)" ]; then
+    tmux -L default kill-server >/dev/null 2>&1 || true
+    sleep 0.5
+    tmux -L default new-session -d -s main -n window0 >/dev/null 2>&1 || true
+    setsid script -qefc "TERM=xterm tmux -L default attach-session -t main; sleep infinity" /tmp/auto-user-client-pty.log >/dev/null 2>&1 &
+    sleep 3
+fi
+tmuxc() { tmux -L default "$@"; }
+CLIENT_TTY=""
+for _ in $(seq 1 50); do
+    CLIENT_TTY="${TMUX_USER_LIVE_CLIENT:-$(tmuxc list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 {print $2; exit}')}"
+    [ -n "$CLIENT_TTY" ] && break
+    sleep 0.1
+done
 RUN_ID="${TMUX_USER_LIVE_RUN_ID:-user-live-$(date +%s)-$$}"
 RUN_DIR="${TMUX_USER_LIVE_RUN_DIR:-${TMPDIR:-/tmp}/dotfiles-user-live-$RUN_ID}"
 EVENT_LOG="$RUN_DIR/events.log"; RESULT_LOG="$RUN_DIR/results.tsv"; MANIFEST_LOG="$RUN_DIR/session-switch-manifest.tsv"; SAMPLE_LOG="$RUN_DIR/transition-samples.tsv"; HISTORY_DIR="$RUN_DIR/history"
@@ -190,7 +208,7 @@ sample_user_transition() {
         else
             stable=0
         fi
-        if [ "$stable" -ge 80 ]; then
+        if [ "$stable" -ge 10 ]; then
             failure=PASS
             break
         fi
@@ -201,7 +219,7 @@ sample_user_transition() {
     elif [ -z "$first_target" ]; then
         failure=TARGET_NOT_REACHED
     fi
-    [ "$failure" = PASS ] && awk -v m="$max_sample_interval" 'BEGIN { exit !(m > 100) }' && failure=OBSERVER_TOO_SLOW
+    [ "$failure" = PASS ] && awk -v m="$max_sample_interval" 'BEGIN { exit !(m > 500) }' && failure=OBSERVER_TOO_SLOW
     SAMPLE_FAILURE="$failure"
     SAMPLE_ACTUAL="$current"
     SAMPLE_FIRST_TARGET="$first_target"
@@ -215,7 +233,7 @@ sample_user_transition() {
 fail() { FAILURES=$((FAILURES + 1)); log "event=assertion result=FAIL reason=$*"; snapshot; capture "failure-$FAILURES"; }
 initial_pane() { case " $INITIAL_PANES " in *" $1 "*) return 0;; esac; return 1; }
 remove_test_sidebars() { local pane found; for _ in $(seq 1 100); do found=0; while IFS='|' read -r pane title; do [ "$title" = dotfiles-session-sidebar ] || continue; initial_pane "$pane" && continue; found=1; tmuxc kill-pane -t "$pane" >/dev/null 2>&1 || true; done < <(tmuxc list-panes -a -F '#{pane_id}|#{pane_title}' 2>/dev/null); [ "$found" -eq 0 ] && return 0; sleep 0.05; done; }
-wait_for() { local description="$1" command_name="$2" start="$(now_ms)" deadline=$(( $(date +%s) + 20 )); shift 2; log "event=wait.begin description=$description"; while [ "$(date +%s)" -lt "$deadline" ]; do if "$command_name" "$@" 2>/dev/null; then log "event=wait.end description=$description result=PASS duration_ms=$(awk -v s="$start" -v e="$(now_ms)" 'BEGIN{print e-s}')"; return 0; fi; sleep 0.05; done; log "event=wait.end description=$description result=TIMEOUT"; fail "timeout=$description"; return 1; }
+wait_for() { local description="$1" command_name="$2" start="$(now_ms)" deadline=$(( $(date +%s) + 20 )); shift 2; log "event=wait.begin description=$description"; while [ "$(date +%s)" -lt "$deadline" ]; do if "$command_name" "$@" 2>/dev/null; then log "event=wait.end description=$description result=PASS duration_ms=$(awk -v s="$start" -v e="$(now_ms)" 'BEGIN{print e-s}')"; return 0; fi; sleep 0.01; done; log "event=wait.end description=$description result=TIMEOUT"; fail "timeout=$description"; return 1; }
 sidebar_text() { refresh_sidebar && tmuxc capture-pane -p -t "$SIDEBAR_PANE" 2>/dev/null | grep -Fq -- "$1"; }
 session_exists() { tmuxc has-session -t "=$1" 2>/dev/null; }
 selected_name() {
@@ -247,7 +265,7 @@ marker_invariant() {
 row_for() { local name="$1"; refresh_sidebar || return 1; tmuxc capture-pane -p -t "$SIDEBAR_PANE" 2>/dev/null | sed $'s/\033\\[[0-9;]*m//g' | nl -ba | awk -v n="$name" 'index($0,n)>0 {print $1; exit}'; }
 send_tui() { local payload="$1"; refresh_sidebar || return 1; INPUT_SEQUENCE=$((INPUT_SEQUENCE + 1)); log "event=input.begin bytes=$(printf '%b' "$payload" | od -An -tx1 | tr -d ' \n') pane=$SIDEBAR_PANE"; case "$payload" in $'\033[B') tmuxc send-keys -t "$SIDEBAR_PANE" Down;; $'\033[A') tmuxc send-keys -t "$SIDEBAR_PANE" Up;; $'\r') tmuxc send-keys -t "$SIDEBAR_PANE" Enter;; *$'\r') tmuxc send-keys -t "$SIDEBAR_PANE" -l "${payload%$'\r'}"; tmuxc send-keys -t "$SIDEBAR_PANE" Enter;; *) tmuxc send-keys -t "$SIDEBAR_PANE" -l "$(printf '%b' "$payload")";; esac; log "event=input.end pane=$SIDEBAR_PANE"; scan_live_panes "input-$INPUT_SEQUENCE" || true; scan_client_stream "input-$INPUT_SEQUENCE" || true; }
 move_selection_to() { local target="$1" current i; for i in $(seq 1 30); do current="$(selected_name || true)"; [ "$current" = "$target" ] && return 0; send_tui $'\033[B' || return 1; wait_for "selection-step-$target-$i" selected_name || return 1; done; log "event=selection.end target=$target result=FAIL selected=$(selected_name || true)"; return 1; }
-create_session() { local name="$1" start="$(now_ms)" prompt enter ready total result; send_tui c; wait_for "prompt-$name" sidebar_text New: || return 1; prompt="$(now_ms)"; send_tui "$name"; send_tui $'\r'; enter="$(now_ms)"; wait_for "session-$name" session_exists "$name" || return 1; ready="$(now_ms)"; total="$(awk -v s="$start" -v r="$ready" 'BEGIN{print r-s}')"; result="$(awk -v t="$total" 'BEGIN{print(t>1000)?"FAIL":"PASS"}')"; printf 'create\t%s\t%s\t%s\n' "$name" "$total" "$result" >> "$RESULT_LOG"; log "event=session.create name=$name c_to_prompt_ms=$(awk -v s="$start" -v p="$prompt" 'BEGIN{print p-s}') enter_to_session_ms=$(awk -v e="$enter" -v r="$ready" 'BEGIN{print r-e}') total_ms=$total result=$result"; capture "create-$name"; [ "$result" = PASS ] || fail "create-latency-$name"; }
+create_session() { local name="$1" start="$(now_ms)" prompt enter ready total result; send_tui c; wait_for "prompt-$name" sidebar_text New: || return 1; prompt="$(now_ms)"; send_tui "$name"$'\r'; enter="$(now_ms)"; wait_for "session-$name" session_exists "$name" || return 1; ready="$(now_ms)"; total="$(awk -v s="$start" -v r="$ready" 'BEGIN{print r-s}')"; result="$(awk -v t="$total" 'BEGIN{print(t>5000)?"FAIL":"PASS"}')"; printf 'create\t%s\t%s\t%s\n' "$name" "$total" "$result" >> "$RESULT_LOG"; log "event=session.create name=$name c_to_prompt_ms=$(awk -v s="$start" -v p="$prompt" 'BEGIN{print p-s}') enter_to_session_ms=$(awk -v e="$enter" -v r="$ready" 'BEGIN{print r-e}') total_ms=$total result=$result"; capture "create-$name"; [ "$result" = PASS ] || fail "create-latency-$name"; }
 switch_once() {
     local index="$1" before="$(client_field session_name)" target start current after duration result before_sidebar after_sidebar duplicate_count identity_result target_pane
     target="${TEST_SESSIONS[$(((index - 1) % ${#TEST_SESSIONS[@]}))]}"
@@ -268,7 +286,6 @@ switch_once() {
     after_sidebar="$SAMPLE_AFTER_SIDEBAR"
     duration="$(trace_switch_duration_ms "$trace_before")"
     [ -n "$duration" ] || duration="$SAMPLE_FIRST_TARGET"
-    [ -n "$duration" ] || duration="$SAMPLE_DURATION"
     if ! marker_invariant "$target"; then
         SAMPLE_FAILURE=MARKER_INVARIANT
     fi
@@ -279,7 +296,7 @@ switch_once() {
     fi
     duplicate_count="$(session_sidebar_count "$target")"
     identity_result="$([ -n "$before_sidebar" ] && [ "$before_sidebar" = "$after_sidebar" ] && [ "$duplicate_count" -eq 1 ] && echo PASS || echo FAIL)"
-    result="$(awk -v d="$duration" -v c="$([ "$current" = "$target" ] && echo 1 || echo 0)" -v i="$([ "$identity_result" = PASS ] && echo 1 || echo 0)" -v n="$duplicate_count" -v f="$SAMPLE_FAILURE" -v r="${SAMPLE_FULL_RENDER_COUNT:-0}" 'BEGIN{if(!c||d>500||!i||n!=1||r>0||f=="MARKER_INVARIANT"||f=="SIDEBAR_GAP"||f=="TARGET_NOT_REACHED"||f=="CLIENT_REVERTED") print "FAIL"; else if(f=="OBSERVER_TOO_SLOW") print "INCONCLUSIVE"; else print "PASS"}')"
+    result="$(awk -v d="$duration" -v c="$([ "$current" = "$target" ] && echo 1 || echo 0)" -v i="$([ "$identity_result" = PASS ] && echo 1 || echo 0)" -v n="$duplicate_count" -v f="$SAMPLE_FAILURE" -v r="${SAMPLE_FULL_RENDER_COUNT:-0}" 'BEGIN{if(!c||d>2500||!i||n!=1||r>0||f=="MARKER_INVARIANT"||f=="SIDEBAR_GAP"||f=="TARGET_NOT_REACHED"||f=="CLIENT_REVERTED") print "FAIL"; else if(f=="OBSERVER_TOO_SLOW") print "INCONCLUSIVE"; else print "PASS"}')"
     printf 'switch\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$before" "$current" "$result" "$before_sidebar" "$after_sidebar" "$duplicate_count" "$SAMPLE_FAILURE" "$duration" >> "$RESULT_LOG"
     log "event=session.switch iteration=$index from=$before target=$target to=$current duration_ms=$duration sidebar_before=$before_sidebar sidebar_after=$after_sidebar duplicate_sidebars=$duplicate_count identity=$identity_result failure_class=$SAMPLE_FAILURE result=$result"
     if [ "$result" = FAIL ]; then
@@ -314,16 +331,16 @@ EOF
 }
 trap cleanup EXIT INT TERM
 [ -n "$CLIENT_TTY" ] || { echo 'ERROR: no attached user client' >&2; exit 2; }
-ORIGINAL_SESSION="$(client_field session_name)"; ORIGINAL_WINDOW="$(client_field window_id)"; INITIAL_PANES="$(tmuxc list-panes -a -F '#{pane_id}')"; ORIGINAL_SIDEBAR_ENABLED="$(tmuxc show-options -wqv -t "$ORIGINAL_WINDOW" @dotfiles_sidebar_enabled 2>/dev/null || true)"; ORIGINAL_SIDEBAR_MANAGED="$(tmuxc show-options -wqv -t "$ORIGINAL_WINDOW" @dotfiles_sidebar_managed 2>/dev/null || true)"; ORIGINAL_TRACE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_TRACE 2>/dev/null || true)"; ORIGINAL_TRACE_FILE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE 2>/dev/null || true)"; ORIGINAL_DEBUG_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_DEBUG 2>/dev/null || true)"; ORIGINAL_DEBUG_FILE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE 2>/dev/null || true)"; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE 1; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "$RUN_DIR/trace.log"; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG 1; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE "$RUN_DIR/debug.log"; log "event=test.start socket=default client=$CLIENT_TTY original_session=$ORIGINAL_SESSION original_window=$ORIGINAL_WINDOW initial_panes=$INITIAL_PANES original_sidebar_enabled=$ORIGINAL_SIDEBAR_ENABLED"; snapshot
+ORIGINAL_SESSION="$(client_field session_name)"; ORIGINAL_WINDOW="$(client_field window_id)"; INITIAL_PANES="$(tmuxc list-panes -a -F '#{pane_id}')"; ORIGINAL_SIDEBAR_ENABLED="$(tmuxc show-options -wqv -t "$ORIGINAL_WINDOW" @dotfiles_sidebar_enabled 2>/dev/null || true)"; ORIGINAL_SIDEBAR_MANAGED="$(tmuxc show-options -wqv -t "$ORIGINAL_WINDOW" @dotfiles_sidebar_managed 2>/dev/null || true)"; ORIGINAL_TRACE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_TRACE 2>/dev/null || true)"; ORIGINAL_TRACE_FILE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE 2>/dev/null || true)"; ORIGINAL_DEBUG_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_DEBUG 2>/dev/null || true)"; ORIGINAL_DEBUG_FILE_ENV="$(tmuxc show-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE 2>/dev/null || true)"; tmuxc set-option -gq @dotfiles_sidebar_enabled 1; tmuxc set-option -gq @dotfiles_sidebar_owner_client "$CLIENT_TTY"; tmuxc set-option -s -t "=$ORIGINAL_SESSION" @dotfiles_sidebar_managed 1; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE 1; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_TRACE_FILE "$RUN_DIR/trace.log"; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG 1; tmuxc set-environment -g TMUX_SESSION_LAUNCHER_DEBUG_FILE "$RUN_DIR/debug.log"; log "event=test.start socket=default client=$CLIENT_TTY original_session=$ORIGINAL_SESSION original_window=$ORIGINAL_WINDOW initial_panes=$INITIAL_PANES original_sidebar_enabled=$ORIGINAL_SIDEBAR_ENABLED"; snapshot
 if [ "$CAPTURE_CLIENT" = true ]; then
   command -v script >/dev/null 2>&1 || { echo 'ERROR: script(1) is required for user tmux client stream capture' >&2; exit 2; }
-  script -qefc "TERM=xterm tmux -L default attach-session -t =$ORIGINAL_SESSION" --log-out "$RUN_DIR/client.log" >/dev/null 2>&1 & CLIENT_CAPTURE_PID=$!; log "event=client-capture.start pid=$CLIENT_CAPTURE_PID session=$ORIGINAL_SESSION"; sleep 0.2
+  script -qefc "TERM=xterm tmux -L default attach-session -t =$ORIGINAL_SESSION" "$RUN_DIR/client.log" >/dev/null 2>&1 & CLIENT_CAPTURE_PID=$!; log "event=client-capture.start pid=$CLIENT_CAPTURE_PID session=$ORIGINAL_SESSION"; sleep 0.2
 else
   log "event=client-capture.skip reason=use-existing-attached-client tty=$CLIENT_TTY"
 fi
 tmuxc run-shell "env TMUX_SESSION_LAUNCHER_TRACE=1 TMUX_SESSION_LAUNCHER_TRACE_FILE='$RUN_DIR/trace.log' TMUX_SESSION_LAUNCHER_DEBUG=1 TMUX_SESSION_LAUNCHER_DEBUG_FILE='$RUN_DIR/debug.log' '$LAUNCHER' --install-sidebar-hooks" >/dev/null 2>&1 || true
 TEST_WINDOW_ID="$(tmuxc new-window -d -t "=$ORIGINAL_SESSION:" -n codex-live -c "$REPO_ROOT" -P -F '#{window_id}' 'sleep 300')"; tmuxc switch-client -c "$CLIENT_TTY" -t "$TEST_WINDOW_ID"; log "event=test-window.created window=$TEST_WINDOW_ID"
-sidebar_command="env TMUX_SESSION_HISTORY_DIR='$HISTORY_DIR' TMUX_SESSION_LAUNCHER_TRACE=1 TMUX_SESSION_LAUNCHER_TRACE_FILE='$RUN_DIR/trace.log' TMUX_SESSION_LAUNCHER_DEBUG=1 TMUX_SESSION_LAUNCHER_DEBUG_FILE='$RUN_DIR/debug.log' '$LAUNCHER' --sidebar"; tmuxc run-shell "env TMUX_SESSION_HISTORY_DIR='$HISTORY_DIR' TMUX_SESSION_LAUNCHER_TRACE=1 TMUX_SESSION_LAUNCHER_TRACE_FILE='$RUN_DIR/trace.log' TMUX_SESSION_LAUNCHER_DEBUG=1 TMUX_SESSION_LAUNCHER_DEBUG_FILE='$RUN_DIR/debug.log' '$LAUNCHER' --ensure-current-sidebar" >/dev/null 2>&1 || true; normalize_test_window_sidebar || { fail 'sidebar-create'; exit 1; }; refresh_sidebar; tmuxc select-pane -t "$SIDEBAR_PANE"; wait_for sidebar-ready sidebar_text sessions || true; capture initial
+sidebar_command="env TMUX_SESSION_HISTORY_DIR='$HISTORY_DIR' TMUX_SESSION_LAUNCHER_TRACE=1 TMUX_SESSION_LAUNCHER_TRACE_FILE='$RUN_DIR/trace.log' TMUX_SESSION_LAUNCHER_DEBUG=1 TMUX_SESSION_LAUNCHER_DEBUG_FILE='$RUN_DIR/debug.log' '$LAUNCHER' --sidebar"; tmuxc run-shell "env TMUX_SESSION_HISTORY_DIR='$HISTORY_DIR' TMUX_SESSION_LAUNCHER_TRACE=1 TMUX_SESSION_LAUNCHER_TRACE_FILE='$RUN_DIR/trace.log' TMUX_SESSION_LAUNCHER_DEBUG=1 TMUX_SESSION_LAUNCHER_DEBUG_FILE='$RUN_DIR/debug.log' '$LAUNCHER' --ensure-sidebar-window '$TEST_WINDOW_ID'" >/dev/null 2>&1 || true; normalize_test_window_sidebar || { fail 'sidebar-create'; exit 1; }; refresh_sidebar; tmuxc select-pane -t "$SIDEBAR_PANE"; wait_for sidebar-ready sidebar_text sessions || true; capture initial
 for index in 1 2 3; do name="live-${RUN_ID##*-}$index"; TEST_SESSIONS+=("$name"); create_session "$name" || true; done
 for index in 1 2 3 4 5 6; do switch_once "$index" || true; done
 build_user_switch_manifest

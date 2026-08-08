@@ -98,7 +98,9 @@ sidebar_tmux_control_stop()
 
 sidebar_tmux_control_quote_args()
 {
-    local arg quoted
+    local cmd="$1" arg quoted
+    shift 1 2>/dev/null || true
+    printf '%s ' "$cmd"
     for arg in "$@"; do
         quoted="${arg//\'/\'\\\'\'}"
         printf "'%s' " "$quoted"

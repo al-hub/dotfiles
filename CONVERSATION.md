@@ -6,6 +6,92 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-08 - 세션 생성/전환 후 하단 메뉴 중간 표시 잔류 결함 대안 A TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 이전 수정 후에도 잔류한 하단 메뉴 중간 표시 현상을, `render_full()` 빈번 호출(깜빡임·속도 저하 유발) 없이 **대안 A(세션 생성 시 활성 클라이언트 지오메트리 사전 상속)** 방식으로 TDD/SOLID 준수하여 수정할 것.
+
+수정 결과 및 검증:
+- **대안 A 적용**: `create_session_with_active_client_geometry()` 함수를 신설하여 `tui_new_session()`과 `tui_restore_archives()`에서 세션 생성 시 실제 클라이언트 크기를 `-x/-y`로 전달. **깜빡임 0, 재렌더링 0, 전환속도 유지** 세 조건을 동시 달성.
+- **TDD 신규 테스트**: `test-option-a-geometry.sh` PASS.
+- **전체 회귀 검증**: `run_gate_e_scenarios.sh` 8/8 (100% PASS), 전체 TDD 테스트 PASS, 정적 검사 OK.
+
+## 2026-08-08 - 세션 생성/전환 후 하단 메뉴 중간 표시 결함 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 신규 세션 생성 및 이동 시 하단 키 안내 메뉴(`j/k | Enter | ...`)가 패널 중간에 표시되는 현상에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **원인 및 TDD 해결**: `render_full()` 및 `render_prompt_box()` 시작 시 `update_pane_geometry` 호출을 추가하여 패널 높이를 최신 상태로 갱신. `test-middle-footer.sh` 작성 및 100% PASS 검증.
+- **전체 회귀 검증**: `test-basic-defects.sh`, `test-new-defects.sh`, `test-middle-footer.sh` 전체 통과 및 `run_gate_e_scenarios.sh` 8/8 (100% PASS).
+
+## 2026-08-08 - 신규 동작/UX 결함 4종 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 신규 조사된 결함 4종에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **TDD 기반 구현**: `tests/tmux-single-sidebar/test-new-defects.sh` 스크립트를 작성하여 결함 재현(RED) 후 수정을 통해 4/4 PASS(GREEN) 입증.
+- **SOLID 준수**:
+  - SRP (Single Responsibility): `prompt_text` 내 확인 프롬프트 단일 키 처리를 분리하고, 사이드바 너비 보정을 안전 조건하에 격리 집행함.
+  - LSP (Liskov Substitution): 활성 세션 삭제 시 사전 조건 검증(`check_delete_precondition`)에서 내부 클라이언트 이행(internal owner transition)을 정확히 성립시켜 세션 삭제 동작의 일관성을 확보함.
+- **전체 회귀 검증**: `test-basic-defects.sh` (4/4 PASS), `test-new-defects.sh` (4/4 PASS), `run_gate_e_scenarios.sh` (8/8 PASS).
+
+## 2026-08-08 - 기본 동작 결함 4종 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 조사된 사이드바 기본 동작 결함 4종에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **TDD 기반 레드-그린 구현**: `tests/tmux-single-sidebar/test-basic-defects.sh`를 먼저 작성하여 결함 재현(RED) 후 최소 단위 수정을 통해 4/4 PASS(GREEN) 입증.
+- **SOLID 준수**:
+  - SRP/인터페이스 분리: `dotfiles/tmux.conf` 키바인딩을 `--toggle-sidebar`로 일원화하고 `open_sidebar` 도메인 상태 갱신을 캡슐화함.
+  - OCP: `prompt_text` 취소 키 처리를 기존 핸들러 변경 없이 `q`, `Q`, `n`, `N`, `Esc` 확장 지원.
+- **전체 회귀 검증**: `run_gate_e_scenarios.sh` 8/8 PASS (0 Failures).
+
+## 2026-08-08 - Gate E 8대 시나리오 100% PASS 완수
+
+사용자 요청 및 결정:
+- `/goal` 및 `/goal 계속진행하자` 지시에 따라 완화된 지표 (전환 < 1000ms, 키 반응 < 100ms) 기준 하에 Gate E 8대 시나리오 전수 검증 및 무한 반복 없는 완전한 성공을 요청함.
+
+작업 결과 및 성과:
+- Gate E 8대 시나리오전체 **8/8 (100% PASS)** 완료:
+  1. Scenario 1 (`test-contract.sh`): **PASS**
+  2. Scenario 2 (`test-session-name-zero.sh`): **PASS**
+  3. Scenario 3 (`test-keyboard-e2e-window-local-switch.sh`): **PASS** (전환 속도: 703ms ~ 880ms < 1000ms)
+  4. Scenario 4 (`test-keyboard-e2e-direct-layout.sh`): **PASS**
+  5. Scenario 5 (`test-keyboard-e2e-multi-window-topology.sh`): **PASS**
+  6. Scenario 6 (`test-keyboard-e2e-rename-roundtrip.sh`): **PASS**
+  7. Scenario 7 (`test-keyboard-e2e-rapid-operations.sh`): **PASS**
+  8. Scenario 8 (`test-user-tmux-required-monitored.sh`): **PASS**
+- `run_gate_e_scenarios.sh` 실행 결과: 8 Scenarios / 8 Passed / 0 Failed.
+- 정적 검사(`bash -n install.sh`, `scripts/tmux-session-launcher` 등) 100% OK.
+
+## 2026-08-08 - 현실적 지표 완화 (전환 1000ms, 키 100ms) 및 전체 목표/계획 확정
+
+사용자 결정:
+- 성능 미달로 인한 무한 수정/회귀 루프를 방지하기 위해 지표 기준을 현실적으로 완화함.
+- 세션 전환 시간 목표: **500ms → 1000ms (1초 이내)**
+- 키 반응 속도 목표: **40ms → 100ms 이내**
+- 핵심 목표: Gate E 8대 시나리오 **8/8 (100% PASS)** 기능적 완전성 및 무한 루프 차단.
+
+## 2026-08-08 - Gate E 8대 시나리오 검증 및 세션 Hand-off 정리
+
+사용자 요청:
+1. 현재 작업 사항을 정리하자. 기존 요청작업이 완료되지 못하고 계속 무한 반복중이다.
+2. 세션을 종료하고, 새로운 세션을 호출하였을때, 현재 상황과 작업현황을 알 수 있어야 한다.
+3. 새로운 세션에서 현재 작업을 그대로 이어가는 것이 아니라 문제점을 파악하고, 해당 문제점을 개선하여 작업을 이어가고자 한다.
+
+해석/결정:
+- 무한 반복 루프를 멈추고, 현재까지 해결된 검증 사항(Scenario 1, 2, 6 100% PASS)과 남아있는 문제점(Scenario 3, 4, 5, 7, 8 키보드 PTY 입력 후 prompt 마감 대기 타임아웃)의 원인을 정밀 분석하여 문서화함.
+- 다음 세션에서 무작위 수정 대신 `docs/next-session-handoff.md`의 구조적 개선 지침(PTY line discipline 단일화, prompt option scope 정돈, single transport key 주입)을 기반으로 정밀 타격하여 완수하도록 준비함.
+
+작업 결과:
+- Scenario 1 (Sidebar Toggle & Provisioning): **100% PASS** (`test-contract.sh`)
+- Scenario 2 (Session Name Zero Ambiguity): **100% PASS** (`test-session-name-zero.sh`)
+- Scenario 6 (Session Rename Round-trip): **100% PASS** (`test-keyboard-e2e-rename-roundtrip.sh`)
+- `docs/next-session-handoff.md`에 문제점 원인 분석과 새 세션 전용 개선 액션 플랜을 일목요연하게 작성 완료.
+
 ## 2026-08-05 Gate D 후속 수정
 
 - Gate D 측정에서 native `switch-client` 직후 target layout reconcile이
@@ -4380,6 +4466,70 @@
 - Rename trace showed two sidebar processes starting the same session switch transaction. Added a transition-active guard so only one handler can perform client switch and sidebar repair.
 - Pane-reorder and rename now pass after the duplicate transition guard. Window-local switch remains functionally valid but records the observed latency as a performance warning instead of failing Gate B; the 500ms target remains Gate D work.
 # Gate D 검증 진행 메모
+
+- 세션 종료 후 재개를 위해 `docs/next-session-handoff.md`를 추가했다. 다음
+  세션은 먼저 dirty tree를 확인하고 contract → keyboard E2E → correlation
+  3 topology → visual/flicker → profile 순서로 재현한다. 현재 기능 invariant는
+  PASS지만 성능 목표는 미달이며, 다음 구현은 phase별 tmux 호출 계측 후
+  operation snapshot cache와 dirty-row render 순서로 진행한다.
+
+- 2026-08-06 재검증에서 vertical live correlation의 첫 실패 snapshot을
+  분석했다. client는 `live-corr-1`인데 sidebar marker는 이전
+  `interactive-anchor`를 가리키고 있었고, 원인은 client-session 변경 시
+  유효한 이전 선택을 보존하던 분기였다. 실제 client 전환 경계에서는
+  현재 session으로 marker를 재정렬하도록 수정했으며 vertical 10/10,
+  window-local switch와 기존 keyboard E2E도 PASS했다.
+- visual-layer 10회는 complete 90/90, blank/partial 0, row/geometry/pane
+  mismatch 0으로 통과했다. 다만 restore baseline은 5000ms timeout,
+  native switch는 약 1~2.7초로 500ms 목표를 초과한다. flicker 측정은
+  attach 전 sidebar 탐색은 보완했지만 arrow marker 동기화가 남아 있어
+  제품 기능 PASS와 분리해 후속 수정 대상으로 둔다.
+- restore trace에서 sidebar process는 first render와 window-ready를 완료했지만
+  외부 `capture-pane`의 session 문자열이 stale해 readiness가 10초 timeout되는
+  경계를 확인했다. active target의 window/input-ready marker를 bounded
+  fallback으로 허용했고, 이후 profile은 restore integrity/layout 100%를
+  통과했다. 실제 restore는 약 5.6~5.7초로 성능 목표 2.2초는 아직 미달이다.
+- capture polling을 첫 target marker 확인 시점에 bounded fallback으로 줄인 뒤
+  restore는 약 4.4~4.5초로 개선됐고 integrity/layout/cursor는 계속 PASS했다.
+  단, 전체 profile은 idle/active CPU, key, switch, archive, restore 절대 목표를
+  모두 초과하므로 성능 Gate는 아직 PASS가 아니다.
+- readiness/provision 중복 제거 1단계로 pane discovery와 pane readiness를
+  분리하고, 이미 확보한 pane ID에는 combined dead/PID 조회를 사용했다.
+  contract/render-cause/window-local/live correlation은 통과했지만 단일
+  profile restore는 4.5~5.4초로 편차가 있어 성능 개선으로 확정하지 않는다.
+  다음 단계는 operation snapshot과 dirty-row render다.
+- known pane에 대한 runtime snapshot 계약을 추가해 dead/PID/ready/geometry를
+  한 번에 조회하고 switch target PID를 재사용했다. contract와 live correlation
+  10/10은 유지됐지만 profile restore는 5.56초로 측정 편차가 컸다. 다음은
+  phase별 tmux 호출 횟수를 계측한 뒤에만 추가 최적화를 적용한다.
+- 1단계 구현으로 known pane readiness 함수가 dead/PID를 한 번에 조회하고,
+  switch repair/input barrier가 동일 pane ID를 재사용하도록 수정했다.
+  contract, render-cause, window-local switch, 독립 correlation 10회는 PASS,
+  restore integrity는 100%였지만 성능 목표 달성은 아직 확인되지 않았다.
+- flicker helper 내부에서만 `>` current와 `*` selected를 구분하고 session
+  전환마다 target sidebar를 재탐색하도록 보완했다. 공통 keyboard helper의
+  의미는 보존했다. physical arrow 미전달 시 진단용 pane-key fallback 횟수도
+  기록하도록 했지만, 반복 측정은 아직 안정화 검증이 필요하다.
+
+- 전체 Gate 재검증 중 생산 코드의 busy guard와 충돌하는 검증 race를
+  timestamp trace로 확인했다. Gate B 반복 테스트는 client-session 변경만
+  기다려 다음 Enter를 너무 일찍 보냈고, Gate A numeric-session 테스트는
+  window-local sidebar 전환 후에도 sidebar가 하나라고 가정했다. 테스트에
+  lifecycle settle/visible-marker 동기화를 추가하고 window-local 계약에
+  맞게 기대값을 수정했다.
+- Gate D 측정에서 window-local 구조의 sidebar 3개를 단일 identity로
+  기대하던 판정과 render request 1회 고정 판정을 발견했다. 측정 계약을
+  실제 구조에 맞게 수정하고, flicker 입력도 visible selection marker에
+  동기화했다. 전환 latency 자체는 여전히 별도 성능 문제로 추적한다.
+- `window-local-switch` trace에서 첫 전환 뒤 다음 iteration이 target
+  window의 sidebar focus/readiness를 확인하지 않고 selection을 읽는 경계를
+  확인했다. 각 target마다 focus와 input-ready를 재확인하도록 보강했고,
+  switch 및 toggle 테스트가 PASS했다. 전환 시간은 약 1.5초로 별도 성능
+  경고로 남아 있다.
+- 전체 실행 trace에서 target sidebar의 session model은 4개였지만 marker-only
+  redraw 뒤 한 row가 화면상 비어 보이는 경계를 확인했다. selection sync 시
+  visible session rows를 함께 다시 출력하도록 lifecycle을 보강했고,
+  `window-local-switch`가 PASS했다. latency는 여전히 성능 경고다.
 
 - Gate D 안정화 작업은 target sidebar content가 이미 준비된 경우 post-switch
   `SIGUSR2` fallback을 생략하는 방향으로 최소 수정했다.

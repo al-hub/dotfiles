@@ -14,6 +14,7 @@ PROFILE_SECONDS="${PROFILE_SECONDS:-3}"
 PROFILE_KEY_POLL_INTERVAL="${PROFILE_KEY_POLL_INTERVAL:-0.01}"
 PROFILE_TRACE="${PROFILE_TRACE:-false}"
 PROFILE_PIPE_OBSERVER="${PROFILE_PIPE_OBSERVER:-false}"
+PROFILE_KEEP_RUN_DIR="${PROFILE_KEEP_RUN_DIR:-false}"
 TRACE_FILE="$RUN_DIR/launcher-trace.log"
 PIPE_MARKER="$RUN_DIR/pipe-marker"
 PIPE_OBSERVER="$REPO_ROOT/tests/profile-pipe-observer.pl"
@@ -56,7 +57,11 @@ cleanup()
         kill "$CLIENT_PID" >/dev/null 2>&1 || true
         wait "$CLIENT_PID" 2>/dev/null || true
     fi
-    rm -rf "$RUN_DIR"
+    if [ "$PROFILE_KEEP_RUN_DIR" != true ]; then
+        rm -rf "$RUN_DIR"
+    else
+        printf 'PROFILE_RUN_DIR=%s\n' "$RUN_DIR" >&2
+    fi
 }
 trap cleanup EXIT INT TERM
 

@@ -73,17 +73,41 @@ if [ "$discovered_lines" -ne 1 ]; then
 fi
 
 sidebar_pane="$(printf '%s\n' "$discovered" | head -n 1)"
-tmuxc send-keys -t "$sidebar_pane" Down Enter
+sidebar_window="$(tmuxc display-message -p -t "$sidebar_pane" '#{window_id}' 2>/dev/null || true)"
+for attempt in $(seq 1 100); do
+    if tmuxc capture-pane -p -t "$sidebar_pane" 2>/dev/null |
+        grep -Fxq 'sessions'; then
+        break
+    fi
+    sleep 0.05
+done
+for move in $(seq 1 7); do
+    tmuxc send-keys -t "$sidebar_pane" Down
+    for attempt in $(seq 1 100); do
+        if tmuxc capture-pane -p -t "$sidebar_pane" 2>/dev/null |
+            grep -E --quiet '>[[:space:]]*bbbbbbbbbbbbbbbbbb'; then
+            break 2
+        fi
+        sleep 0.05
+    done
+done
+selection_capture="$(tmuxc capture-pane -p -t "$sidebar_pane" 2>/dev/null || true)"
+printf '%s\n' "$selection_capture" |
+    grep -E --quiet '>[[:space:]]*bbbbbbbbbbbbbbbbbb' || {
+        printf 'selection capture after Down:+%s\n' "$selection_capture" >&2
+        exit 1
+    }
+tmuxc send-keys -t "$sidebar_pane" Enter
 for attempt in $(seq 1 100); do
     client_session="$(tmuxc list-clients -F '#{session_name}' 2>/dev/null | head -n 1 || true)"
     owner_session="$(tmuxc display-message -p -t "$sidebar_pane" '#{session_name}' 2>/dev/null || true)"
     [ "$client_session" = bbbbbbbbbbbbbbbbbb ] &&
-        [ "$owner_session" = bbbbbbbbbbbbbbbbbb ] && break
+        [ "$owner_session" = aaaaaaaaaaaaaaaaaaa ] && break
     sleep 0.05
 done
 
 [ "$client_session" = bbbbbbbbbbbbbbbbbb ]
-[ "$owner_session" = bbbbbbbbbbbbbbbbbb ]
-[ "$(sidebar_tmux_sidebar_pane_count)" = 1 ]
+[ "$owner_session" = aaaaaaaaaaaaaaaaaaa ]
+[ "$(sidebar_tmux_sidebar_pane_count)" = 2 ]
 printf 'PASS: numeric session name preserves unique sidebar discovery\n'
-printf 'PASS: attached-client Down+Enter switches to bbbbbbbbbbbbbbbbbb\n'
+printf 'PASS: attached-client Down+Enter switches to bbbbbbbbbbbbbbbbbb while each window-local sidebar remains unique\n'

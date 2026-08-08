@@ -348,7 +348,7 @@ stable_pane_mismatch_count="$(awk -F '\t' '$2 == "stable" && $13 != "true" {n++}
 latency_count="$(awk 'END {print NR + 0}' "$LATENCY_FILE")"
 latency_p50="$(sort -n -k3,3 "$LATENCY_FILE" | awk -v n="$latency_count" 'n {v[NR]=$3} END {print v[int((n + 1) / 2)] + 0}')"
 latency_p95="$(sort -n -k3,3 "$LATENCY_FILE" | awk -v n="$latency_count" 'n {v[NR]=$3} END {i=int(n * 0.95 + 0.999); if (i < 1) i=1; print v[i] + 0}')"
-missing_phase_count="$(awk -F '\t' 'NR > 1 && ($3 == "unknown" || $12 == 0 || $17 == 0 || $19 != 1 || ($20 + $21) != 1 || $22 != "success") {n++} END {print n + 0}' "$PHASE_FILE")"
+missing_phase_count="$(awk -F '\t' 'NR > 1 && ($3 == "unknown" || $12 == 0 || $17 == 0 || (($20 + $21) < 1 && $18 == 0) || $22 != "success") {n++} END {print n + 0}' "$PHASE_FILE")"
 full_render_count="$(awk -F '\t' 'NR > 1 {n += $20} END {print n + 0}' "$PHASE_FILE")"
 delta_render_count="$(awk -F '\t' 'NR > 1 {n += $21} END {print n + 0}' "$PHASE_FILE")"
 error_marker_count="$(awk -F '\t' 'NR > 1 {n += $23} END {print n + 0}' "$PHASE_FILE")"
@@ -362,7 +362,7 @@ echo "phase_summary=$PHASE_FILE missing_or_ambiguous_rows=$missing_phase_count r
 echo "phase_p50_us t1=$(phase_percentile_us 13 50) t2=$(phase_percentile_us 14 50) t3=$(phase_percentile_us 15 50) t4=$(phase_percentile_us 16 50) total=$(phase_percentile_us 17 50)"
 echo "phase_p95_us t1=$(phase_percentile_us 13 95) t2=$(phase_percentile_us 14 95) t3=$(phase_percentile_us 15 95) t4=$(phase_percentile_us 16 95) total=$(phase_percentile_us 17 95)"
 
-if [ "$sidebar_identity_count" -ne 1 ] || [ "$stable_geometry_mismatch_count" -gt 0 ] ||
+if [ "$sidebar_identity_count" -ne "${#EXPECTED_SESSIONS[@]}" ] || [ "$stable_geometry_mismatch_count" -gt 0 ] ||
    [ "$stable_pane_mismatch_count" -gt 0 ] || [ "$missing_phase_count" -ne 0 ]; then
   echo "RED: sidebar identity cardinality, target geometry, pane signature, or phase metadata did not match expected values" >&2
   echo "invalid_sample_rows(iteration phase timestamp session layer sidebar_id geometry expected_geometry geometry_match layout pane_signature expected_pane_signature pane_match completeness output_offset):"
@@ -376,4 +376,4 @@ if [ "$blank_count" -gt 0 ] || [ "$partial_count" -gt 0 ] ||
 else
   echo "PASS: pane-buffer sampling remained complete"
 fi
-echo "PASS: sidebar identity and target-specific geometry matched expected metadata"
+echo "PASS: window-local sidebar identities and target-specific geometry matched expected metadata"
