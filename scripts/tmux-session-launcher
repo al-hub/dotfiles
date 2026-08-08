@@ -3991,11 +3991,6 @@ align_selection_to_session()
     done
 }
 
-row_screen_line()
-{
-    printf '%s\n' "$((2 + $1 - scroll_offset))"
-}
-
 row_is_visible()
 {
     index="$1"
@@ -4008,54 +4003,6 @@ row_is_visible()
     [ "$visible_rows" -lt 1 ] && visible_rows=1
 
     [ "$index" -ge "$scroll_offset" ] && [ "$index" -lt $((scroll_offset + visible_rows)) ]
-}
-
-session_visible_rows()
-{
-    height="${cached_pane_height:-20}"
-    if [ "$view_mode" = "history" ]; then
-        rows=$(((height - 4) / 2))
-    else
-        rows=$((height - 3))
-    fi
-
-    [ "$rows" -lt 1 ] && rows=1
-    printf '%s\n' "$rows"
-}
-
-history_start_line()
-{
-    if [ "$view_mode" = "history" ]; then
-        printf '%s\n' "$((2 + $(session_visible_rows) + 1))"
-    else
-        printf '%s\n' 0
-    fi
-}
-
-history_visible_rows()
-{
-    height="${cached_pane_height:-20}"
-    start="$(history_start_line)"
-    rows=$((height - start))
-
-    [ "$rows" -lt 1 ] && rows=1
-    printf '%s\n' "$rows"
-}
-
-row_mark()
-{
-    index="$1"
-    name="${session_names[$index]}"
-
-    if [ "$index" -eq "$selected_index" ] && [ "$name" = "$current_session" ]; then
-        printf '%s\n' '>*'
-    elif [ "$index" -eq "$selected_index" ]; then
-        printf '%s\n' '> '
-    elif [ "$name" = "$current_session" ]; then
-        printf '%s\n' ' *'
-    else
-        printf '%s\n' '  '
-    fi
 }
 
 row_mark_value()
@@ -4249,34 +4196,6 @@ format_session_name()
     fi
 
     session_name_result="$result"
-}
-
-row_name_width()
-{
-    width="$1"
-
-    if [ "$width" -lt 16 ]; then
-        printf '%s\n' "$((width - 3))"
-    else
-        printf '%s\n' "$((width - 2 - 1 - 10 - 2))"
-    fi
-}
-
-render_session_name_cell()
-{
-    index="$1"
-    line=$((2 + index - scroll_offset))
-    width="${cached_pane_width:-35}"
-    if [ "$width" -lt 16 ]; then
-        name_width=$((width - 3))
-    else
-        name_width=$((width - 2 - 1 - 10 - 2))
-    fi
-
-    [ "$name_width" -lt 1 ] && name_width=1
-    format_session_name "${session_names[$index]}" "$name_width" \
-        "${session_animate[$index]}" "${session_animation_seed[$index]}"
-    printf '\033[%s;4H%s' "$line" "$session_name_result"
 }
 
 render_row()
