@@ -20,6 +20,8 @@ SIDEBAR_CONTROLLER_PATH="$LAUNCHER_DIR/tmux-sidebar-controller"
 }
 SIDEBAR_DOMAIN_PATH="$LAUNCHER_DIR/lib/sidebar_domain.sh"
 [ -r "$SIDEBAR_DOMAIN_PATH" ] && source "$SIDEBAR_DOMAIN_PATH"
+SIDEBAR_PORT_TMUX_PATH="$LAUNCHER_DIR/lib/sidebar_port_tmux.sh"
+[ -r "$SIDEBAR_PORT_TMUX_PATH" ] && source "$SIDEBAR_PORT_TMUX_PATH"
 source "$SIDEBAR_ADAPTER_PATH"
 
 SIDEBAR_TITLE="dotfiles-session-sidebar"
