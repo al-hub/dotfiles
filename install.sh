@@ -499,6 +499,18 @@ after_install_item()
                 log "Initialized default theme as classic-baseline.conf"
             fi
             ;;
+        tmux-session-launcher)
+            ensure_executable "$target"
+            local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            if [ -x "$script_dir/scripts/build-dist.sh" ]; then
+                "$script_dir/scripts/build-dist.sh" >/dev/null 2>&1 || true
+                if [ -f "$script_dir/dist/tmux-session-launcher" ]; then
+                    cp "$script_dir/dist/tmux-session-launcher" "$target_path"
+                    chmod +x "$target_path"
+                    log "Built and installed zero-sourcing production bundle to $target_path"
+                fi
+            fi
+            ;;
         tmux-command-palette) ensure_executable "$target" ;;
     esac
 }
