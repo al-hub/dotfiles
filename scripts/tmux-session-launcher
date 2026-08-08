@@ -18,7 +18,8 @@ SIDEBAR_CONTROLLER_PATH="$LAUNCHER_DIR/tmux-sidebar-controller"
     [ -n "$launcher_test_dir" ] && launcher_test_dir="$(cd "$(dirname "$launcher_test_dir")" && pwd)"
     [ -n "$launcher_test_dir" ] && SIDEBAR_CONTROLLER_PATH="$launcher_test_dir/tmux-sidebar-controller"
 }
-# shellcheck disable=SC1090
+SIDEBAR_DOMAIN_PATH="$LAUNCHER_DIR/lib/sidebar_domain.sh"
+[ -r "$SIDEBAR_DOMAIN_PATH" ] && source "$SIDEBAR_DOMAIN_PATH"
 source "$SIDEBAR_ADAPTER_PATH"
 
 SIDEBAR_TITLE="dotfiles-session-sidebar"
