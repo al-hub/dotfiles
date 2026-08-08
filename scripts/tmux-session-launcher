@@ -24,6 +24,8 @@ SIDEBAR_PORT_TMUX_PATH="$LAUNCHER_DIR/lib/sidebar_port_tmux.sh"
 [ -r "$SIDEBAR_PORT_TMUX_PATH" ] && source "$SIDEBAR_PORT_TMUX_PATH"
 SIDEBAR_SWITCH_PATH="$LAUNCHER_DIR/lib/sidebar_switch.sh"
 [ -r "$SIDEBAR_SWITCH_PATH" ] && source "$SIDEBAR_SWITCH_PATH"
+SIDEBAR_PRESENTER_PATH="$LAUNCHER_DIR/lib/sidebar_presenter.sh"
+[ -r "$SIDEBAR_PRESENTER_PATH" ] && source "$SIDEBAR_PRESENTER_PATH"
 source "$SIDEBAR_ADAPTER_PATH"
 
 SIDEBAR_TITLE="dotfiles-session-sidebar"
