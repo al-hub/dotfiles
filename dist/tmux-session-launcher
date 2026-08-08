@@ -1273,7 +1273,10 @@ find_sidebar_pane()
     fi |
         awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
 }
-
+find_global_sidebar_pane()
+{
+    sidebar_tmux_global_sidebar_pane
+}
 
 
 sidebar_window_pane()
@@ -2638,10 +2641,12 @@ switch_session()
     local client_switch_us=0 switch_metrics_start_us=0 switch_phase_start_us=0
     local selection_sync_ready=false selection_sync_ack="" sidebar_ready=""
     [ -n "$session_name" ] || return 0
-    session_exists "$session_name" || {
-        message_line "session switch failed: session does not exist"
+    if ! session_exists "$session_name"; then
+        collect_sessions 2>/dev/null || true
+        render_full stale_session 2>/dev/null || true
+        message_line "session switch failed: session '$session_name' does not exist"
         return 1
-    }
+    fi
     pane_window="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{window_id}' 2>/dev/null || true)"
     # The TUI's cached current_session can lag behind a client/window hook.
     # Resolve the source from the pane that owns this process so a stale

@@ -5,6 +5,16 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-09 - Single Sidebar TDD & SOLID 준수 버그 수정 및 안정화
+
+- **TDD 기반 레그레션 테스트 스위트 작성**:
+  - `tests/tmux-single-sidebar/test-find-global-pane-regression.sh`: `find_global_sidebar_pane` 헬퍼 복원 및 아카이브 삭제 CLI 동작 검증 테스트 작성.
+  - `tests/tmux-single-sidebar/test-missing-session-switch-graceful.sh`: 존재하지 않거나 삭제된 세션으로 전환 시 디태치(Detach) 없이 안전하게 에러 메시지 반환 검증.
+- **SOLID 원칙 기반 결함 수정**:
+  - **단일 책임(SRP) 및 인터페이스 분리(ISP)**: `find_global_sidebar_pane()` 헬퍼를 복원하여 adapter 포트(`sidebar_tmux_global_sidebar_pane`)와 Controller/Archive 서비스 간 명확한 계층 경계 형성.
+  - **개방-폐쇄 및 리스코프 치환(OCP/LSP)**: `switch_session()`에서 세션 존재 여부를 검증하고, 미존재 세션 요청 시 세션 목록 캐시를 갱신 및 에러 반환하여 클라이언트 연결 끊김(Detach) 예방.
+- **검증**: 계약 테스트 스위트 8/8 및 유닛/TDD 레그레션 스위트 전체 PASS 확인 후 배포 번들(`dist/`) 업데이트.
+
 ## 2026-08-08 - Single Sidebar 방안 1 단일 사이드바 아키텍처 정합성 및 시그널 락 보강 완수
 
 - **레거시 단일 물리 페인 폴백 완전히 제거**:
