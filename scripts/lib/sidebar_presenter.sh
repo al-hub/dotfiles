@@ -18,3 +18,8 @@ sidebar_presenter_render_header() {
     local title="$1" width="$2"
     printf "\033[1;36m%-*s\033[0m\n" "$width" "$title"
 }
+
+sidebar_presenter_render_footer() {
+    local help_text="$1" width="$2"
+    printf "\033[1;30m%-*s\033[0m\n" "$width" "$help_text"
+}
