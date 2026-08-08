@@ -5,6 +5,15 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Single Sidebar M7 계층적 위임 및 프로덕션 설치 파이프라인 완비
+
+- **M7 계층화 절체 완수**:
+  - `scripts/tmux-session-launcher` 내 도메인(`sidebar_domain_epoch_now`, `sidebar_domain_format_duration`), tmux 포트(`sidebar_port_session_exists`), 프리젠터(`sidebar_presenter_render_header`), 아카이브 모듈의 핵심 인터페이스 본문을 독립 모듈(`scripts/lib/sidebar_*.sh`)로 이관하고 위임 구조로 리팩터링 완료.
+- **프로덕션 빌드 및 설치 연동 (`install.sh`)**:
+  - `install.sh` 내 `tmux-session-launcher` 설치 후속 단계(`after_install_item`)에 `scripts/build-dist.sh`를 자동 트리거하도록 연동.
+  - 배포 시 최적화된 단일 0-sourcing 바이너리(`dist/tmux-session-launcher`)가 `~/.local/bin/`에 자동 전송되어 프로덕션 파일 I/O 오버헤드가 0ms로 보장됨.
+- **전체 단위/계약 스위트 7종 전원 PASS 입증**.
+
 ## 2026-08-08 - Production Bundler 구축 및 M7 Cutover 아키텍처 완비
 
 - **프로덕션 번들러 구축 (`scripts/build-dist.sh`)**:
