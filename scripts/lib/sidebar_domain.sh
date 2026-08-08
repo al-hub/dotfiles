@@ -13,11 +13,49 @@ sidebar_domain_validate_archive_line() {
     [[ "$line" =~ ^[0-9]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+\|[^|]+\|[0-9]+\|[0-9]+\|[0-9]+\|[^|]+\|[0-9]+$ ]]
 }
 
-sidebar_domain_calc_render_diff() {
-    local old_signature="$1" new_signature="$2"
-    if [ "$old_signature" = "$new_signature" ]; then
-        echo "0"
+sidebar_domain_epoch_now() {
+    if [ -n "${EPOCHSECONDS:-}" ]; then
+        printf '%s\n' "$EPOCHSECONDS"
     else
-        echo "1"
+        date +%s
     fi
 }
+
+sidebar_domain_format_duration() {
+    local elapsed="$1"
+    local days=$((elapsed / 86400))
+    local remain=$((elapsed % 86400))
+    local hours=$((remain / 3600))
+    remain=$((remain % 3600))
+    local minutes=$((remain / 60))
+    local seconds=$((remain % 60))
+    printf '%d:%02d:%02d:%02d\n' "$days" "$hours" "$minutes" "$seconds"
+}
+
+sidebar_domain_session_age_value() {
+    local -n _age_out_ref="$1"
+    local created_value="$2"
+    local now_value="${EPOCHSECONDS:-$SECONDS}"
+    case "$created_value" in
+        ''|*[!0-9]*) created_value="$now_value" ;;
+    esac
+    local duration_elapsed=$((now_value - created_value))
+    [ "$duration_elapsed" -lt 0 ] && duration_elapsed=0
+    local duration_days=$((duration_elapsed / 86400))
+    local duration_remain=$((duration_elapsed % 86400))
+    local duration_hours=$((duration_remain / 3600))
+    duration_remain=$((duration_remain % 3600))
+    local duration_minutes=$((duration_remain / 60))
+    local duration_seconds=$((duration_remain % 60))
+    printf -v _age_out_ref '%d:%02d:%02d:%02d' \
+        "$duration_days" "$duration_hours" "$duration_minutes" "$duration_seconds"
+}
+
+sidebar_domain_layout_body() {
+    local layout="$1"
+    case "$layout" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
+        *) printf '%s\n' "$layout" ;;
+    esac
+}
+
