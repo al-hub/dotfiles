@@ -1286,10 +1286,7 @@ find_sidebar_pane()
         awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 == title { print $1; exit }'
 }
 
-find_global_sidebar_pane()
-{
-    sidebar_tmux_global_sidebar_pane
-}
+
 
 sidebar_window_pane()
 {
@@ -2060,20 +2057,7 @@ provision_sidebar_window()
     return 0
 }
 
-ensure_global_sidebar_window()
-{
-    local window_id="$1" width="${2:-$(sidebar_width)}" existing_window active_window
-    if [ -z "$window_id" ]; then
-        trace_event "sidebar.window.ensure.skip reason=missing-window-target"
-        debug_log "ensure_global_sidebar_window skipped: missing window target"
-        return 0
-    fi
-    existing_window="$(global_sidebar_window || true)"
-    [ -n "$existing_window" ] && return 0
-    active_window="$(active_client_window || true)"
-    [ "$window_id" = "$active_window" ] || return 0
-    provision_sidebar_window "$window_id" "$width"
-}
+
 
 remove_sidebar_window()
 {
@@ -2237,7 +2221,7 @@ open_sidebar()
     if [ -z "$target" ]; then
         mark_session_managed "$(tmux display-message -p '#S' 2>/dev/null || true)" || true
     fi
-    global_existing_pane="$(find_global_sidebar_pane)"
+    global_existing_pane="$(find_sidebar_pane "${target:-}")"
     if [ -n "$global_existing_pane" ]; then
         if [ -n "$target" ]; then
             target_session_name="$(tmux display-message -p -t "$target" '#{session_name}' 2>/dev/null || true)"
@@ -7182,7 +7166,7 @@ main()
                 trace_event "sidebar.ensure-window.skip reason=restore-topology-guard window=${2:-none}"
                 return 0
             fi
-            ensure_global_sidebar_window "${2:-}" "${3:-$(sidebar_width)}"
+            provision_sidebar_window "${2:-}" "${3:-$(sidebar_width)}"
             return $?
             ;;
         --ensure-sidebar-session)
