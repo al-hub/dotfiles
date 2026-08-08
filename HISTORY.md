@@ -5,6 +5,18 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Single Sidebar M1-M7 모듈화 및 TDD/SOLID 리팩터링 완료
+
+- monolithic `scripts/tmux-session-launcher` (7,300+ lines)에 대해 M1~M7 TDD Strangler refactoring을 완수했다:
+  - **M1 (Domain)**: `scripts/lib/sidebar_domain.sh` 순수 도메인 함수 (sanitization, archive line validation, render diff calc) 추출 및 `test-domain-unit.sh` 검증 PASS.
+  - **M2 (Port Boundary)**: `scripts/lib/sidebar_port_tmux.sh` typed tmux CLI adapter 포트 격리 및 `test-port-tmux-unit.sh` 검증 PASS.
+  - **M3 (Switch Service)**: `scripts/lib/sidebar_switch.sh` Hot/Cold path session switch transaction service 추출 및 `test-switch-unit.sh` 검증 PASS.
+  - **M4 (Presenter)**: `scripts/lib/sidebar_presenter.sh` Thin Presenter 렌더링/키 매핑 레이어 분리 및 `test-presenter-unit.sh` 검증 PASS.
+  - **M5 (Coordinator)**: `scripts/lib/sidebar_coordinator.sh` Singleton coordinator event bus 분리 및 `test-coordinator-unit.sh` 검증 PASS.
+  - **M6 (Archive Service)**: `scripts/lib/sidebar_archive.sh` Session archive format & atomic save service 분리 및 `test-archive-unit.sh` 검증 PASS.
+  - **M7 (Integration & Verification)**: `scripts/tmux-session-launcher` 에 모든 모듈 sourcing 및 통합, 전체 계약 테스트(`test-contract.sh` 포함 7개 유닛/계약 스위트) PASS.
+- 모든 단계에서 TDD (RED -> GREEN -> REFACTOR) 및 SOLID 원칙을 완벽히 준수하였으며, 하드 게이트 성능 목표(전환 <=1000ms, 반응성 <=100ms) 및 하위 호환성을 유지함.
+
 ## 2026-08-08 - Single Sidebar 유지보수 아키텍처와 TDD/SOLID migration 설계
 
 - 현재 production과 테스트를 정량 감사해 launcher 7,311 LOC/261 함수,

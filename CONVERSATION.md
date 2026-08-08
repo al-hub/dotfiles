@@ -6,6 +6,15 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-08 - Single Sidebar M1~M7 TDD/SOLID 모듈화 리팩터링 완료
+
+- **사용자 요청**: `/goal` 순차적으로 M7 까지 진행하고, LOC를 최적화하면서 유지보수에 유리하도록 하고 필요시 파일분리하여 TDD, SOLID 준수하면서 진행하라.
+- **의사결정 및 구현**:
+  - `docs/tmux-single-sidebar-design.md` 및 `docs/superpowers/specs/2026-08-08-single-sidebar-refactoring-design.md`에 명시된 M1~M7 마일스톤에 따라 `scripts/tmux-session-launcher` 모놀리식을 6개의 독립 모듈(`scripts/lib/sidebar_*.sh`)로 분리함.
+  - TDD 절차(RED -> GREEN -> REFACTOR)를 준수하여 각 모듈별 유닛 테스트 스위트(`tests/tmux-single-sidebar/test-*-unit.sh`)를 구현 및 통과시킴.
+  - SOLID 원칙 (SRP, OCP, LSP, ISP, DIP) 및 성능 하드게이트(전환 <=1000ms, 반응성 <=100ms) 계약을 완벽히 만족함을 입증함 (`test-contract.sh` 포함 7/7 전체 테스트 PASS).
+- **결과**: `feature/single-sidebar` 브랜치 상에서 M1~M7 커밋 및 푸시 준비 완료.
+
 ## 2026-08-08 - Single Sidebar 유지보수 아키텍처 결정
 
 사용자 요청과 의도:
