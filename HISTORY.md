@@ -5,6 +5,16 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Single Sidebar 방안 1 단일 사이드바 아키텍처 정합성 및 시그널 락 보강 완수
+
+- **레거시 단일 물리 페인 폴백 완전히 제거**:
+  - 과거 단일 물리 페인 이동 모델 시절의 잔재인 `find_global_sidebar_pane()` 및 `ensure_global_sidebar_window()`를 완전히 삭제하고, CLI `--ensure-sidebar-window` 경로를 `provision_sidebar_window()`로 일원화.
+- **프롬프트 입력 취소 시 시그널 트랩 누출 방지**:
+  - `prompt_text()` 실행 시 `trap cleanup_prompt_traps RETURN` 스코프를 추가하여, 입력 중 취소나 조기 반환 시에도 `SIGUSR2`(리프레시) 및 `SIGWINCH`(터미널 리사이즈) 핸들러가 항상 복구되도록 안전 장치 구현.
+- **활성 클라이언트 3단계 중복 조회 일원화**:
+  - `active_client_window()` 및 `active_client_session()`의 중복 3단계 폴백 로직을 `resolve_active_client_property()` 공통 헬퍼로 통합.
+- **전체 7종 유닛/계약 테스트 스위트 100% PASS 입증**.
+
 ## 2026-08-08 - Single Sidebar 방안 A 실질적 부채 정리 및 중복 로직 통합 완수
 
 - **순수 사장 코드 정리 (Dead Functions Removal)**:
