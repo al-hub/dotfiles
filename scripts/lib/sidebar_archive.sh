@@ -1,7 +1,3 @@
-#!/usr/bin/env bash
-# Session Archive Serialization & File Service Module
-set -euo pipefail
-
 sidebar_archive_format_line() {
     local created="$1" session="$2" path="$3" window_count="$4" active_window="$5" layout="$6" width="$7" height="$8" active_pane="$9" cmd="${10}" flags="${11}"
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
@@ -14,3 +10,9 @@ sidebar_archive_save_atomic() {
     printf '%s\n' "$content" > "$tmp_file"
     mv -f "$tmp_file" "$target_file"
 }
+
+sidebar_archive_validate_path() {
+    local archive_path="$1"
+    [ -r "$archive_path" ] && [ -s "$archive_path" ]
+}
+
