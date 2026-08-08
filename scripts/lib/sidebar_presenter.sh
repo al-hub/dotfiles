@@ -9,6 +9,7 @@ sidebar_presenter_map_key() {
         s|S) echo "TOGGLE" ;;
         j|J) echo "DOWN" ;;
         k|K) echo "UP" ;;
+        o|O) echo "HISTORY" ;;
         *) echo "UNKNOWN" ;;
     esac
 }
