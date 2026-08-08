@@ -6448,66 +6448,10 @@ tui_delete_session()
 
     case "$answer" in
         [Yy]|[Yy][Ee][Ss])
-            debug_log "tui_delete_session confirm yes selected=$selected_session current=$current_session"
-            deleted_session="$selected_session"
-            deleting_current_session=false
-            if [ "$selected_session" = "$current_session" ]; then
-                next_session="$(fallback_session "$deleted_session")"
-                debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
-                if [ -n "$next_session" ]; then
-                    current_session="$next_session"
-                fi
-                deleting_current_session=true
-            fi
-            debug_log "tui_delete_session before run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
-            run_session_delete "$deleted_session" true
-            debug_log "tui_delete_session after run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
-            if [ "$deleting_current_session" = "false" ]; then
-                wait_for_session_absence "$deleted_session" || true
-            fi
-            if [ "$deleting_current_session" = "true" ]; then
-                debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
-                wait_for_session_absence "$deleted_session" 100 0.05 || true
-                reassert_sidebar_after_session_delete || message_line "Sidebar focus is still settling"
-                discard_pending_input
-                selected_session="$current_session"
-                collect_sessions false "$selected_session"
-                render_full delete-current
-                return 0
-            fi
-            discard_pending_input
-            selected_session="$current_session"
+            execute_tui_session_delete_action true
             ;;
         '')
-            debug_log "tui_delete_session confirm enter selected=$selected_session current=$current_session"
-            deleted_session="$selected_session"
-            deleting_current_session=false
-            if [ "$selected_session" = "$current_session" ]; then
-                next_session="$(fallback_session "$deleted_session")"
-                debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
-                if [ -n "$next_session" ]; then
-                    current_session="$next_session"
-                fi
-                deleting_current_session=true
-            fi
-            debug_log "tui_delete_session before run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
-            run_session_delete "$deleted_session" false
-            debug_log "tui_delete_session after run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
-            if [ "$deleting_current_session" = "false" ]; then
-                wait_for_session_absence "$deleted_session" || true
-            fi
-            if [ "$deleting_current_session" = "true" ]; then
-                debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
-                wait_for_session_absence "$deleted_session" 100 0.05 || true
-                reassert_sidebar_after_session_delete || message_line "Sidebar focus is still settling"
-                discard_pending_input
-                selected_session="$current_session"
-                collect_sessions false "$selected_session"
-                render_full delete-current
-                return 0
-            fi
-            discard_pending_input
-            selected_session="$current_session"
+            execute_tui_session_delete_action false
             ;;
     esac
 }
