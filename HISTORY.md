@@ -5,6 +5,15 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Production Bundler 구축 및 M7 Cutover 아키텍처 완비
+
+- **프로덕션 번들러 구축 (`scripts/build-dist.sh`)**:
+  - `scripts/lib/sidebar_*.sh` 6개 모듈과 `scripts/tmux-session-launcher`를 최적화된 프로덕션 단일 바이너리(`dist/tmux-session-launcher`)로 번들링하는 스크립트 작성.
+  - 배포 환경에서 sourcing 파일 I/O 오버헤드를 0ms로 완벽 차단하고, TDD 계약 테스트(`test-contract.sh`) PASS 확인.
+- **TUI 버그 수정**:
+  - `sidebar_presenter.sh` 내 `o` 키를 `HISTORY` 액션으로 명확히 매핑하여 TUI 히스토리 뷰 모드 전환 결함 해결.
+- **M7 계층화 절체 구현 계획 문서화**: `docs/superpowers/plans/2026-08-08-m7-cutover-and-bundling-plan.md` 등록 완료.
+
 ## 2026-08-08 - Single Sidebar M1-M7 모듈화 및 TDD/SOLID 리팩터링 완료
 
 - monolithic `scripts/tmux-session-launcher` (7,300+ lines)에 대해 M1~M7 TDD Strangler refactoring을 완수했다:
