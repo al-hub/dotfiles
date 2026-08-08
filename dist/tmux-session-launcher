@@ -4800,6 +4800,15 @@ render_prompt_box()
     printf '\033[%s;1H\033[2K%s' "$height" "$prompt" >/dev/tty 2>/dev/null || printf '\033[%s;1H\033[2K%s' "$height" "$prompt"
 }
 
+cleanup_prompt_traps()
+{
+    stty -echo -icanon time 0 min 0 2>/dev/null || true
+    trap handle_refresh_signal USR2 2>/dev/null || true
+    trap handle_geometry_signal WINCH 2>/dev/null || true
+    prompt_active=false
+    post_operation_fast_read=true
+}
+
 prompt_text()
 {
     prompt="$1"
@@ -4823,6 +4832,7 @@ prompt_text()
     fi
     sidebar_runtime_set "$SIDEBAR_PROMPT_READY_OPTION" 1
     prompt_active=true
+    trap cleanup_prompt_traps RETURN 2>/dev/null || true
     trap '' USR2 WINCH
 
     if [ "$prompt_type" = "delete" ] || [ "$prompt_type" = "history-delete" ]; then
