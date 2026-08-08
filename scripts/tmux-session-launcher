@@ -3895,6 +3895,38 @@ row_mark_value()
     fi
 }
 
+session_visible_rows()
+{
+    height="${cached_pane_height:-20}"
+    if [ "$view_mode" = "history" ]; then
+        rows=$(((height - 4) / 2))
+    else
+        rows=$((height - 3))
+    fi
+
+    [ "$rows" -lt 1 ] && rows=1
+    printf '%s\n' "$rows"
+}
+
+history_start_line()
+{
+    if [ "$view_mode" = "history" ]; then
+        printf '%s\n' "$((2 + $(session_visible_rows) + 1))"
+    else
+        printf '%s\n' 0
+    fi
+}
+
+history_visible_rows()
+{
+    height="${cached_pane_height:-20}"
+    start="$(history_start_line)"
+    rows=$((height - start))
+
+    [ "$rows" -lt 1 ] && rows=1
+    printf '%s\n' "$rows"
+}
+
 render_header()
 {
     width="${cached_pane_width:-35}"
