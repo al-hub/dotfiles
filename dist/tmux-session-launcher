@@ -1327,32 +1327,28 @@ sidebar_window_ids()
         -F '#{window_id}|#{session_name}' 2>/dev/null || true) | sort -u
 }
 
+resolve_active_client_property()
+{
+    local fmt="$1" val
+    val="$(tmux list-clients -F "#{client_control_mode}|${fmt}" 2>/dev/null |
+        awk -F '|' '$1 != 1 && $2 != "" { print $2; exit }')"
+    if [ -z "$val" ]; then
+        val="$(tmux display-message -p "${fmt}" 2>/dev/null || true)"
+    fi
+    if [ -z "$val" ]; then
+        val="$(tmux list-clients -F "${fmt}" 2>/dev/null | awk 'NF { print $1; exit }')"
+    fi
+    printf '%s\n' "$val"
+}
+
 active_client_window()
 {
-    local win
-    win="$(tmux list-clients -F '#{client_control_mode}|#{window_id}' 2>/dev/null |
-        awk -F '|' '$1 != 1 && $2 != "" { print $2; exit }')"
-    if [ -z "$win" ]; then
-        win="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
-    fi
-    if [ -z "$win" ]; then
-        win="$(tmux list-clients -F '#{window_id}' 2>/dev/null | awk 'NF { print $1; exit }')"
-    fi
-    printf '%s\n' "$win"
+    resolve_active_client_property '#{window_id}'
 }
 
 active_client_session()
 {
-    local sess
-    sess="$(tmux list-clients -F '#{client_control_mode}|#{session_name}' 2>/dev/null |
-        awk -F '|' '$1 != 1 && $2 != "" { print $2; exit }')"
-    if [ -z "$sess" ]; then
-        sess="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
-    fi
-    if [ -z "$sess" ]; then
-        sess="$(tmux list-clients -F '#{session_name}' 2>/dev/null | awk 'NF { print $1; exit }')"
-    fi
-    printf '%s\n' "$sess"
+    resolve_active_client_property '#{session_name}'
 }
 
 global_sidebar_window()
