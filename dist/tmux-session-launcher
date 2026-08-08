@@ -183,8 +183,6 @@ sidebar_switch_reconcile_cold() {
     return 0
 }
 # --- END sidebar_switch.sh ---
-#!/usr/bin/env bash
-set -euo pipefail
 
 LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
@@ -203,18 +201,8 @@ SIDEBAR_CONTROLLER_PATH="$LAUNCHER_DIR/tmux-sidebar-controller"
     [ -n "$launcher_test_dir" ] && launcher_test_dir="$(cd "$(dirname "$launcher_test_dir")" && pwd)"
     [ -n "$launcher_test_dir" ] && SIDEBAR_CONTROLLER_PATH="$launcher_test_dir/tmux-sidebar-controller"
 }
-SIDEBAR_DOMAIN_PATH="$LAUNCHER_DIR/lib/sidebar_domain.sh"
-[ -r "$SIDEBAR_DOMAIN_PATH" ] && source "$SIDEBAR_DOMAIN_PATH"
-SIDEBAR_PORT_TMUX_PATH="$LAUNCHER_DIR/lib/sidebar_port_tmux.sh"
-[ -r "$SIDEBAR_PORT_TMUX_PATH" ] && source "$SIDEBAR_PORT_TMUX_PATH"
-SIDEBAR_SWITCH_PATH="$LAUNCHER_DIR/lib/sidebar_switch.sh"
-[ -r "$SIDEBAR_SWITCH_PATH" ] && source "$SIDEBAR_SWITCH_PATH"
-SIDEBAR_PRESENTER_PATH="$LAUNCHER_DIR/lib/sidebar_presenter.sh"
-[ -r "$SIDEBAR_PRESENTER_PATH" ] && source "$SIDEBAR_PRESENTER_PATH"
-SIDEBAR_COORDINATOR_PATH="$LAUNCHER_DIR/lib/sidebar_coordinator.sh"
-[ -r "$SIDEBAR_COORDINATOR_PATH" ] && source "$SIDEBAR_COORDINATOR_PATH"
-SIDEBAR_ARCHIVE_PATH="$LAUNCHER_DIR/lib/sidebar_archive.sh"
-[ -r "$SIDEBAR_ARCHIVE_PATH" ] && source "$SIDEBAR_ARCHIVE_PATH"
+# Sourced in dev; bundled in prod
+source "$SIDEBAR_ADAPTER_PATH"
 
 SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
@@ -6357,7 +6345,9 @@ create_session_with_active_client_geometry()
     case "$client_y" in ''|*[!0-9]*) client_y="" ;; esac
 
     if [ -n "$client_x" ] && [ -n "$client_y" ] && [ "$client_x" -gt 0 ] && [ "$client_y" -gt 0 ]; then
+        sidebar_tmux_cmd new-session -d -s "$target_name" -c "$target_path" -x "$client_x" -y "$client_y"
     else
+        sidebar_tmux_cmd new-session -d -s "$target_name" -c "$target_path"
     fi
 }
 
@@ -7135,6 +7125,7 @@ run_tui()
 }
 
 # shellcheck disable=SC1090
+source "$SIDEBAR_CONTROLLER_PATH"
 
 main()
 {

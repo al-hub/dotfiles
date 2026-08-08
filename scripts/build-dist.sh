@@ -24,8 +24,8 @@ for lib in "$REPO_ROOT"/scripts/lib/sidebar_*.sh; do
     echo "# --- END ${lib##*/} ---" >> "$OUTPUT_BIN"
 done
 
-# Append main launcher body (excluding individual lib sourcing)
-grep -v '^source ' "$REPO_ROOT/scripts/tmux-session-launcher" | grep -v 'sidebar_.*_path' >> "$OUTPUT_BIN" || true
+# Append main launcher body (excluding individual lib sourcing lines)
+grep -v 'LAUNCHER_DIR/lib/sidebar_' "$REPO_ROOT/scripts/tmux-session-launcher" | grep -v '^#!/usr/bin/env bash' | grep -v '^set -euo pipefail' >> "$OUTPUT_BIN" || true
 
 chmod +x "$OUTPUT_BIN"
 echo "Production bundle created successfully: $OUTPUT_BIN"
