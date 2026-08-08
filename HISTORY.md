@@ -5,6 +5,21 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-08 - Single Sidebar 유지보수 아키텍처와 TDD/SOLID migration 설계
+
+- 현재 production과 테스트를 정량 감사해 launcher 7,311 LOC/261 함수,
+  `switch_session()` 246줄, 호출되지 않는 legacy global `move-pane` controller,
+  adapter 밖 direct tmux 결합을 주요 유지보수 부채로 기록했다.
+- tmux 제약상 physical pane/process 하나를 여러 window에 고정 표시할 수 없음을
+  확인하고, **tmux server당 logical coordinator 1개 + unique managed window당
+  fixed thin presenter 1개**를 목표 구조로 결정했다.
+- `docs/tmux-single-sidebar-design.md`를 현재 권한 문서로 전면 보강해 hot/cold path,
+  state ownership, typed ports, failure/geometry contract, SOLID 책임, M0~M7
+  RED/GREEN/REFACTOR strangler migration과 정량 완료 기준을 정의했다.
+- 공식 hard gate를 전환 1000ms/외부 키 100ms로 통일하고 p95 500ms는 최적화
+  목표로 분리했다. 과거 global-pane internals에는 historical 안내를 추가했다.
+- 이번 변경은 설계·문서 정합성 보강이며 production 동작은 변경하지 않았다.
+
 ## 2026-08-08 - 신규 세션 전환 후 하단 메뉴 중간 표시 잔류 결함 TDD/SOLID 대안 A 기반 수정 및 Gate E 회귀 PASS
 
 - 신규 세션 생성(`c`) 후 전환(`Enter`) 시 하단 키 메뉴가 중간에 표시되는 잔류 결함을 TDD/SOLID 대안 A 방식으로 완전 수정했다:

@@ -6,6 +6,30 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-08 - Single Sidebar 유지보수 아키텍처 결정
+
+사용자 요청과 의도:
+- sidebar 코드량이 커진 원인을 점검하고, session 전환 중 sidebar 크기·위치를
+  고정하는 단일 sidebar 모델이 더 빠르고 안정적인지 검증할 것.
+- subagent들과 효율적인 architecture를 논의해 TDD와 SOLID를 준수하는 개선
+  설계문서를 작성할 것.
+
+분석과 결정:
+- 정상 전환에서 pane 이동/재생성/layout 복구를 제거하고 pre-provisioned target에
+  `switch-client`만 수행하는 방향은 타당하며 현재 측정도 1000ms 기준 내다.
+- tmux pane은 physical window 소속이므로 one pane/one OS process를 모든 session에
+  표시하는 요구는 불가능하다. single을 server-wide logical backend/state 하나로
+  정의하고 unique managed window마다 fixed thin presenter를 허용한다.
+- 새 daemon을 즉시 넣는 big-bang 변경은 피한다. pure seam → typed ports → hot/cold
+  split → thin presenter → coordinator runtime spike 순으로 진행하며, singleton,
+  recovery, behavior diff, latency gate를 통과할 때만 기본값으로 승격한다.
+- 공식 release 기준은 전환 1000ms/외부 키 100ms이고 p95 500ms는 최적화 목표다.
+
+결과:
+- `docs/tmux-single-sidebar-design.md`에 목표 topology, 상태/책임/port, failure와
+  geometry 정책, test gap, M0~M7 TDD migration, 정량 acceptance를 기록했다.
+- production 코드는 변경하지 않았다.
+
 ## 2026-08-08 - 세션 생성/전환 후 하단 메뉴 중간 표시 잔류 결함 대안 A TDD/SOLID 준수 수정 완수
 
 사용자 지시:

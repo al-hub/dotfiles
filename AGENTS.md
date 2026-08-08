@@ -6,6 +6,9 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
+- sidebar 유지보수 목표는 tmux server당 logical coordinator 1개와 unique managed
+  window당 고정 thin presenter 1개입니다. 물리 pane 1개를 이동하는 모델은 채택하지
+  않으며, `docs/tmux-single-sidebar-design.md`의 M0~M7 TDD strangler 순서를 따릅니다.
 - 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.10을 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.11(v6.11)입니다. launcher 내부 latency phase metrics는 기록되며 완화된 기준 목표(전환 1000ms 이내, 외부 키 반응 100ms 이내)를 적용합니다. 현재 attached-PTY transition finish는 약 0.63~0.86초(623~838ms)로 1000ms 기준 내에 위치하며 사용자 live 6회는 343~593ms로 안정적입니다.
 - 기본 enabled 설치 항목은 사용자에게 `opencode`와 `tmux`가 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`, `tmux-theme-picker`, `tmux-command-palette`는 hidden dependency로 함께 설치됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
@@ -22,7 +25,7 @@
 - session 전환은 layout snapshot/restore를 사용하지 않습니다. archive/restore와 cold provisioning만 topology/geometry를 검증하며, horizontal/vertical multi-pane window도 local sidebar geometry를 유지합니다.
 - 전환 직후 target sidebar pane이 absent이면 target window에 bounded repair/provision을 수행하고, 정상 전환에서는 이 경로를 실행하지 않습니다. live observer는 반드시 `display-message -c <client_tty>`로 사용자 client context를 고정해야 합니다.
 - 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
-- 전환 metrics는 validate/ensure-target-sidebar/switch-client/stabilize/finish phase를 operation ID로 연결합니다. native 전환은 target marker를 switch 직전에 게시하고 selection-sync ACK 후 client를 전환하며, current/selected marker delta만 갱신하고 실제 geometry 변화가 없는 full render는 억제합니다. attached PTY에서 marker barrier는 ACK를 확인했지만 전환 시간은 623~838ms로 500ms 목표를 초과해 latency 후속 과제로 추적합니다. 사용자 live 6회는 marker invariant 6/6, target pane identity 6/6, known error 0건이며 343~593ms로 측정됐습니다.
+- 전환 metrics는 validate/ensure-target-sidebar/switch-client/stabilize/finish phase를 operation ID로 연결합니다. native 전환은 target marker를 switch 직전에 게시하고 selection-sync ACK 후 client를 전환하며, current/selected marker delta만 갱신하고 실제 geometry 변화가 없는 full render는 억제합니다. attached PTY 전환 623~838ms는 공식 1000ms 기준 내이며, p95 500ms는 후속 최적화 목표입니다. 사용자 live 6회는 marker invariant 6/6, target pane identity 6/6, known error 0건이며 343~593ms로 측정됐습니다.
 - `tmux-sidebar-tmux-adapter`에는 FIFO-backed persistent control-mode 실험 경로가 있으나 `TMUX_SESSION_SIDEBAR_CONTROL_MODE` 기본값은 false입니다. 실제 pane 이동 후 control client event isolation 문제가 확인되어 기본 production은 CLI adapter를 사용하며, control-mode 승격에는 dedicated internal control session/client가 필요합니다.
 - history 화면의 `a`는 모든 archive를 명시적으로 선택하고, restore는 selected/restored cardinality를 trace와 `Restore incomplete: x/y`로 보고합니다. attached-PTY 6-archive 전체선택 restore 회귀가 6/6이어야 합니다.
 - restore 중 tmux 자동 provision hook은 topology guard로 억제되며, archive의 빈/stale layout은 `-` sentinel과 pane-count 검증으로 geometry가 다른 layout의 적용을 막습니다.

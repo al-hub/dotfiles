@@ -48,7 +48,10 @@ Each attached-PTY switch records input time, `switch-client` time, target
 sidebar readiness, stable frame time, pane geometry, work topology, and raw
 trace lines. The migration is accepted only when:
 
-- key-to-stable-frame p95 is at most 500ms;
+- every valid key-to-stable-frame sample is at most 1000ms; p50/p95/max and
+  sample count are recorded, while p95 at most 500ms remains an optimization
+  target rather than the release hard gate;
+- non-sidebar key-to-observable-action latency is at most 100ms;
 - `move-pane`, `join-pane`, and `select-layout` count is zero during switch;
 - `render_full` count is zero during normal switch;
 - blank or partial frames are zero;

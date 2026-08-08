@@ -1,5 +1,9 @@
 # tmux-session-launcher 핵심 로직 문서
 
+> **Historical:** 이 문서의 server당 pane 하나와 `move-pane` 설명은 과거
+> global-pane 구현을 다룬다. 현재 window-local 계약과 개선 목표는
+> `docs/tmux-single-sidebar-design.md`를 기준으로 한다.
+>
 > 이 문서는 `scripts/tmux-session-launcher`의 핵심 아키텍처를 설명한다.
 > AI CLI가 이 파일을 먼저 읽으면, 4000줄 코드를 전부 분석하지 않고도
 > 문제 영역을 빠르게 찾을 수 있다.

@@ -95,8 +95,9 @@ bash tests/compare-profiles.sh
 ```
 
 `test-keyboard-e2e-session-create-latency.sh`는 provisioning 또는 session
-생성 지연을 변경했을 때 별도로 실행한다. 현재 전환 latency가 500ms 목표를
-간헐적으로 넘는 것은 기능 실패와 분리해 P2 성능 이슈로 기록한다.
+생성 지연을 변경했을 때 별도로 실행한다. 공식 release hard gate는 유효한 전환
+sample 전체 1000ms 이하, 외부 키 반응 100ms 이하이다. p95 500ms는 기능 실패와
+분리한 최적화 목표/P2 경고로 기록한다.
 
 ### Gate E: 사용자-visible tmux 최종 검증
 
