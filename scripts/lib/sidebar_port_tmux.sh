@@ -19,6 +19,17 @@ sidebar_port_switch_client() {
     fi
 }
 
-sidebar_port_list_sessions() {
-    sidebar_tmux_cmd list-sessions -F '#S:#{session_created}:#{session_attached}' 2>/dev/null || true
+sidebar_port_session_exists() {
+    local target="$1"
+    sidebar_tmux_cmd has-session -t "=$target:" >/dev/null 2>&1
+}
+
+sidebar_port_mark_session_managed() {
+    local session="$1"
+    sidebar_tmux_cmd set-option -t "=$session:" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
+}
+
+sidebar_port_session_is_managed() {
+    local session="$1"
+    [ "$(sidebar_tmux_cmd show-option -qv -t "=$session:" "$SIDEBAR_MANAGED_OPTION" 2>/dev/null || true)" = 1 ]
 }
