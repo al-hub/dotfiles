@@ -6259,6 +6259,39 @@ tui_new_session()
     sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
     trace_event "session.create.end session=$session_name sidebar=hook-provision"
 }
+execute_tui_session_delete_action()
+{
+    local archive_flag="${1:-false}"
+    debug_log "tui_delete_session confirm action selected=$selected_session current=$current_session archive=$archive_flag"
+    deleted_session="$selected_session"
+    deleting_current_session=false
+    if [ "$selected_session" = "$current_session" ]; then
+        next_session="$(fallback_session "$deleted_session")"
+        debug_log "tui_delete_session deleting current selected=$deleted_session next_session=$next_session"
+        if [ -n "$next_session" ]; then
+            current_session="$next_session"
+        fi
+        deleting_current_session=true
+    fi
+    debug_log "tui_delete_session before run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+    run_session_delete "$deleted_session" "$archive_flag"
+    debug_log "tui_delete_session after run_session_delete selected=$deleted_session deleting_current_session=$deleting_current_session"
+    if [ "$deleting_current_session" = "false" ]; then
+        wait_for_session_absence "$deleted_session" || true
+    fi
+    if [ "$deleting_current_session" = "true" ]; then
+        debug_log "tui_delete_session exit after deleting current selected=$deleted_session"
+        wait_for_session_absence "$deleted_session" 100 0.05 || true
+        reassert_sidebar_after_session_delete || message_line "Sidebar focus is still settling"
+        discard_pending_input
+        selected_session="$current_session"
+        collect_sessions false "$selected_session"
+        render_full delete-current
+        return 0
+    fi
+    discard_pending_input
+    selected_session="$current_session"
+}
 
 tui_delete_session()
 {

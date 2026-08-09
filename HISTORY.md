@@ -8,10 +8,12 @@
 ## 2026-08-09 - Single Sidebar TDD & SOLID 준수 버그 수정 및 안정화
 
 - **TDD 기반 레그레션 테스트 스위트 작성**:
+  - `tests/tmux-single-sidebar/test-tui-delete-action-regression.sh`: `execute_tui_session_delete_action` 정의 검증 TDD 테스트 추가.
   - `tests/tmux-single-sidebar/test-find-global-pane-regression.sh`: `find_global_sidebar_pane` 헬퍼 복원 및 아카이브 삭제 CLI 동작 검증 테스트 작성.
   - `tests/tmux-single-sidebar/test-missing-session-switch-graceful.sh`: 존재하지 않거나 삭제된 세션으로 전환 시 디태치(Detach) 없이 안전하게 에러 메시지 반환 검증.
 - **SOLID 원칙 기반 결함 수정**:
-  - **단일 책임(SRP) 및 인터페이스 분리(ISP)**: `find_global_sidebar_pane()` 헬퍼를 복원하여 adapter 포트(`sidebar_tmux_global_sidebar_pane`)와 Controller/Archive 서비스 간 명확한 계층 경계 형성.
+  - **단일 책임(SRP) & 함수 정의 완결성**: `tui_delete_session()`에서 호출하는 `execute_tui_session_delete_action()` 누락 함수를 구현하여 사이드바 TUI 상 세션 삭제(`d` -> `y`/`Enter`) 시 발생하던 status 127 패닉 종료 버그 해결.
+  - **인터페이스 분리(ISP)**: `find_global_sidebar_pane()` 헬퍼를 복원하여 adapter 포트(`sidebar_tmux_global_sidebar_pane`)와 Controller/Archive 서비스 간 명확한 계층 경계 형성.
   - **개방-폐쇄 및 리스코프 치환(OCP/LSP)**: `switch_session()`에서 세션 존재 여부를 검증하고, 미존재 세션 요청 시 세션 목록 캐시를 갱신 및 에러 반환하여 클라이언트 연결 끊김(Detach) 예방.
 - **검증**: 계약 테스트 스위트 8/8 및 유닛/TDD 레그레션 스위트 전체 PASS 확인 후 배포 번들(`dist/`) 업데이트.
 
