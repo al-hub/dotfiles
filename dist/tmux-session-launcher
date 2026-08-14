@@ -2885,7 +2885,7 @@ switch_session()
         if sidebar_content_ready "$target_window" "$session_name"; then
             trace_event "switch.target-sidebar.selection-sync-content-ready session=$session_name window=$target_window pane=$sidebar_pane ack=${selection_sync_ack:-none} result=signal-skipped"
         elif [ "$selection_sync_ready" != true ] || [ "$selection_sync_ack" != "$session_name" ]; then
-            signal_sidebar_refresh "$session_name" "$sidebar_pane" "$sidebar_pid"
+            signal_managed_sidebar_refresh
             trace_event "switch.target-sidebar.selection-sync-fallback session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none} ack=${selection_sync_ack:-pending} result=deferred-handler"
         else
             trace_event "switch.target-sidebar.selection-sync-complete session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none}"
