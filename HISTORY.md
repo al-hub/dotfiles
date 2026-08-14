@@ -5,6 +5,31 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-09 - Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)
+
+- **Layer 1 tmux 포트 및 아카이브 영속성 모듈 캡슐화 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_archive.sh`)**:
+  - `sidebar_port_tmux.sh`: `sidebar_port_get_current_session`, `sidebar_port_get_current_path`, `sidebar_port_switch_client`, `sidebar_port_session_exists`, `sidebar_port_mark_session_managed`, `sidebar_port_session_is_managed` 구현 및 캡슐화. `sidebar_tmux_cmd` 미정의 시 `tmux` 함수 폴백 제공, 빈 타겟/세션 안전 리턴, `$SIDEBAR_MANAGED_OPTION` 기본값(`@dotfiles_sidebar_managed`) 안전 처리.
+  - `sidebar_archive.sh`: `sidebar_archive_format_line`, `sidebar_archive_save_atomic`, `sidebar_archive_validate_path` 구현. 원자적 파일 저장 시 대상 디렉토리 자동 생성 및 `.tmp.$$` 가동 후 원자적 교체(`mv -f`) 보장.
+  - Production binary `dist/tmux-session-launcher` 동기화.
+- **TDD 단위 테스트 확충 및 검증**:
+  - `tests/tmux-single-sidebar/test-port-tmux-unit.sh`: tmux CLI mock 기반 6개 포트 함수 단위 테스트 구현 (PASS).
+  - `tests/tmux-single-sidebar/test-archive-unit.sh`: 포맷 라인 도메인 검증, 원자적 저장/덮어쓰기/하위 디렉토리 생성 및 유효 경로 검증 단위 테스트 구현 (PASS).
+  - 상세 보고서 작성: `/tmp/task-2-report.md`.
+
+## 2026-08-09 - Task 1: Layer 0 Pure Domain Implementation (`scripts/lib/sidebar_domain.sh`)
+
+- **Layer 0 순수 도메인 모듈 및 유닛 테스트 전면 정비 (`scripts/lib/sidebar_domain.sh`, `tests/tmux-single-sidebar/test-domain-unit.sh`)**:
+  - `sidebar_domain_sanitize_name`: 콜론(`:`), 마침표(`.`), 공백(` `)을 언더스코어(`_`)로 치환하는 순수 내장 변수 치환 로직 정비.
+  - `sidebar_domain_validate_archive_line`: 11개 파이프 구분 필드를 검증하는 v3 아카이브 정규식 구현 및 초기 명령어(`cmd`) 필드 빈 값(`||`) 지원.
+  - `sidebar_domain_epoch_now`: 내장 `$EPOCHSECONDS` 우선 사용 및 `date +%s` 폴백 지원.
+  - `sidebar_domain_format_duration`: 경과 초를 `D:HH:MM:SS` 형식으로 변환하며, 비숫자/빈 값 입력을 `0:00:00:00`으로 안전 처리.
+  - `sidebar_domain_session_age_value`: `local -n` 참조를 통해 세션 생성 시점 대비 경과 시간을 계산하고, 기존 `$SECONDS` 사용 버그(경과 시간 오계산)를 에포크 기반으로 수정 및 `sidebar_domain_format_duration` 재사용.
+  - `sidebar_domain_layout_body`: 4자리 16진수 체크섬 프리픽스(`[0-9a-fA-F]{4},`) 제거 및 순수 레이아웃 추출.
+- **TDD (RED -> GREEN -> REFACTOR) 및 제약 조건 검증**:
+  - `tests/tmux-single-sidebar/test-domain-unit.sh`에 6개 순수 도메인 함수 및 엣지 케이스 단위 테스트 수립.
+  - zero side-effect, no external CLI commands (except `date`), zero `tmux` calls 제약 조건 입증 완료.
+  - 상세 보고서 작성: `/tmp/task-1-report.md`.
+
 ## 2026-08-09 - Single Sidebar TDD & SOLID 준수 버그 수정 및 안정화
 
 - **TDD 기반 레그레션 테스트 스위트 작성**:

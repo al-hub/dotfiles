@@ -3,14 +3,14 @@
 set -euo pipefail
 
 sidebar_domain_sanitize_name() {
-    local raw="$1"
+    local raw="${1:-}"
     local clean="${raw//[:. ]/_}"
-    echo "$clean"
+    printf '%s\n' "$clean"
 }
 
 sidebar_domain_validate_archive_line() {
-    local line="$1"
-    [[ "$line" =~ ^[0-9]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+\|[^|]+\|[0-9]+\|[0-9]+\|[0-9]+\|[^|]+\|[0-9]+$ ]]
+    local line="${1:-}"
+    [[ "$line" =~ ^[0-9]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+\|[^|]+\|[0-9]+\|[0-9]+\|[0-9]+\|[^|]*\|[0-9]+$ ]]
 }
 
 sidebar_domain_epoch_now() {
@@ -22,7 +22,10 @@ sidebar_domain_epoch_now() {
 }
 
 sidebar_domain_format_duration() {
-    local elapsed="$1"
+    local elapsed="${1:-0}"
+    case "$elapsed" in
+        ''|*[!0-9]*) elapsed=0 ;;
+    esac
     local days=$((elapsed / 86400))
     local remain=$((elapsed % 86400))
     local hours=$((remain / 3600))
@@ -34,28 +37,23 @@ sidebar_domain_format_duration() {
 
 sidebar_domain_session_age_value() {
     local -n _age_out_ref="$1"
-    local created_value="$2"
-    local now_value="${EPOCHSECONDS:-$SECONDS}"
+    local created_value="${2:-}"
+    local now_value
+    now_value="$(sidebar_domain_epoch_now)"
     case "$created_value" in
         ''|*[!0-9]*) created_value="$now_value" ;;
     esac
     local duration_elapsed=$((now_value - created_value))
     [ "$duration_elapsed" -lt 0 ] && duration_elapsed=0
-    local duration_days=$((duration_elapsed / 86400))
-    local duration_remain=$((duration_elapsed % 86400))
-    local duration_hours=$((duration_remain / 3600))
-    duration_remain=$((duration_remain % 3600))
-    local duration_minutes=$((duration_remain / 60))
-    local duration_seconds=$((duration_remain % 60))
-    printf -v _age_out_ref '%d:%02d:%02d:%02d' \
-        "$duration_days" "$duration_hours" "$duration_minutes" "$duration_seconds"
+    _age_out_ref="$(sidebar_domain_format_duration "$duration_elapsed")"
 }
 
 sidebar_domain_layout_body() {
-    local layout="$1"
+    local layout="${1:-}"
     case "$layout" in
         [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
         *) printf '%s\n' "$layout" ;;
     esac
 }
+
 

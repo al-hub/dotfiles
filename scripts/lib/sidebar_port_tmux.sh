@@ -2,6 +2,12 @@
 # Typed Tmux Port & Adapter Isolation Module
 set -euo pipefail
 
+if ! declare -f sidebar_tmux_cmd >/dev/null 2>&1; then
+    sidebar_tmux_cmd() {
+        tmux "$@"
+    }
+fi
+
 sidebar_port_get_current_session() {
     sidebar_tmux_cmd display-message -p '#S' 2>/dev/null || echo ""
 }
@@ -11,7 +17,8 @@ sidebar_port_get_current_path() {
 }
 
 sidebar_port_switch_client() {
-    local client_tty="$1" target_session="$2"
+    local client_tty="${1:-}" target_session="${2:-}"
+    [ -n "$target_session" ] || return 1
     if [ -n "$client_tty" ]; then
         sidebar_tmux_cmd switch-client -c "$client_tty" -t "=$target_session:"
     else
@@ -20,16 +27,21 @@ sidebar_port_switch_client() {
 }
 
 sidebar_port_session_exists() {
-    local target="$1"
+    local target="${1:-}"
+    [ -n "$target" ] || return 1
     sidebar_tmux_cmd has-session -t "=$target:" >/dev/null 2>&1
 }
 
 sidebar_port_mark_session_managed() {
-    local session="$1"
-    sidebar_tmux_cmd set-option -t "=$session:" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
+    local session="${1:-}"
+    [ -n "$session" ] || return 1
+    local opt="${SIDEBAR_MANAGED_OPTION:-@dotfiles_sidebar_managed}"
+    sidebar_tmux_cmd set-option -t "=$session:" "$opt" 1 2>/dev/null || true
 }
 
 sidebar_port_session_is_managed() {
-    local session="$1"
-    [ "$(sidebar_tmux_cmd show-option -qv -t "=$session:" "$SIDEBAR_MANAGED_OPTION" 2>/dev/null || true)" = 1 ]
+    local session="${1:-}"
+    [ -n "$session" ] || return 1
+    local opt="${SIDEBAR_MANAGED_OPTION:-@dotfiles_sidebar_managed}"
+    [ "$(sidebar_tmux_cmd show-option -qv -t "=$session:" "$opt" 2>/dev/null || true)" = "1" ]
 }

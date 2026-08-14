@@ -6,6 +6,26 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-09 - Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)
+
+- **사용자 지시**: Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)를 구현하고 인프라 포트 및 원자적 아카이브 영속성 함수 캡슐화, 단위 테스트 `test-port-tmux-unit.sh`, `test-archive-unit.sh` 수립 및 `/tmp/task-2-report.md` 작성.
+- **수행 내용**:
+  - `sidebar_port_tmux.sh`: `sidebar_port_get_current_session`, `sidebar_port_get_current_path`, `sidebar_port_switch_client`, `sidebar_port_session_exists`, `sidebar_port_mark_session_managed`, `sidebar_port_session_is_managed` 6개 인프라 포트 함수 구현 및 캡슐화. `sidebar_tmux_cmd` 미정의 시 `tmux` 폴백, `$SIDEBAR_MANAGED_OPTION` 안전 기본값 처리.
+  - `sidebar_archive.sh`: `sidebar_archive_format_line`, `sidebar_archive_save_atomic`, `sidebar_archive_validate_path` 구현. 아토믹 파일 저장시 중첩 디렉토리 자동 생성 및 `.tmp.$$` 임시 파일 사용 후 `mv -f` 원자적 치환 보장.
+  - `dist/tmux-session-launcher` 번들 내 해당 모듈 동기화.
+  - `tests/tmux-single-sidebar/test-port-tmux-unit.sh` 및 `test-archive-unit.sh` 단위 테스트 6개/3개 기능 완전 검증.
+  - `/tmp/task-2-report.md` 작성 완료.
+
+## 2026-08-09 - Task 1: Layer 0 Pure Domain Implementation (`scripts/lib/sidebar_domain.sh`)
+
+- **사용자 지시**: Task 1: Layer 0 Pure Domain Implementation (`scripts/lib/sidebar_domain.sh`)을 TDD(RED -> GREEN -> REFACTOR) 방식으로 완수하고 단위 테스트 `tests/tmux-single-sidebar/test-domain-unit.sh` 수립 및 `/tmp/task-1-report.md` 작성.
+- **수행 내용**:
+  - `scripts/lib/sidebar_domain.sh` 내 6개 순수 도메인 함수(`sidebar_domain_sanitize_name`, `sidebar_domain_validate_archive_line`, `sidebar_domain_epoch_now`, `sidebar_domain_format_duration`, `sidebar_domain_session_age_value`, `sidebar_domain_layout_body`) 완벽 구현.
+  - `$SECONDS` 오계산 버그 수정 및 에포크 기반 시간 계산 보장, 함수 재사용을 통한 중복 제거.
+  - `tests/tmux-single-sidebar/test-domain-unit.sh` 단위 테스트 6개 요구사항 및 엣지케이스 전수 검증.
+  - zero side-effect, zero external CLI commands, zero tmux calls 제약조건 엄수.
+  - `/tmp/task-1-report.md` 작성 완료.
+
 ## 2026-08-08 - Single Sidebar M1~M7 TDD/SOLID 모듈화 리팩터링 완료
 
 - **사용자 요청**: `/goal` 순차적으로 M7 까지 진행하고, LOC를 최적화하면서 유지보수에 유리하도록 하고 필요시 파일분리하여 TDD, SOLID 준수하면서 진행하라.

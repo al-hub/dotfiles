@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolve_launcher_dir() {
+    local target="${BASH_SOURCE[0]}"
+    while [ -L "$target" ]; do
+        local dir="$(cd -P "$(dirname "$target")" && pwd)"
+        target="$(readlink "$target")"
+        [[ $target != /* ]] && target="$dir/$target"
+    done
+    echo "$(cd -P "$(dirname "$target")" && pwd)"
+}
+LAUNCHER_DIR="$(resolve_launcher_dir)"
 SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
 [ -r "$SIDEBAR_ADAPTER_PATH" ] || {
     launcher_test_dir="${LAUNCHER:-}"
