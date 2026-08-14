@@ -6944,9 +6944,7 @@ run_tui()
                         force_refresh="$(sidebar_tmux_cmd show-option -gqv "$force_refresh_flag" 2>/dev/null || true)"
                         sidebar_owner_session="$(sidebar_session_name || true)"
                         [ -n "$sidebar_owner_session" ] || sidebar_owner_session="${sidebar_session_cached:-$current_session}"
-                        selection_sync_handled=false
-                        trace_event "render.force.check reason=$force_refresh sync_window=$(sidebar_tmux_cmd show-option -wqv -t "${SIDEBAR_WINDOW_ID:-}" "$SIDEBAR_SELECTION_SYNC_OPTION" 2>/dev/null || true) owner=$sidebar_owner_session"
-                        if [ "$refresh_signal_tick" = "true" ] && sync_sidebar_selection_delta; then
+                        if [ "$refresh_signal_tick" = "true" ] && false; then
                             selection_sync_handled=true
                         elif selection_sync_window_pending; then
                             # A managed refresh flag may already be set when
