@@ -2501,7 +2501,10 @@ switch_session()
         trace_event "switch.abort reason=target-session-missing session=$session_name window=${target_window:-none}"
         return 1
     fi
-    [ "$source_session" = "$session_name" ] && return 0
+    if [ "$source_session" = "$session_name" ]; then
+        trace_event "switch.skip reason=already-on-target source=$source_session target=$session_name client_tty=$client_tty"
+        return 0
+    fi
     # Multiple window-local sidebar processes observe the same shared
     # selection transition. Only the first process may own the client switch;
     # a duplicate Enter must not start a second transaction that can race
