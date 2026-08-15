@@ -201,7 +201,7 @@ sidebar_tmux_session_target()
     local session_id
     session_id="$(sidebar_tmux_session_id "$session_name")"
     [ -n "$session_id" ] || return 1
-    printf '%s\n' "$session_id"
+    printf '=%s:\n' "$session_id"
 }
 
 sidebar_tmux_pane_session()
