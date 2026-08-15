@@ -2678,16 +2678,14 @@ switch_session()
     pane_window="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{window_id}' 2>/dev/null || true)"
     # The TUI's cached current_session can lag behind a client/window hook.
     # Resolve the source from the pane that owns this process so a stale
-    # observer cannot initiate a switch from the wrong session.
-    source_session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#S' 2>/dev/null || true)"
-    [ -n "$source_session" ] || source_session="$current_session"
     client_tty="$(sidebar_tmux_client_tty_for_window "$pane_window" || true)"
     [ -n "$client_tty" ] || client_tty="$(tmux show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
     [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 { print $2; exit }' || true)"
     if [ -n "$client_tty" ]; then
-        active_client_session="$(tmux display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
-        [ -n "$active_client_session" ] && source_session="$active_client_session"
+        source_session="$(tmux display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
     fi
+    [ -n "$source_session" ] || source_session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#S' 2>/dev/null || true)"
+    [ -n "$source_session" ] || source_session="$current_session"
     if [ -z "$client_tty" ]; then
         trace_event "switch.skip reason=sidebar-window-detached pane=${TMUX_PANE:-none} window=${pane_window:-none} source=$source_session target=$session_name"
         return 0
