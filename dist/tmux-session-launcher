@@ -2681,8 +2681,13 @@ switch_session()
     # observer cannot initiate a switch from the wrong session.
     source_session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#S' 2>/dev/null || true)"
     [ -n "$source_session" ] || source_session="$current_session"
-    trace_event "switch.source-context pane=${TMUX_PANE:-none} window=${pane_window:-none} source=$source_session cached=${current_session:-none} target=$session_name"
     client_tty="$(sidebar_tmux_client_tty_for_window "$pane_window" || true)"
+    [ -n "$client_tty" ] || client_tty="$(tmux show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
+    [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 { print $2; exit }' || true)"
+    if [ -n "$client_tty" ]; then
+        active_client_session="$(tmux display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
+        [ -n "$active_client_session" ] && source_session="$active_client_session"
+    fi
     if [ -z "$client_tty" ]; then
         trace_event "switch.skip reason=sidebar-window-detached pane=${TMUX_PANE:-none} window=${pane_window:-none} source=$source_session target=$session_name"
         return 0
@@ -2899,7 +2904,8 @@ switch_session()
         fi
     fi
     [ -n "$METRICS_FILE" ] && metrics_write "op=switch phase=dispatch operation_id=$operation_id session=$session_name client_switch_us=$client_switch_us elapsed_us=$(( $(metrics_now_us) - switch_metrics_start_us ))"
-    transition_phase_set STABILIZE "$operation_id"
+    tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
+    tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_ACK_OPTION" "" 2>/dev/null || true
     transition_context_finish success window-local-ready "$operation_id"
     sidebar_operation_set idle "$operation_id"
     trace_event "switch.end mode=window-local session=$session_name pane=$sidebar_pane client=$client_tty result=ready"
@@ -3990,12 +3996,7 @@ EOF
         # selected for the next Enter/delete/archive action. During an active
         # transition, however, preserve a valid physical selection update
         # that arrived after switch-client and before this refresh completed.
-        if transition_is_active && [ -n "${selected_session:-}" ] &&
-            session_exists "$selected_session" && [ "$selected_session" != "$old_current_session" ]; then
-            trace_event "selection.refresh.preserve reason=transition-selection selected=$selected_session current=$current_session"
-        else
-            found_selected=false
-        fi
+        found_selected=false
         for index in "${!session_names[@]}"; do
             if [ "${session_names[$index]}" = "$old_current_session" ] ||
                 [ "${session_names[$index]}" = "$current_session" ]; then
@@ -6649,7 +6650,7 @@ read_key()
     key_raw="$key"
 
     if [ "$key" = $'\033' ]; then
-        IFS= read -rsn2 -t 1 rest || true
+        IFS= read -rsn2 -t 0.05 rest || true
         key_raw+="$rest"
         case "$rest" in
             '[A') key_result=up ;;
@@ -6980,7 +6981,9 @@ run_tui()
                     switch_session "$selected_session" || switch_result=$?
                     if [ "$switch_result" -eq 0 ]; then
                         refresh_signal_pending=false
-                        trace_event "render.coalesce.skip session=$selected_session reason=window-local-sidebar-ready"
+                        collect_sessions false "$selected_session"
+                        align_selection_to_session "$selected_session"
+                        render_full session-switch-complete
                     else
                         request_full_render transition-failed
                     fi
