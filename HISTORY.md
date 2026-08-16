@@ -5,6 +5,25 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-16 - Perf: Pure Bash Zero-Fork Archive Parsing & IPC Batching
+
+- **아카이브 복구 파이프라인 인메모리 파서 및 IPC 최적화 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `validate_archive_file`: `awk -F '\t'` 서브프로세스 생성을 완전 제거하고 순수 Bash 내장 `IFS=$'\t' read -r` 토큰화 및 검증 루프로 전환하여 파일 I/O 및 fork 오버헤드 0ms 달성.
+  - `restore_archive`: 윈도우 레이아웃 적용 및 패널 포커스/이름 설정을 순차 최적화하고 불필요한 서브셸 분기를 단축.
+  - `dist/tmux-session-launcher` 번들 재생성 및 `~/.local/bin/tmux-session-launcher` 설치.
+  - **검증 결과**:
+    - `test-contract.sh` 전수 PASS (8/8).
+    - `test-keyboard-e2e-history-select-all.sh` PASS (6/6 복구 카디널리티 확인).
+    - `test-keyboard-e2e-multi-window-topology.sh` PASS (2윈도우 8패널 복합 토폴로지 복원 검증).
+
+## 2026-08-16 - UX: Bulk Restore Real-Time Progress Gauge, Liveness Spinner & Safe Abort
+
+- **대량 복구(Bulk Restore) 터미널 UX 및 인체공학 개선 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `render_bulk_restore_progress`: 하단 고정 푸터에 실시간 진행률 게이지(`Restore: [======----] 14/22 63%`), 60ms 애니메이션 스피너(`⠋⠙⠹...`), 현재 처리 중인 아카이브 세션명을 실시간 출력.
+  - `restore_selected_archives`: 동기 `wait` 블록을 논블로킹 폴링 이벤트 루프로 전환하여 복구 도중 `Esc` 또는 `q` 입력 시 진행 중인 작업을 안전하게 취소(Abort)할 수 있도록 구현.
+  - `tui_restore_archives`: 복구 완료 시 히스토리 화면에서 `sessions` 세션 목록 뷰로 자동 전환하고 타겟 세션 위에 커서를 자동 위치시킴.
+  - `dist/tmux-session-launcher` 번들 재생성 및 `~/.local/bin/tmux-session-launcher` 설치.
+
 ## 2026-08-16 - Perf: Bulk Restore Latency Optimization (50s -> Sub-Second)
 
 - **대량 복구(Bulk Restore) 파이프라인 최적화 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:

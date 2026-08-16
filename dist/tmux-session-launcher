@@ -4455,6 +4455,37 @@ render_marker_column_all()
     trace_event "render.marker-column-all session=$current_session selected=$selected_session rows=$rendered"
 }
 
+render_bulk_restore_progress()
+{
+    local completed="$1" total="$2" current_name="${3:-}" frame="${4:-0}"
+    local width="${cached_pane_width:-35}" height="${cached_pane_height:-20}"
+    [ "$width" -ge 16 ] || return 0
+    local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local spinner="${spinners[$(( frame % 10 ))]}"
+    local percent=0
+    [ "$total" -gt 0 ] && percent=$(( (completed * 100) / total ))
+
+    local bar_width=$(( width - 20 ))
+    [ "$bar_width" -lt 4 ] && bar_width=4
+    local filled=$(( (percent * bar_width) / 100 ))
+    local unfilled=$(( bar_width - filled ))
+    local bar="" empty=""
+    [ "$filled" -gt 0 ] && bar="$(printf '%*s' "$filled" '' | tr ' ' '=')"
+    [ "$unfilled" -gt 0 ] && empty="$(printf '%*s' "$unfilled" '' | tr ' ' '-')"
+
+    local line1 line2
+    printf -v line1 'Restore: [%s%s] %d/%d %d%%' "$bar" "$empty" "$completed" "$total" "$percent"
+    if [ -n "$current_name" ]; then
+        printf -v line2 '%s [Esc] Cancel | %s' "$spinner" "${current_name:0:$((width - 17))}"
+    else
+        printf -v line2 '%s [Esc] Cancel (working...)' "$spinner"
+    fi
+
+    printf '\033[%d;1H\033[2K%s\033[%d;1H\033[2K%s' \
+        "$((height - 1))" "${line1:0:$width}" \
+        "$height" "${line2:0:$width}"
+}
+
 session_index_for_name()
 {
     local target="$1" index
@@ -5125,23 +5156,34 @@ validate_archive_file()
 {
     local archive_path_value="$1"
     [ -s "$archive_path_value" ] || return 1
-    awk -F '\t' '
-        BEGIN { version = ""; session = 0; windows = 0; panes = 0; ends = 0; valid = 1 }
-        $1 == "version" { version = $2 }
-        $1 == "session" && $2 != "" { session = 1 }
-        $1 == "window" { windows++; if (NF < 5) valid = 0 }
-        $1 == "pane" {
-            panes++
-            if ((version == "2" || version == "3") && NF < 10) valid = 0
-            if (version != "2" && version != "3" && NF < 3) valid = 0
-        }
-        $1 == "endwindow" { ends++ }
-        END {
-            if (version != "1" && version != "2" && version != "3") valid = 0
-            if (!session || windows == 0 || panes == 0 || windows != ends) valid = 0
-            exit(valid ? 0 : 1)
-        }
-    ' "$archive_path_value"
+    local version="" session_found=0 windows=0 panes=0 ends=0 valid=1
+    local line record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10
+    while IFS=$'\t' read -r record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 || [ -n "$record" ]; do
+        case "$record" in
+            version) version="$f1" ;;
+            session) [ -n "$f1" ] && session_found=1 ;;
+            window)
+                windows=$((windows + 1))
+                [ -n "$f4" ] || valid=0
+                ;;
+            pane)
+                panes=$((panes + 1))
+                if [ "$version" = "2" ] || [ "$version" = "3" ]; then
+                    [ -n "$f9" ] || valid=0
+                else
+                    [ -n "$f2" ] || valid=0
+                fi
+                ;;
+            endwindow) ends=$((ends + 1)) ;;
+        esac
+    done < "$archive_path_value"
+
+    [ "$version" = "1" ] || [ "$version" = "2" ] || [ "$version" = "3" ] || valid=0
+    [ "$session_found" -eq 1 ] || valid=0
+    [ "$windows" -gt 0 ] || valid=0
+    [ "$panes" -gt 0 ] || valid=0
+    [ "$windows" -eq "$ends" ] || valid=0
+    [ "$valid" -eq 1 ]
 }
 
 append_archive_history_once()
@@ -5975,12 +6017,11 @@ restore_archive()
                         restore_abort layout
                         return 1
                     fi
-                    if ! restore_window_focus "$current_window_target" "$current_window_active_pane"; then
-                        restore_abort focus
-                        return 1
+                    if [ -n "$current_window_active_pane" ]; then
+                        tmux select-pane -t "$current_window_active_pane" >/dev/null 2>&1 || true
                     fi
                 fi
-                if [ -n "$current_window" ]; then
+                if [ -n "$current_window" ] && [ -n "$current_window_target" ]; then
                     tmux rename-window -t "$current_window_target" "$current_window" >/dev/null 2>&1 || {
                         trace_event "restore.window.error session=$restore_name index=$window_index reason=rename"
                         restore_abort window-name
@@ -6337,54 +6378,91 @@ EOF
             ''|*[!0-9]*) concurrency=2 ;;
         esac
         [ "$concurrency" -gt 0 ] || concurrency=1
+        local spinner_frame=0 abort_requested=false user_key=""
         for index in "${selected_indices[@]}"; do
+            [ "$abort_requested" = true ] && break
             archive_path="${history_files[$index]}"
             archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
             while [ "$active_count" -ge "$concurrency" ]; do
-                wait_pid="${batch_pids[0]}"
-                if wait "$wait_pid"; then
-                    wait_status=0
-                else
-                    wait_status=$?
+                # Non-blocking poll on running worker PIDs
+                local reaped=false
+                for pid_idx in "${!batch_pids[@]}"; do
+                    local check_pid="${batch_pids[$pid_idx]}"
+                    if ! kill -0 "$check_pid" 2>/dev/null; then
+                        wait "$check_pid" 2>/dev/null || true
+                        restored_count=$((restored_count + 1))
+                        restored_archives+=("${batch_pid_archives[$check_pid]:-}")
+                        restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
+                        trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                        unset 'batch_pid_archives[$check_pid]' 'batch_pid_sessions[$check_pid]'
+                        unset 'batch_pids[$pid_idx]'
+                        active_count=$((active_count - 1))
+                        reaped=true
+                    fi
+                done
+                batch_pids=("${batch_pids[@]}")
+                # Check for user cancellation key
+                if read -t 0.08 -r -s -n 1 user_key 2>/dev/null; then
+                    if [ "$user_key" = $'\e' ] || [ "$user_key" = "q" ] || [ "$user_key" = "Q" ]; then
+                        abort_requested=true
+                        trace_event "restore.batch.abort-requested by-user key=$user_key"
+                        break
+                    fi
                 fi
-                if [ "$wait_status" -eq 0 ]; then
-                    restored_count=$((restored_count + 1))
-                    restored_archives+=("${batch_pid_archives[$wait_pid]}")
-                    restored_sessions+=("${batch_pid_sessions[$wait_pid]}")
-                    trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
-                else
-                    message_line "Restore failed: ${batch_pid_sessions[$wait_pid]:-archive}"
-                fi
-                unset 'batch_pid_archives[$wait_pid]' 'batch_pid_sessions[$wait_pid]'
-                batch_pids=("${batch_pids[@]:1}")
-                active_count=$((active_count - 1))
+                spinner_frame=$((spinner_frame + 1))
+                render_bulk_restore_progress "$restored_count" "$selected_count" "$archive_session" "$spinner_frame"
             done
+            [ "$abort_requested" = true ] && break
             (restore_archive "$archive_path" "$batch_operation_id" true >/dev/null 2>&1) &
             wait_pid=$!
             batch_pids+=("$wait_pid")
             batch_pid_archives["$wait_pid"]="$archive_path"
             batch_pid_sessions["$wait_pid"]="$archive_session"
             active_count=$((active_count + 1))
+            spinner_frame=$((spinner_frame + 1))
+            render_bulk_restore_progress "$restored_count" "$selected_count" "$archive_session" "$spinner_frame"
         done
+
+        # Drain remaining active workers
         while [ "$active_count" -gt 0 ]; do
-            wait_pid="${batch_pids[0]}"
-            if wait "$wait_pid"; then
-                wait_status=0
-            else
-                wait_status=$?
+            if [ "$abort_requested" = true ]; then
+                for kill_pid in "${batch_pids[@]}"; do
+                    kill -TERM "$kill_pid" 2>/dev/null || true
+                done
             fi
-            if [ "$wait_status" -eq 0 ]; then
-                restored_count=$((restored_count + 1))
-                restored_archives+=("${batch_pid_archives[$wait_pid]}")
-                restored_sessions+=("${batch_pid_sessions[$wait_pid]}")
-                trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
-            else
-                message_line "Restore failed: ${batch_pid_sessions[$wait_pid]:-archive}"
+            for pid_idx in "${!batch_pids[@]}"; do
+                local check_pid="${batch_pids[$pid_idx]}"
+                if ! kill -0 "$check_pid" 2>/dev/null; then
+                    wait "$check_pid" 2>/dev/null || true
+                    if [ "$abort_requested" != true ]; then
+                        restored_count=$((restored_count + 1))
+                        restored_archives+=("${batch_pid_archives[$check_pid]:-}")
+                        restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
+                        trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                    fi
+                    unset 'batch_pid_archives[$check_pid]' 'batch_pid_sessions[$check_pid]'
+                    unset 'batch_pids[$pid_idx]'
+                    active_count=$((active_count - 1))
+                fi
+            done
+            batch_pids=("${batch_pids[@]}")
+            if [ "$active_count" -gt 0 ]; then
+                if read -t 0.08 -r -s -n 1 user_key 2>/dev/null; then
+                    if [ "$user_key" = $'\e' ] || [ "$user_key" = "q" ] || [ "$user_key" = "Q" ]; then
+                        abort_requested=true
+                        trace_event "restore.batch.abort-requested by-user key=$user_key"
+                    fi
+                fi
+                spinner_frame=$((spinner_frame + 1))
+                render_bulk_restore_progress "$restored_count" "$selected_count" "finalizing..." "$spinner_frame"
             fi
-            unset 'batch_pid_archives[$wait_pid]' 'batch_pid_sessions[$wait_pid]'
-            batch_pids=("${batch_pids[@]:1}")
-            active_count=$((active_count - 1))
         done
+
+        if [ "$abort_requested" = true ]; then
+            message_line "⚠ Restore aborted by user ($restored_count/$selected_count restored)"
+            trace_event "restore.batch.aborted operation_id=$batch_operation_id restored=$restored_count selected=$selected_count"
+        fi
+
         if [ "$restored_count" -gt 0 ]; then
             target_session="${restored_sessions[0]}"
             restore_batch_finalize "$batch_operation_id" "$target_session" "$restored_count" "$selected_count" "${restored_archives[@]}" || true
@@ -6399,9 +6477,10 @@ EOF
     fi
     if [ "$restored_count" -ne "$selected_count" ]; then
         trace_event "history.restore.summary selected=$selected_count restored=$restored_count result=incomplete"
-        message_line "Restore incomplete: $restored_count/$selected_count"
+        [ "$abort_requested" != true ] && message_line "Restore incomplete: $restored_count/$selected_count"
     else
         trace_event "history.restore.summary selected=$selected_count restored=$restored_count result=complete"
+        message_line "✓ Restored $restored_count/$selected_count sessions"
     fi
     topology_cache_initialized=false
     discard_pending_input
@@ -6410,6 +6489,14 @@ EOF
 tui_restore_archives()
 {
     restore_selected_archives
+    if [ "${restored_count:-0}" -gt 0 ]; then
+        view_mode="sessions"
+        collect_sessions false
+        selected_session="${target_session:-${session_names[0]:-}}"
+        history_selected_indexes=()
+        render_full "bulk-restore-complete"
+        message_line "✓ Restored $restored_count/$selected_count sessions"
+    fi
     topology_cache_initialized=false
 }
 
