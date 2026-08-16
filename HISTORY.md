@@ -5,6 +5,16 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-16 - Fix: Rebuild Bundled Dist Binary and Optimize Switch Preamble
+
+- **배포 바이너리 번들 갱신 (`dist/tmux-session-launcher`)**:
+  - `scripts/lib/sidebar_domain.sh`의 `sidebar_domain_epoch_now` 등 모듈 함수가 `dist/tmux-session-launcher` 번들에 미반영되어 단일 파일 실행 시 `command not found` 오류가 발생하던 문제를 `scripts/build-dist.sh` 재생성 및 `~/.local/bin/tmux-session-launcher` 설치로 해결.
+  - `Ctrl+a s`를 통한 사이드바 프로비저닝 및 토글 정상 동작 확인 (`test-contract.sh` PASS).
+- **세션 전환 지연 및 락 개선**:
+  - `switch_session()` 진입 시 개별 조회하던 클라이언트 정보를 1회 batch query로 최적화.
+  - 후속 refresh 동기화 시 전체 브로드캐스트 대신 타겟 사이드바 PID 대상 직접 시그널링 적용.
+  - 전환 중 stale lock 잔류 방지를 위해 lease timeout 자동 해제 로직 보강.
+
 ## 2026-08-09 - Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)
 
 - **Layer 1 tmux 포트 및 아카이브 영속성 모듈 캡슐화 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_archive.sh`)**:

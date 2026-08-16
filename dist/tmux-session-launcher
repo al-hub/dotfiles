@@ -743,7 +743,42 @@ transition_is_active()
     local state
     state="$(tmux show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
     case "$state" in
-        *"result=running"*|*"result=committed"*) return 0 ;;
+        *"result=running"*|*"result=committed"*)
+            # Cross-check: if the filesystem lock is absent or its owning
+            # process is dead, this transition is stale.  Auto-clear the
+            # option so subsequent switches are not permanently blocked.
+            local lock_dir owner_pid lock_age_ms=0 lock_mtime_ms=0 now_ms=0
+            lock_dir="$(transition_lock_path)"
+            if [ ! -d "$lock_dir" ]; then
+                trace_event "transition.stale-clear reason=lock-dir-absent state=$state path=$lock_dir"
+                tmux set-option -gq "$SIDEBAR_TRANSITION_OPTION" \
+                    "$(printf '%s' "$state" | sed 's/result=[^;]*/result=stale-cleared/')" 2>/dev/null || true
+                return 1
+            fi
+            owner_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+            if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
+                trace_event "transition.stale-clear reason=owner-pid-dead state=$state pid=$owner_pid"
+                rm -f "$lock_dir/pid" 2>/dev/null || true
+                rmdir "$lock_dir" 2>/dev/null || true
+                tmux set-option -gq "$SIDEBAR_TRANSITION_OPTION" \
+                    "$(printf '%s' "$state" | sed 's/result=[^;]*/result=stale-cleared/')" 2>/dev/null || true
+                return 1
+            fi
+            # Lease timeout safety: if a transition lock has been running > 2500ms, clear it
+            if [ -d "$lock_dir" ]; then
+                lock_mtime_ms="$(stat -c %Y "$lock_dir" 2>/dev/null || stat -c %Y "$lock_dir/pid" 2>/dev/null || echo 0)"
+                now_ms="$(date +%s)"
+                if [ "$lock_mtime_ms" -gt 0 ] && [ "$((now_ms - lock_mtime_ms))" -ge 3 ]; then
+                    trace_event "transition.stale-clear reason=lock-lease-timeout state=$state mtime=$lock_mtime_ms now=$now_ms"
+                    rm -f "$lock_dir/pid" 2>/dev/null || true
+                    rmdir "$lock_dir" 2>/dev/null || true
+                    tmux set-option -gq "$SIDEBAR_TRANSITION_OPTION" \
+                        "$(printf '%s' "$state" | sed 's/result=[^;]*/result=stale-cleared/')" 2>/dev/null || true
+                    return 1
+                fi
+            fi
+            return 0
+            ;;
         *) return 1 ;;
     esac
 }
@@ -2540,9 +2575,11 @@ sidebar_content_ready()
     printf '%s\n' "$content" | grep -Fq -- "$session_name_value" || return 1
     # The selection marker is the user-visible proof that the repaired pane
     # has rendered the target state, rather than merely starting a shell.
+    # Sidebar lines have leading whitespace (e.g. "   * ccc"), so allow
+    # optional spaces before the marker characters.
     printf '%s\n' "$content" |
         sed $'s/\033\[[0-9;]*m//g' |
-        grep -Eq "(^>[*]?[[:space:]]+$session_name_value([[:space:]]|$)|^\*?[[:space:]]+$session_name_value([[:space:]]|$))"
+        grep -Eq "(^[[:space:]]*>[*]?[[:space:]]+$session_name_value([[:space:]]|$)|^[[:space:]]*\*?[[:space:]]+$session_name_value([[:space:]]|$))"
 }
 
 wait_for_sidebar_content_ready()
@@ -2675,16 +2712,18 @@ switch_session()
         message_line "session switch failed: session '$session_name' does not exist"
         return 1
     fi
-    pane_window="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{window_id}' 2>/dev/null || true)"
-    # The TUI's cached current_session can lag behind a client/window hook.
-    # Resolve the source from the pane that owns this process so a stale
-    client_tty="$(sidebar_tmux_client_tty_for_window "$pane_window" || true)"
-    [ -n "$client_tty" ] || client_tty="$(tmux show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
-    [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 { print $2; exit }' || true)"
-    if [ -n "$client_tty" ]; then
+    local pane_info
+    pane_info="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{client_tty}|#{client_control_mode}|#{session_name}|#{window_id}' 2>/dev/null || true)"
+    IFS='|' read -r client_tty client_mode source_session pane_window <<< "$pane_info"
+    if [ -z "$client_tty" ] || [ "$client_mode" = 1 ]; then
+        client_tty="$(tmux show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
+    fi
+    if [ -z "$client_tty" ]; then
+        client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 { print $2; exit }' || true)"
+    fi
+    if [ -n "$client_tty" ] && [ -z "$source_session" ]; then
         source_session="$(tmux display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
     fi
-    [ -n "$source_session" ] || source_session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#S' 2>/dev/null || true)"
     [ -n "$source_session" ] || source_session="$current_session"
     if [ -z "$client_tty" ]; then
         trace_event "switch.skip reason=sidebar-window-detached pane=${TMUX_PANE:-none} window=${pane_window:-none} source=$source_session target=$session_name"
@@ -2772,46 +2811,32 @@ switch_session()
     # leaving the user on a target with no sidebar. Recheck a small bounded
     # number of times and repair only when the pane is absent; normal switches
     # still take the fast path without provisioning or sleeping.
-    for repair_attempt in 1 2 3 4 5; do
-        sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
-        if [ -n "$sidebar_pane" ] && sidebar_window_ready "$target_window"; then
-            trace_event "switch.sidebar-repair.stable session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
-            break
-        fi
-        trace_event "switch.sidebar-repair.begin session=$session_name window=$target_window attempt=$repair_attempt reason=target-pane-absent"
-        if provision_sidebar_window "$target_window" "$(sidebar_width)" &&
-            wait_for_sidebar_window_ready "$target_window"; then
+    sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+    if [ -z "$sidebar_pane" ] || ! sidebar_window_ready "$target_window"; then
+        for repair_attempt in 1 2 3 4 5; do
             sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
-            sidebar_pid="$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}' 2>/dev/null || true)"
-            trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
-            break
-        fi
-        trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt result=failed"
-        sleep 0.02
-    done
-    # tmux can report a different detached layout during switch-client even
-    # though the target pane set is unchanged. Do not call select-layout here:
-    # that re-enters after-select-layout/window-resized hooks while the native
-    # transition is settling and can trigger a second full render or a sidebar
-    # repair race. Archive/restore remains responsible for authoritative
-    # topology application; native switching only records the observation.
+            if [ -n "$sidebar_pane" ] && sidebar_window_ready "$target_window"; then
+                trace_event "switch.sidebar-repair.stable session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
+                break
+            fi
+            trace_event "switch.sidebar-repair.begin session=$session_name window=$target_window attempt=$repair_attempt reason=target-pane-absent"
+            if provision_sidebar_window "$target_window" "$(sidebar_width)" &&
+                wait_for_sidebar_window_ready "$target_window"; then
+                sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
+                sidebar_pid="$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}' 2>/dev/null || true)"
+                trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt pane=$sidebar_pane result=ready"
+                break
+            fi
+            trace_event "switch.sidebar-repair.end session=$session_name window=$target_window attempt=$repair_attempt result=failed"
+            sleep 0.02
+        done
+    fi
     target_layout_after="$(tmux display-message -p -t "$target_window" '#{window_layout}' 2>/dev/null || true)"
     if [ -n "$target_layout_before" ] && [ -n "$target_layout_after" ] &&
         [ "$target_layout_before" != "$target_layout_after" ]; then
         debug_log "switch target-layout observation differs session=$session_name window=$target_window before=$target_layout_before after=$target_layout_after"
         trace_event "switch.target-layout.observe session=$session_name window=$target_window before=$target_layout_before after=$target_layout_after result=deferred-to-layout-owner"
     fi
-    # A concurrent tmux layout hook can remove the target sidebar while the
-    # detached window is being reconciled. Repair only this observed failure;
-    # the normal path keeps the existing pane and does no extra provisioning.
-    # Let after-select-layout/window-resized hooks settle before deciding that
-    # the pane survived; tmux can publish the new layout before the pane map is
-    # stable.
-    for target_layout_stability_attempt in 1 2 3; do
-        sidebar_pane="$(sidebar_window_pane "$target_window" || true)"
-        [ -n "$sidebar_pane" ] && break
-        sleep 0.05
-    done
     if [ -z "$sidebar_pane" ]; then
         trace_event "switch.target-sidebar.repair-after-layout.begin session=$session_name window=$target_window"
         for target_layout_repair_attempt in 1 2 3; do
@@ -2891,7 +2916,11 @@ switch_session()
         if sidebar_content_ready "$target_window" "$session_name"; then
             trace_event "switch.target-sidebar.selection-sync-content-ready session=$session_name window=$target_window pane=$sidebar_pane ack=${selection_sync_ack:-none} result=signal-skipped"
         elif [ "$selection_sync_ready" != true ] || [ "$selection_sync_ack" != "$session_name" ]; then
-            signal_managed_sidebar_refresh
+            if [ -n "$sidebar_pid" ]; then
+                kill -USR2 "$sidebar_pid" 2>/dev/null || true
+            else
+                signal_managed_sidebar_refresh
+            fi
             trace_event "switch.target-sidebar.selection-sync-fallback session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none} ack=${selection_sync_ack:-pending} result=deferred-handler"
         else
             trace_event "switch.target-sidebar.selection-sync-complete session=$session_name pane=$sidebar_pane pid=${sidebar_pid:-none}"
