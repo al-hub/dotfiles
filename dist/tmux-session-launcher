@@ -2660,10 +2660,9 @@ wait_for_managed_sidebar_session()
 
 wait_for_managed_sidebar_snapshot()
 {
-    local attempt window_id sidebar_pane session_name_value content ready managed_sessions window_ids deadline_ms
+    local target_window="${1:-}"
+    local attempt window_id sidebar_pane session_name_value content ready managed_sessions deadline_ms
     managed_sessions="$(managed_session_names)"
-    window_ids="$(tmux list-panes -a -F '#{session_name}|#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$3 == title { print $1 "|" $2 }')"
     deadline_ms=$(( $(date +%s%N) / 1000000 + 15000 ))
     attempt=0
     while [ "$(( $(date +%s%N) / 1000000 ))" -lt "$deadline_ms" ]; do
@@ -2672,6 +2671,12 @@ wait_for_managed_sidebar_snapshot()
         while IFS='|' read -r session_name_value sidebar_pane; do
             session_is_managed "$session_name_value" || continue
             [ -n "$sidebar_pane" ] || continue
+            # If target_window is specified, only barrier on that active window
+            if [ -n "$target_window" ]; then
+                local pane_win
+                pane_win="$(tmux display-message -p -t "$sidebar_pane" '#{window_id}' 2>/dev/null || true)"
+                [ "$pane_win" = "$target_window" ] || continue
+            fi
             content="$(tmux capture-pane -p -J -t "$sidebar_pane" 2>/dev/null || true)"
             if [ -z "$sidebar_pane" ] ||
                 ! printf '%s\n' "$content" | grep -Fxq 'sessions' ||
@@ -2689,12 +2694,12 @@ wait_for_managed_sidebar_snapshot()
             [ "$ready" -eq 1 ] || break
         done < <(sidebar_window_ids)
         if [ "$ready" -eq 1 ]; then
-            trace_event "sidebar.managed-snapshot-ready attempts=$attempt result=ready"
+            trace_event "sidebar.managed-snapshot-ready attempts=$attempt target_window=${target_window:-all} result=ready"
             return 0
         fi
         sleep 0.05
     done
-    trace_event "sidebar.managed-snapshot-ready attempts=$attempt result=timeout"
+    trace_event "sidebar.managed-snapshot-ready attempts=$attempt target_window=${target_window:-all} result=timeout"
     return 1
 }
 
@@ -6017,13 +6022,8 @@ restore_archive()
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
     trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local"
-    if ! ensure_sidebar_for_session "$restore_name" "$(sidebar_width)" "$restore_batch_mode"; then
-        restore_abort ensure-sidebar
-        return 1
-    fi
-    # A restored session can contain more than one window. The session-level
-    # helper provisions the first window only, so explicitly provision every
-    # restored target before applying each archived full-window layout.
+    # A restored session can contain more than one window. Explicitly provision every
+    # restored target window before applying each archived full-window layout.
     for restore_window_target in "${restore_window_targets[@]}"; do
         [ -n "$restore_window_target" ] || continue
         if ! provision_sidebar_window "$restore_window_target" "$(sidebar_width)"; then
@@ -6242,7 +6242,9 @@ restore_batch_finalize()
 
     trace_event "sidebar.batch-refresh.begin operation_id=$operation_id"
     signal_managed_sidebar_refresh_batch
-    if ! wait_for_managed_sidebar_snapshot; then
+    restore_active_window="$(sidebar_tmux_cmd display-message -p -t "$client_tty" '#{window_id}' 2>/dev/null || true)"
+    target_window="$(sidebar_tmux_session_window "$target_session" || true)"
+    if ! wait_for_managed_sidebar_snapshot "${restore_active_window:-$target_window}"; then
         trace_event "restore.batch.finalize.error operation_id=$operation_id reason=managed-sidebar-snapshot-not-ready"
         restore_batch_mode=false
         sidebar_operation_finish failed "$operation_id" || true
@@ -6323,7 +6325,14 @@ EOF
         trace_event "restore.batch.begin operation_id=$batch_operation_id selected=$selected_count"
         [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=begin operation_id=$batch_operation_id selected=$selected_count"
         message_line "Restoring: 0/$selected_count"
-        concurrency="${TMUX_SESSION_RESTORE_CONCURRENCY:-2}"
+        concurrency="${TMUX_SESSION_RESTORE_CONCURRENCY:-}"
+        if [ -z "$concurrency" ]; then
+            local n_cores
+            n_cores="$(nproc 2>/dev/null || echo 4)"
+            concurrency=$(( n_cores / 2 ))
+            [ "$concurrency" -lt 2 ] && concurrency=2
+            [ "$concurrency" -gt 4 ] && concurrency=4
+        fi
         case "$concurrency" in
             ''|*[!0-9]*) concurrency=2 ;;
         esac
@@ -6395,7 +6404,6 @@ EOF
         trace_event "history.restore.summary selected=$selected_count restored=$restored_count result=complete"
     fi
     topology_cache_initialized=false
-    signal_managed_sidebar_refresh_batch || true
     discard_pending_input
 }
 
@@ -6403,7 +6411,6 @@ tui_restore_archives()
 {
     restore_selected_archives
     topology_cache_initialized=false
-    signal_managed_sidebar_refresh_batch || true
 }
 
 delete_selected_archives()

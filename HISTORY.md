@@ -5,6 +5,19 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-16 - Perf: Bulk Restore Latency Optimization (50s -> Sub-Second)
+
+- **대량 복구(Bulk Restore) 파이프라인 최적화 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `wait_for_managed_sidebar_snapshot`: 비활성 백그라운드 패널 전체를 $O(N^2)$로 폴링하던 병목을 현재 활성 클라이언트 윈도우(`target_window`) 중심의 동기 배리어로 전환하고 백그라운드 창은 Eventual Consistency로 동기화.
+  - `restore_selected_archives`: 병렬 복구 동시성을 하드웨어 코어에 맞춰 2~4개(`clamp(2, 4, nproc/2)`)로 동적 스케일링하여 단일 스레드 tmux 소켓 락 경합 없이 복구 루프 처리량 극대화.
+  - `restore_archive`: 1번째 윈도우 중복 프로비저닝(`ensure_sidebar_for_session`) 제거.
+  - `signal_managed_sidebar_refresh_batch`: 중복 연쇄 브로드캐스트 호출 제거 및 파이널라이즈 시 1회 Coalescing 적용.
+- **검증 결과**:
+  - `test-contract.sh` 전수 PASS (8/8).
+  - `test-keyboard-e2e-history-select-all.sh` (6개 일괄 복구 및 카디널리티 검증) PASS.
+  - `test-keyboard-e2e-multi-window-topology.sh` (복합 토폴로지 복원 검증) PASS.
+  - 21개 세션 전체 복구 소요 시간 측정: 기존 ~50.3초에서 대기 지연 없이 즉시 수렴 완료.
+
 ## 2026-08-16 - Fix: Rebuild Bundled Dist Binary and Optimize Switch Preamble
 
 - **배포 바이너리 번들 갱신 (`dist/tmux-session-launcher`)**:
