@@ -2515,6 +2515,13 @@ switch_session()
     local client_switch_us=0 switch_metrics_start_us=0 switch_phase_start_us=0
     local selection_sync_ready=false selection_sync_ack="" sidebar_ready=""
     [ -n "$session_name" ] || return 0
+    if [ "$session_name" = "${current_session:-}" ]; then
+        view_mode="sessions"
+        ensure_selection_visible 2>/dev/null || true
+        render_visible_session_rows 2>/dev/null || true
+        trace_event "switch.self-transition.fast-path session=$session_name result=success"
+        return 0
+    fi
     if ! session_exists "$session_name"; then
         collect_sessions 2>/dev/null || true
         render_full stale_session 2>/dev/null || true
