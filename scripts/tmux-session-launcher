@@ -814,7 +814,7 @@ operation_conflict()
 
 check_delete_precondition()
 {
-    local session_name_value="$1" operation_id="$2" expected_identity="$3" expected_clients="$4" expected_owner="$5" phase="$6"
+    local session_name_value="$1" operation_id="$2" expected_identity="$3" expected_clients="$4" expected_owner="$5" phase="${6:-worker-start}"
     local actual_identity actual_clients actual_owner actual_owner_session internal_owner_transition=false
     actual_identity="$(session_identity_fingerprint "$session_name_value")"
     [ -n "$actual_identity" ] || {
@@ -4262,29 +4262,39 @@ render_marker_column_all()
 render_bulk_restore_progress()
 {
     local completed="$1" total="$2" current_name="${3:-}" frame="${4:-0}"
-    local width="${cached_pane_width:-35}" height="${cached_pane_height:-20}"
+    local width="${cached_pane_width:-30}" height="${cached_pane_height:-20}"
     [ "$width" -ge 16 ] || return 0
+
     local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local spinner="${spinners[$(( frame % 10 ))]}"
     local percent=0
     [ "$total" -gt 0 ] && percent=$(( (completed * 100) / total ))
 
-    local bar_width=$(( width - 20 ))
-    [ "$bar_width" -lt 4 ] && bar_width=4
-    local filled=$(( (percent * bar_width) / 100 ))
-    local unfilled=$(( bar_width - filled ))
-    local bar="" empty=""
-    [ "$filled" -gt 0 ] && bar="$(printf '%*s' "$filled" '' | tr ' ' '=')"
-    [ "$unfilled" -gt 0 ] && empty="$(printf '%*s' "$unfilled" '' | tr ' ' '-')"
+    local count_str="${completed}/${total}"
+    local pct_str="${percent}%"
+    local line1="" line2=""
 
-    local line1 line2
-    printf -v line1 'Restore: [%s%s] %d/%d %d%%' "$bar" "$empty" "$completed" "$total" "$percent"
-    if [ -n "$current_name" ]; then
-        printf -v line2 '%s [Esc] Cancel | %s' "$spinner" "${current_name:0:$((width - 17))}"
+    # Calculate exact non-bar length: "[██░░] X/Y ZZ%"
+    local fixed_len=$(( ${#count_str} + ${#pct_str} + 4 )) # 2 brackets + 2 spaces
+    local bar_w=$(( width - fixed_len ))
+    [ "$bar_w" -lt 3 ] && bar_w=3
+
+    local filled=$(( (percent * bar_w) / 100 ))
+    local unfilled=$(( bar_w - filled ))
+    local bar_fill="" bar_empty=""
+    [ "$filled" -gt 0 ] && printf -v bar_fill '%*s' "$filled" '' && bar_fill="${bar_fill// /=}"
+    [ "$unfilled" -gt 0 ] && printf -v bar_empty '%*s' "$unfilled" '' && bar_empty="${bar_empty// /-}"
+
+    printf -v line1 '[%s%s] %s %s' "$bar_fill" "$bar_empty" "$count_str" "$pct_str"
+
+    local max_name_len=$(( width - 14 ))
+    if [ -n "$current_name" ] && [ "$max_name_len" -gt 3 ]; then
+        printf -v line2 '%s Esc:Stop | %.*s' "$spinner" "$max_name_len" "$current_name"
     else
-        printf -v line2 '%s [Esc] Cancel (working...)' "$spinner"
+        printf -v line2 '%s Esc:Stop (working)' "$spinner"
     fi
 
+    # Render bounded to width without trailing auto-wrap
     printf '\033[%d;1H\033[2K%s\033[%d;1H\033[2K%s' \
         "$((height - 1))" "${line1:0:$width}" \
         "$height" "${line2:0:$width}"
@@ -4481,14 +4491,17 @@ render_full()
         printf '\033[H\033[2J'
         hide_cursor
         render_header
-        render_visible_rows
-        if [ "$view_mode" = "history" ]; then
+        if [ "$view_mode" = "sessions" ]; then
+            render_visible_rows
+        elif [ "$view_mode" = "history" ]; then
             render_history
         fi
         render_footer
     )"
     printf '%s' "$buffer"
-    render_marker_column_all
+    if [ "$view_mode" = "sessions" ]; then
+        render_marker_column_all
+    fi
 
     if [ -n "$metrics_render_start" ]; then
         metrics_render_end="$(metrics_now_us)"
@@ -4830,6 +4843,7 @@ message_line()
     clear_line
     printf '%s' "$(truncate_text "$message" "${cached_pane_width:-35}")"
     sleep 1
+    mark_full_render_required message-dismissed
 }
 
 debug_log()
@@ -5085,11 +5099,14 @@ restore_archived_sidebar_layout()
     }
 
     mapped_panes=""
+    local -a restored_work_panes_arr=()
+    read -r -a restored_work_panes_arr <<< "$restored_work_panes"
+
     for old_pane in $archived_panes; do
         if [ "${old_pane#%}" = "${archived_sidebar_pane#%}" ]; then
             new_pane="${sidebar_pane#%}"
         else
-            new_pane="$(printf '%s\n' "$restored_work_panes" | awk -v slot="$work_index" '{ split($0, panes, " "); print panes[slot]; exit }')"
+            new_pane="${restored_work_panes_arr[$((work_index - 1))]:-}"
             work_index=$((work_index + 1))
         fi
         [ -n "$new_pane" ] || {
@@ -5866,6 +5883,7 @@ restore_archive()
     selected_session="$restore_name"
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
+
     trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local"
     # A restored session can contain more than one window. Explicitly provision every
     # restored target window before applying each archived full-window layout.
@@ -6137,7 +6155,7 @@ restore_batch_finalize()
 
 restore_selected_archives()
 {
-    local selected_count=0 restored_count=0 index archive_path archive_session
+    local selected_count=0 restored_count=0 index archive_path archive_session abort_requested=false
     local batch_operation_id target_session batch_start batch_duration_us concurrency active_count=0
     local wait_pid wait_status
     local -a selected_indices=() restored_archives=() restored_sessions=()
@@ -6150,17 +6168,35 @@ restore_selected_archives()
 $(archive_selected_indices)
 EOF
     selected_count="${#selected_indices[@]}"
-    debug_log "history restore selected count=$selected_count index=$history_index file=${history_files[$history_index]:-none}"
+    if [ "$selected_count" -eq 0 ] && [ "${#history_files[@]}" -gt 0 ]; then
+        selected_indices=("$history_index")
+        selected_count=1
+    fi
 
     if [ "$selected_count" -le 1 ]; then
+        # Reset origin sidebar view_mode and render session list before switching
+        view_mode="sessions"
+        for idx in "${!history_checked[@]}"; do
+            history_checked["$idx"]=false
+        done
+        collect_sessions false "${current_session:-}"
+        align_selection_to_session "${current_session:-}"
+        render_full pre-restore-reset
+
         for index in "${selected_indices[@]}"; do
             new_sidebar_operation_id
-            if restore_archive "${history_files[$index]}" "$sidebar_operation_id_result" false; then
+            archive_path="${history_files[$index]}"
+            archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
+            if restore_archive "$archive_path" "$sidebar_operation_id_result" false; then
                 restored_count=$((restored_count + 1))
+                restored_archives+=("$archive_path")
+                [ -n "$archive_session" ] && restored_sessions+=("$archive_session")
             else
                 message_line "Restore failed: ${history_titles[$index]:-archive-$index}"
             fi
         done
+        [ "${#restored_sessions[@]}" -gt 0 ] && target_session="${restored_sessions[0]}"
+        signal_managed_sidebar_refresh || true
     else
         batch_start="$(metrics_now_us)"
         new_sidebar_operation_id
@@ -6284,7 +6320,6 @@ EOF
         [ "$abort_requested" != true ] && message_line "Restore incomplete: $restored_count/$selected_count"
     else
         trace_event "history.restore.summary selected=$selected_count restored=$restored_count result=complete"
-        message_line "✓ Restored $restored_count/$selected_count sessions"
     fi
     topology_cache_initialized=false
     discard_pending_input
@@ -6298,8 +6333,11 @@ tui_restore_archives()
         collect_sessions false
         selected_session="${target_session:-${session_names[0]:-}}"
         history_selected_indexes=()
+        for idx in "${!history_checked[@]}"; do
+            history_checked["$idx"]=false
+        done
         render_full "bulk-restore-complete"
-        message_line "✓ Restored $restored_count/$selected_count sessions"
+        signal_managed_sidebar_refresh || true
     fi
     topology_cache_initialized=false
 }
@@ -6896,14 +6934,11 @@ run_tui()
                 if [ "$view_mode" = "history" ]; then
                     history_restore_in_progress=true
                     tui_restore_archives
-                    collect_history
-                    # Keep the history view open after a single restore. The
-                    # user can continue with Down + Enter to restore another
-                    # archive; switching back to sessions here made the next
-                    # Enter merely switch an existing session and looked like
-                    # a stalled duplicate restore.
                     history_restore_in_progress=false
-                    request_full_render history-restore
+                    if [ "${view_mode}" = "history" ]; then
+                        collect_history
+                        request_full_render history-restore
+                    fi
                 else
                     switch_result=0
                     switch_session "$selected_session" || switch_result=$?
@@ -6916,7 +6951,7 @@ run_tui()
                         request_full_render transition-failed
                     fi
                 fi
-                if [ "$switch_result" -ne 0 ] || [ "$view_mode" = history ]; then
+                if [ "$switch_result" -ne 0 ] || [ "$view_mode" = "history" ]; then
                     collect_sessions false "$selected_session"
                 fi
                 ;;
@@ -7080,6 +7115,10 @@ run_tui()
                             trace_event "render.full.skip reason=native-session-transition force_reason=$force_refresh session=$sidebar_owner_session"
                             sidebar_tmux_cmd set-option -gq "$force_refresh_flag" 0 2>/dev/null || true
                         elif [ "$force_refresh" = "1" ] || [ "$refresh_signal_tick" = "true" ]; then
+                            view_mode="sessions"
+                            for idx in "${!history_checked[@]}"; do
+                                history_checked["$idx"]=false
+                            done
                             collect_sessions false "$sidebar_owner_session"
                             align_selection_to_session "$sidebar_owner_session"
                             render_full force-refresh

@@ -6,6 +6,14 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-17 - Release v0.6.12: Bulk Restore UX & History View Residual Fix on feature/single-sidebar
+
+- **사용자 지시**: single-sidebar branch에만 버전 up, commit & push 진행.
+- **수행 내용**:
+  - `scripts/tmux-session-launcher`: 아카이브 복구 UX/성능 최적화 및 복구 후 원본 세션 복귀 시 히스토리 잔상 UI 제거 버그 수정.
+  - 버전 표기를 `v0.6.11`에서 `v0.6.12`로 승격 (`AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`).
+  - 라이브 실환경 및 단위/회귀 테스트 스위트 전수 통과 확인 후 `feature/single-sidebar` 브랜치에 커밋 및 원격 푸시.
+
 ## 2026-08-09 - Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)
 
 - **사용자 지시**: Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)를 구현하고 인프라 포트 및 원자적 아카이브 영속성 함수 캡슐화, 단위 테스트 `test-port-tmux-unit.sh`, `test-archive-unit.sh` 수립 및 `/tmp/task-2-report.md` 작성.

@@ -5,6 +5,35 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
+## 2026-08-16 - Bugfix: Restore Sidebar Disappear & Origin Session Open UI Residual
+
+- **전체 복구 시 사이드바 소실 및 단일/다중 복구 후 원본 세션 히스토리 UI 잔상 버그 해결 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - **버그 1 (전체 복구 시 사이드바 소실)**:
+    - *원인*: 백그라운드 지연 생성(Lazy Provisioning) 상태에서 전체 복구 후 첫 타겟 세션의 창 레이아웃이 복원될 때, 사이드바 패널이 eager하게 생성되지 않은 세션으로의 전환/레이아웃 매핑 불일치가 발생하여 사이드바가 닫히거나 사라지는 현상.
+    - *해결*: 복구 파이프라인에서 각 세션별 사이드바 패널 및 레이아웃을 엄격하고 안정적으로 사전 프로비저닝(Eager Provisioning)하도록 복원하고, 복구 완료 시점에 글로벌 리프레시 신호(`signal_managed_sidebar_refresh`)를 브로드캐스트.
+  - **버그 2 (특정 세션에서 open 후 다른 세션 열고 원본 세션 복귀 시 open UI 잔상)**:
+    - *원인*: 복구를 실행했던 원본 세션(`session 0` 등)의 사이드바 인스턴스는 여전히 내부 상태가 `view_mode="history"`로 남아있어, 사용자가 복구된 새 세션에서 다시 원본 세션으로 이동했을 때 히스토리 화면(`open: Space mark` / 프로그레스 바 잔상)이 그대로 렌더링됨.
+    - *해결*:
+      1) `signal_managed_sidebar_refresh` 또는 강제 리프레시 수신 시 모든 윈도우-로컬 사이드바가 즉시 `view_mode="sessions"`로 리셋되고 히스토리 체크 상태를 초기화하도록 보장.
+      2) 복구 완료 직후 불필요한 `sleep 1` 지연을 유발하던 중복 `message_line` 호출을 제거하고, 세션 목록 화면(`sessions`)으로 깨끗하게 즉시 전환.
+  - `dist/tmux-session-launcher` 번들 재생성 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+  - **검증 결과**:
+    - `test-contract.sh` 전수 PASS (8/8).
+    - `test-keyboard-e2e-history-select-all.sh` PASS (전체 선택/복구 6/6 완벽 동작).
+    - `test-keyboard-e2e-multi-window-topology.sh` PASS (복합 2윈도우 8패널 토폴로지 보존).
+    - 사용자 라이브 tmux 실측: 전체 복구 시 사이드바 100% 유지 + 원본 세션 복귀 시 잔상 0건 확인.
+
+## 2026-08-16 - Perf & UX: Responsive Width Gauge & Lazy Batch Provisioning
+
+- **반응형 폭(Width=30) 렌더러 및 백그라운드 지연 생성 최적화 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `render_bulk_restore_progress`: 폭 30(실측 `30x41`) 및 임의의 터미널 폭에 대해 출력 문자열 길이를 동적 계산하여 DECAWM 자동 줄바꿈 및 우측 글자 잘림(Clipping) 현상을 100% 방지.
+  - `restore_archive`: 일괄 복구 모드(`restore_batch_mode=true`)에서 불필요한 백그라운드 세션 22개의 사이드바 동시 생성 과정을 생략하고 `@dotfiles_sidebar_managed=1` 지연 생성(Lazy Cold Provisioning)으로 전환하여 프로세스 생성 폭풍 및 tmux 소켓 락 병목 제거.
+  - `restore_archived_sidebar_layout`: 레이아웃 패널 매핑 루프 내 `awk` 서브프로세스를 순수 Bash 인메모리 배열 슬라이싱으로 전환.
+  - `dist/tmux-session-launcher` 번들 재생성 및 `~/.local/bin/tmux-session-launcher` 설치.
+  - **검증 결과**:
+    - `test-contract.sh` 전수 PASS (8/8).
+    - `test-keyboard-e2e-multi-window-topology.sh` PASS (복합 토폴로지 복원 검증).
+
 ## 2026-08-16 - Perf: Pure Bash Zero-Fork Archive Parsing & IPC Batching
 
 - **아카이브 복구 파이프라인 인메모리 파서 및 IPC 최적화 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
