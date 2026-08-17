@@ -6,6 +6,22 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-18 - Reliability & Architecture: Structured IPC Worker Status Protocol & Subpane Active-Window Focus Lease Model (Phase 2 & Phase 3)
+
+- **Phase 2: 배치 세션 복원 구조화 IPC 워커 상태 프로토콜 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `restore_selected_archives`에서 백그라운드 병렬 워커 서브쉘마다 고유 상태 토큰 디렉터리(`$batch_tmp_dir/$BASHPID.status`)를 생성하여 실행 결과(성공 0, 실패 1)를 원자적으로 기록.
+  - 워커 수거 루프(중간 폴링 및 최종 드레인)에서 `wait` 반환값과 상태 파일 토큰을 동시 검증하여, 정상 복원된 세션만 카운트 및 `restored_sessions`에 등록하도록 보장.
+  - 실패 워커는 `restore.batch.worker-failed` 추적 이벤트를 남기며 비정상 세션의 타깃 등록 및 복원 집계 왜곡 원천 차단.
+- **Phase 3: 서브패널 액티브 윈도우 포커스 리스(Lease) 모델 (`scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `toggle_sidebar_subpane_global` 시 모든 윈도우를 순회하며 싱글톤 서브패널을 강탈하던 루프를 폐지하고, 현재 활성 클라이언트 윈도우(`active_win`)에만 전역 단일 서브패널을 리스/획득하도록 개선.
+  - 세션 전환(`switch_session`) 및 윈도우 변경(`sync_active_window`) 시, 기존 윈도우의 서브패널을 허브로 안전하게 반환(`release`)한 후 새 활성 타깃 윈도우로 깔끔하게 획득(`acquire`)하는 리스 전환 파이프라인 구현.
+  - 서브패널 전역 비활성화 시 모든 윈도우의 서브패널 참조를 깨끗이 정리하고 허브 세션으로 복귀.
+- **TDD 및 실환경 시나리오 검증 통과**:
+  - `tests/tmux-single-sidebar/test-subpane-hub-unit.sh`: PASS
+  - `tests/tmux-single-sidebar/test-subpane-hub-contract.sh`: PASS
+  - `tests/tmux-single-sidebar/test-contract.sh`: PASS
+  - `tests/tmux-single-sidebar/test-debug-user-exact.sh`: 3개 세션 복원 후 서브패널 토글 및 세션 간 왕복 전환(0 -> mmm -> lll -> kkk) 100% 정상 통과
+
 ## 2026-08-18 - Feature & Architecture: Global Singleton Subpane Hub & Unified Minimal Prompt (TDD & SOLID)
 
 - **전역 단일 서브패널 프로세스 보존 허브 구축 (`scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_port_tmux.sh`, `dist/tmux-session-launcher`)**:

@@ -150,14 +150,32 @@ toggle_sidebar_subpane_global() {
     [ "$current" = "1" ] && next=0
     sidebar_tmux_cmd set-option -gq "$opt" "$next" 2>/dev/null || true
 
-    local win_id sess_name sess_managed
-    local hub_name="dotfiles-subpane-hub"
-    declare -f subpane_hub_session_name >/dev/null 2>&1 && hub_name="$(subpane_hub_session_name)"
-    while IFS='|' read -r win_id sess_name sess_managed; do
-        [ -n "$win_id" ] || continue
-        [ "$sess_name" = "$hub_name" ] && continue
-        ensure_sidebar_subpane_window "$win_id" ""
-    done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}|#{@dotfiles_sidebar_managed}' 2>/dev/null || true)
+    if [ "$next" = "1" ]; then
+        local active_win=""
+        local client_tty
+        client_tty="$(sidebar_tmux_cmd show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
+        [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null | head -n 1 || true)"
+        if [ -n "$client_tty" ]; then
+            active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
+        fi
+        [ -n "$active_win" ] || active_win="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+        if [ -n "$active_win" ]; then
+            ensure_sidebar_subpane_window "$active_win" ""
+        fi
+    else
+        local sub_pane
+        if declare -f subpane_hub_get_pane >/dev/null 2>&1; then
+            sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+            if [ -n "$sub_pane" ] && declare -f subpane_hub_release_pane >/dev/null 2>&1; then
+                subpane_hub_release_pane "$sub_pane"
+            fi
+        fi
+        local win_id sess_name
+        while IFS='|' read -r win_id sess_name; do
+            [ -n "$win_id" ] || continue
+            destroy_sidebar_subpane "$win_id"
+        done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true)
+    fi
 }
 
 provision_sidebar_window() {

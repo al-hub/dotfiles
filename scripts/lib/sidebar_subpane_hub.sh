@@ -82,6 +82,19 @@ subpane_hub_acquire_pane() {
     fi
     [ -n "$hub_pane" ] || return 1
 
+    local target_win hub_win
+    target_win="$(sidebar_tmux_cmd display-message -p -t "$target_launcher" '#{window_id}' 2>/dev/null || true)"
+    hub_win="$(sidebar_tmux_cmd display-message -p -t "$hub_pane" '#{window_id}' 2>/dev/null || true)"
+
+    if [ -n "$target_win" ] && [ "$target_win" = "$hub_win" ]; then
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
+        sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
+        printf '%s\n' "$hub_pane"
+        return 0
+    fi
+
     # Join pane from hub or background into target launcher column
     if ! sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
@@ -107,10 +120,14 @@ subpane_hub_release_pane() {
     # Unset active subpane option and reset title upon release
     sidebar_tmux_cmd set-option -p -u -t "$sub_pane" @dotfiles_sidebar_subpane 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "dotfiles-subpane-hub" 2>/dev/null || true
-    subpane_hub_ensure_session
-    # Return pane to hub session window, or break-pane as fallback
-    if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "=$(subpane_hub_session_name):" 2>/dev/null; then
-        sidebar_tmux_cmd break-pane -d -s "$sub_pane" 2>/dev/null || true
+    local curr_sess
+    curr_sess="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{session_name}' 2>/dev/null || true)"
+    if [ "$curr_sess" != "$(subpane_hub_session_name)" ]; then
+        subpane_hub_ensure_session
+        # Return pane to hub session window, or break-pane as fallback
+        if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "=$(subpane_hub_session_name):" 2>/dev/null; then
+            sidebar_tmux_cmd break-pane -d -s "$sub_pane" 2>/dev/null || true
+        fi
     fi
 }
 

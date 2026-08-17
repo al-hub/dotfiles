@@ -235,14 +235,32 @@ toggle_sidebar_subpane_global() {
     [ "$current" = "1" ] && next=0
     sidebar_tmux_cmd set-option -gq "$opt" "$next" 2>/dev/null || true
 
-    local win_id sess_name sess_managed
-    local hub_name="dotfiles-subpane-hub"
-    declare -f subpane_hub_session_name >/dev/null 2>&1 && hub_name="$(subpane_hub_session_name)"
-    while IFS='|' read -r win_id sess_name sess_managed; do
-        [ -n "$win_id" ] || continue
-        [ "$sess_name" = "$hub_name" ] && continue
-        ensure_sidebar_subpane_window "$win_id" ""
-    done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}|#{@dotfiles_sidebar_managed}' 2>/dev/null || true)
+    if [ "$next" = "1" ]; then
+        local active_win=""
+        local client_tty
+        client_tty="$(sidebar_tmux_cmd show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
+        [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null | head -n 1 || true)"
+        if [ -n "$client_tty" ]; then
+            active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
+        fi
+        [ -n "$active_win" ] || active_win="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+        if [ -n "$active_win" ]; then
+            ensure_sidebar_subpane_window "$active_win" ""
+        fi
+    else
+        local sub_pane
+        if declare -f subpane_hub_get_pane >/dev/null 2>&1; then
+            sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+            if [ -n "$sub_pane" ] && declare -f subpane_hub_release_pane >/dev/null 2>&1; then
+                subpane_hub_release_pane "$sub_pane"
+            fi
+        fi
+        local win_id sess_name
+        while IFS='|' read -r win_id sess_name; do
+            [ -n "$win_id" ] || continue
+            destroy_sidebar_subpane "$win_id"
+        done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true)
+    fi
 }
 
 provision_sidebar_window() {
@@ -366,6 +384,19 @@ subpane_hub_acquire_pane() {
     fi
     [ -n "$hub_pane" ] || return 1
 
+    local target_win hub_win
+    target_win="$(sidebar_tmux_cmd display-message -p -t "$target_launcher" '#{window_id}' 2>/dev/null || true)"
+    hub_win="$(sidebar_tmux_cmd display-message -p -t "$hub_pane" '#{window_id}' 2>/dev/null || true)"
+
+    if [ -n "$target_win" ] && [ "$target_win" = "$hub_win" ]; then
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
+        sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
+        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
+        printf '%s\n' "$hub_pane"
+        return 0
+    fi
+
     # Join pane from hub or background into target launcher column
     if ! sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
@@ -391,10 +422,14 @@ subpane_hub_release_pane() {
     # Unset active subpane option and reset title upon release
     sidebar_tmux_cmd set-option -p -u -t "$sub_pane" @dotfiles_sidebar_subpane 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "dotfiles-subpane-hub" 2>/dev/null || true
-    subpane_hub_ensure_session
-    # Return pane to hub session window, or break-pane as fallback
-    if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "=$(subpane_hub_session_name):" 2>/dev/null; then
-        sidebar_tmux_cmd break-pane -d -s "$sub_pane" 2>/dev/null || true
+    local curr_sess
+    curr_sess="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{session_name}' 2>/dev/null || true)"
+    if [ "$curr_sess" != "$(subpane_hub_session_name)" ]; then
+        subpane_hub_ensure_session
+        # Return pane to hub session window, or break-pane as fallback
+        if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "=$(subpane_hub_session_name):" 2>/dev/null; then
+            sidebar_tmux_cmd break-pane -d -s "$sub_pane" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -1824,6 +1859,10 @@ sync_active_window()
         else
             trace_event "sidebar.hook.provision window=$active_window session=$active_session"
             provision_sidebar_window "$active_window" "$(sidebar_width)" || true
+            local_pane="$(sidebar_window_pane "$active_window" || true)"
+        fi
+        if [ "$(tmux show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)" = 1 ]; then
+            ensure_sidebar_subpane_window "$active_window" "$local_pane"
         fi
     fi
 }
@@ -3271,6 +3310,11 @@ switch_session()
     trace_event "switch.target-sidebar.ready session=$session_name window=$target_window pane=$sidebar_pane pid=${sidebar_pid:-none}"
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
+    local subpane_enabled
+    subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
+    if [ "$subpane_enabled" = "1" ] && [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
+        destroy_sidebar_subpane "$source_window"
+    fi
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"
     if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane" "$(sidebar_width)"; then
         tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
@@ -3366,6 +3410,9 @@ switch_session()
             return 1
         }
         trace_event "switch.sidebar-focus session=$session_name window=$target_window pane=$sidebar_pane"
+    fi
+    if [ "$subpane_enabled" = "1" ] && [ -n "$target_window" ]; then
+        ensure_sidebar_subpane_window "$target_window" "$sidebar_pane"
     fi
     if ! wait_for_sidebar_input_ready "$target_window" "$sidebar_pane"; then
         transition_context_finish failed sidebar-input-unready "$operation_id"
@@ -6593,49 +6640,49 @@ restore_archive()
         restore_abort external-conflict
         return 1
     }
+    # Session materialization and validation complete: session is committed!
+    created=false
+
     if [ "$restore_batch_mode" = true ]; then
         trace_event "restore.prepare.complete operation_id=$restore_operation_id session=$restore_name"
     else
         trace_event "restore.switch-client.begin session=$restore_name client=$restore_client_tty"
+        local switch_ok=false
         if [ -n "$restore_client_tty" ]; then
-            if ! sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
-                restore_abort switch-client
-                return 1
+            if sidebar_tmux_switch_client "$restore_client_tty" "$restore_name" 2>/dev/null; then
+                switch_ok=true
             fi
         else
-            if ! tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
-                restore_abort switch-client
-                return 1
+            if tmux switch-client -t "$(sidebar_tmux_session_target "$restore_name")" 2>/dev/null; then
+                switch_ok=true
             fi
         fi
-        trace_event "restore.switch-client.end session=$restore_name"
-        for restore_window_index in "${!restore_window_targets[@]}"; do
-            restore_focus_target="${restore_window_active_work_panes[$restore_window_index]:-}"
-            [ -n "$restore_focus_target" ] || continue
-            tmux select-pane -t "$restore_focus_target" >/dev/null 2>&1 || {
-                restore_abort sidebar-focus
-                return 1
-            }
-            restore_focus_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}' 2>/dev/null | awk -F '|' '$2 == 1 { print $1; exit }')"
-            trace_event "restore.focus.after-switch target=${restore_window_targets[$restore_window_index]} expected=$restore_focus_target actual=${restore_focus_now:-none}"
-        done
-        for restore_window_index in "${!restore_window_targets[@]}"; do
-            restore_window_active_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}|#{pane_title}' 2>/dev/null | awk -F '|' '$2 == 1 { print; exit }')"
-            trace_event "restore.window-active phase=after-switch index=$restore_window_index target=${restore_window_targets[$restore_window_index]} active=${restore_window_active_now:-none}"
-        done
-        restore_active_window="$(tmux display-message -p -t "$restore_client_tty" '#{window_id}' 2>/dev/null || true)"
-        if [ -n "$restore_active_window" ]; then
-            wait_for_sidebar_window_ready "$restore_active_window" || {
-                trace_event "restore.sidebar.active-ready-timeout session=$restore_name window=$restore_active_window"
-                restore_abort ensure-active-sidebar-ready
-                return 1
-            }
+        if [ "$switch_ok" = true ]; then
+            trace_event "restore.switch-client.end session=$restore_name"
+            for restore_window_index in "${!restore_window_targets[@]}"; do
+                restore_focus_target="${restore_window_active_work_panes[$restore_window_index]:-}"
+                [ -n "$restore_focus_target" ] || continue
+                tmux select-pane -t "$restore_focus_target" >/dev/null 2>&1 || true
+                restore_focus_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}' 2>/dev/null | awk -F '|' '$2 == 1 { print $1; exit }')"
+                trace_event "restore.focus.after-switch target=${restore_window_targets[$restore_window_index]} expected=$restore_focus_target actual=${restore_focus_now:-none}"
+            done
+            for restore_window_index in "${!restore_window_targets[@]}"; do
+                restore_window_active_now="$(tmux list-panes -t "${restore_window_targets[$restore_window_index]}" -F '#{pane_id}|#{pane_active}|#{pane_title}' 2>/dev/null | awk -F '|' '$2 == 1 { print; exit }')"
+                trace_event "restore.window-active phase=after-switch index=$restore_window_index target=${restore_window_targets[$restore_window_index]} active=${restore_window_active_now:-none}"
+            done
+            restore_active_window="$(tmux display-message -p -t "$restore_client_tty" '#{window_id}' 2>/dev/null || true)"
+            if [ -n "$restore_active_window" ]; then
+                wait_for_sidebar_window_ready "$restore_active_window" || {
+                    trace_event "restore.sidebar.active-ready-warning session=$restore_name window=$restore_active_window"
+                }
+            fi
+            current_session="$restore_name"
+        else
+            trace_event "restore.switch-client.warning session=$restore_name error=switch-failed"
         fi
-        current_session="$restore_name"
         trace_event "restore.history.begin session=$restore_name"
         if ! append_archive_history_once "$archive_path"; then
-            restore_abort history-import
-            return 1
+            trace_event "restore.history.warning session=$restore_name error=history-import-failed"
         fi
         trace_event "restore.history.end session=$restore_name"
         for restore_window_index in "${!restore_window_targets[@]}"; do
@@ -6876,6 +6923,8 @@ EOF
         trace_event "restore.batch.begin operation_id=$batch_operation_id selected=$selected_count"
         [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=begin operation_id=$batch_operation_id selected=$selected_count"
         message_line "Restoring: 0/$selected_count"
+        local batch_tmp_dir
+        batch_tmp_dir="$(mktemp -d /tmp/tmux-restore-batch.XXXXXX 2>/dev/null || mktemp -d "${TMPDIR:-/tmp}/tmux-restore-batch.XXXXXX")"
         concurrency="${TMUX_SESSION_RESTORE_CONCURRENCY:-}"
         if [ -z "$concurrency" ]; then
             local n_cores
@@ -6907,11 +6956,20 @@ EOF
                 for pid_idx in "${!batch_pids[@]}"; do
                     local check_pid="${batch_pids[$pid_idx]}"
                     if ! kill -0 "$check_pid" 2>/dev/null; then
-                        wait "$check_pid" 2>/dev/null || true
-                        restored_count=$((restored_count + 1))
-                        restored_archives+=("${batch_pid_archives[$check_pid]:-}")
-                        restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
-                        trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                        local worker_exit=1
+                        wait "$check_pid" 2>/dev/null && worker_exit=0 || worker_exit=$?
+                        local status_file="$batch_tmp_dir/$check_pid.status"
+                        local token_status=""
+                        [ -f "$status_file" ] && token_status="$(cat "$status_file" 2>/dev/null || true)"
+                        rm -f "$status_file" 2>/dev/null || true
+                        if [ "$worker_exit" -eq 0 ] && [ "$token_status" = "0" ]; then
+                            restored_count=$((restored_count + 1))
+                            restored_archives+=("${batch_pid_archives[$check_pid]:-}")
+                            [ -n "${batch_pid_sessions[$check_pid]:-}" ] && restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
+                            trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                        else
+                            trace_event "restore.batch.worker-failed pid=$check_pid exit=$worker_exit token=${token_status:-none} archive=${batch_pid_archives[$check_pid]:-}"
+                        fi
                         unset 'batch_pid_archives[$check_pid]' 'batch_pid_sessions[$check_pid]'
                         unset 'batch_pids[$pid_idx]'
                         active_count=$((active_count - 1))
@@ -6931,7 +6989,14 @@ EOF
                 render_bulk_restore_progress "$restored_count" "$selected_count" "$archive_session" "$spinner_frame"
             done
             [ "$abort_requested" = true ] && break
-            (restore_archive "$archive_path" "$batch_operation_id" true >/dev/null 2>&1) &
+            (
+                worker_status=1
+                if restore_archive "$archive_path" "$batch_operation_id" true >/dev/null 2>&1; then
+                    worker_status=0
+                fi
+                echo "$worker_status" > "$batch_tmp_dir/$BASHPID.status"
+                exit "$worker_status"
+            ) &
             wait_pid=$!
             batch_pids+=("$wait_pid")
             batch_pid_archives["$wait_pid"]="$archive_path"
@@ -6951,12 +7016,19 @@ EOF
             for pid_idx in "${!batch_pids[@]}"; do
                 local check_pid="${batch_pids[$pid_idx]}"
                 if ! kill -0 "$check_pid" 2>/dev/null; then
-                    wait "$check_pid" 2>/dev/null || true
-                    if [ "$abort_requested" != true ]; then
+                    local worker_exit=1
+                    wait "$check_pid" 2>/dev/null && worker_exit=0 || worker_exit=$?
+                    local status_file="$batch_tmp_dir/$check_pid.status"
+                    local token_status=""
+                    [ -f "$status_file" ] && token_status="$(cat "$status_file" 2>/dev/null || true)"
+                    rm -f "$status_file" 2>/dev/null || true
+                    if [ "$abort_requested" != true ] && [ "$worker_exit" -eq 0 ] && [ "$token_status" = "0" ]; then
                         restored_count=$((restored_count + 1))
                         restored_archives+=("${batch_pid_archives[$check_pid]:-}")
-                        restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
+                        [ -n "${batch_pid_sessions[$check_pid]:-}" ] && restored_sessions+=("${batch_pid_sessions[$check_pid]:-}")
                         trace_event "restore.batch.progress operation_id=$batch_operation_id completed=$restored_count selected=$selected_count"
+                    else
+                        trace_event "restore.batch.worker-failed pid=$check_pid exit=$worker_exit token=${token_status:-none} archive=${batch_pid_archives[$check_pid]:-}"
                     fi
                     unset 'batch_pid_archives[$check_pid]' 'batch_pid_sessions[$check_pid]'
                     unset 'batch_pids[$pid_idx]'
@@ -6975,6 +7047,8 @@ EOF
                 render_bulk_restore_progress "$restored_count" "$selected_count" "finalizing..." "$spinner_frame"
             fi
         done
+
+        [ -n "${batch_tmp_dir:-}" ] && rm -rf "$batch_tmp_dir" 2>/dev/null || true
 
         if [ "$abort_requested" = true ]; then
             message_line "⚠ Restore aborted by user ($restored_count/$selected_count restored)"

@@ -6,6 +6,26 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-18 - Resilient Archive Restore, Batch Worker IPC & Subpane Active-Window Lease (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/diagnosing-bugs` tmux session 띄워 놓았다. o 로 신규 세션을 몇개를 선택해서 열고, m 으로 subpane 을 만들고, 신규세션으로 이동, enter 선택시 오류현상들이 여러개 발견된다. 열어 있는 tmux 에서 상기 시나리오로 test 하여 어떤 오류 현상들이 detect 되는지 확인해서 정리하여 알려줘.
+  - `/improve-codebase-architecture` 상기이슈가 설계안에서 문제시 되는 요소는 없는지 확인해서 알려줘.
+  - `/plan` 순차적으로 진행하도록 전체 개선 계획을 TDD, SOLID 준수하여 작성하자.
+  - `/implement` 각 단계별로 TDD 및 개선을 Subagent-Driven 으로 진행하라.
+- **원인 분석 및 아키텍처 진단**:
+  1. **복원 세션 파괴 결함**: `restore_archive`가 백그라운드 복원 도중 클라이언트 전환(`switch-client`) 실패 시 정상 생성된 세션까지 `tmux kill-session`으로 파괴(`Restore failed: 1`).
+  2. **배치 워커 완료 상태 동기화 누락**: `restore_selected_archives`에서 비동기 서브셸 워커 종료 코드를 무시하고 `restored_count++`를 누적하여 실패한 세션으로 잘못 전환 시도.
+  3. **서브패널 전역 훔치기(Stealing) 루프**: 싱글톤 서브패널을 전역 토글 시 모든 윈도우에 무차별 `join-pane`을 시도하여 이전 윈도우의 컬럼이 깨지는 현상.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **2단계 회복성 복원 (Resilient 2-Phase Restore)**: 세션 생성(Data Layer)과 클라이언트 전환(UI Layer)을 엄격히 분리하여, UI 포커스 전환이 실패하더라도 생성된 세션/윈도우 트리를 파괴하지 않고 백그라운드에 보존.
+  2. **구조화된 IPC 워커 상태 프로토콜**: `$batch_tmp_dir/$PID.status` 파일 Seam을 통해 성공/실패 토큰을 전달하고, 상태 검증을 통과한 세션만 `restored_sessions`에 등록.
+  3. **서브패널 활성 윈도우 동적 임대 모델 (Active-Window Lease Model)**: 전역 토글 시 오직 현재 클라이언트의 활성 윈도우에만 서브패널을 임대(`acquire`)하고, 세션 전환 시 이전 윈도우에서 안전 반납 후 새 활성 윈도우로 원자적 임대 이전.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-window-local-contract.sh`, `test-keyboard-e2e-subpane.sh`, `test-debug-user-exact.sh`).
+  - 사용자 실 아카이브 3개 복원 + 서브패널 온/오프 + 연속 세션 전환 시나리오 완벽 동작 검증.
+
+
 ## 2026-08-18 - Global Singleton Subpane Hub & Unified Prompt (TDD & SOLID)
 
 - **사용자 요청**:
