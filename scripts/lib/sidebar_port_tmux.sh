@@ -142,3 +142,35 @@ toggle_sidebar_subpane_global() {
         ensure_sidebar_subpane_window "$win_id" ""
     done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}' 2>/dev/null || true)
 }
+
+provision_sidebar_window() {
+    local window_id="${1:-}" width="${2:-30}" cmd="${3:-}"
+    [ -n "$window_id" ] || return 1
+    local work_pane
+    work_pane="$(sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{@dotfiles_sidebar_subpane}' 2>/dev/null |
+        awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" && $3 != "1" { print $1; exit }')"
+    [ -n "$work_pane" ] || return 1
+    if [ -z "$cmd" ]; then
+        local launcher_bin="${DOTFILES_DIR:-/home/al-hub/workspace/dotfiles}/scripts/tmux-session-launcher"
+        cmd="$launcher_bin --sidebar"
+    fi
+    local pane_id
+    pane_id="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -d -t "$work_pane" -h -f -b -l "$width" "$cmd" 2>/dev/null || true)"
+    [ -n "$pane_id" ] || return 1
+    sidebar_tmux_cmd select-pane -t "$pane_id" -T "dotfiles-session-sidebar" 2>/dev/null || true
+    sidebar_tmux_cmd set-option -p -q -t "$pane_id" remain-on-exit on 2>/dev/null || true
+    sidebar_tmux_cmd set-option -p -q -t "$pane_id" @dotfiles_sidebar_pane 1 2>/dev/null || true
+    printf '%s\n' "$pane_id"
+}
+
+destroy_sidebar_window() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || return 0
+    local sb_pane
+    sb_pane="$(sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{@dotfiles_sidebar_pane}' 2>/dev/null |
+        awk -F '|' '$2 == "dotfiles-session-sidebar" || $3 == "1" { print $1; exit }')"
+    if [ -n "$sb_pane" ]; then
+        sidebar_tmux_cmd kill-pane -t "$sb_pane" 2>/dev/null || true
+    fi
+}
+
