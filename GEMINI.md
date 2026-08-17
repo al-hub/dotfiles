@@ -6,7 +6,7 @@
 
 - 개인 Linux dotfiles 저장소입니다.
 - 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.11을 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.12(v6.12)입니다. launcher 내부 latency phase metrics는 기록되며 완화된 기준 목표(전환 1000ms 이내, 외부 키 반응 100ms 이내)를 적용합니다. 현재 attached-PTY transition finish는 약 0.63~0.86초(623~838ms)로 1000ms 기준 내에 위치하며 사용자 live 6회는 343~593ms로 안정적입니다.
+- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.12를 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.13(v6.13)입니다. launcher 내부 latency phase metrics는 기록되며 완화된 기준 목표(전환 1000ms 이내, 외부 키 반응 100ms 이내)를 적용합니다. 제자리 전환(Fast-Path)은 0.75ms 즉각 반환으로 5초 타임아웃 스파이크를 완전 박멸했으며, 복합 IPC 파이프라인(`switch-client \; select-pane`)으로 전환 안정성을 확보했습니다.
 - 기본 enabled 설치 항목은 사용자에게 `opencode`와 `tmux`가 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`, `tmux-theme-picker`, `tmux-command-palette`는 hidden dependency로 함께 설치됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
 - 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.

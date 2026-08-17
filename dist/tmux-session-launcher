@@ -189,11 +189,20 @@ sidebar_presenter_render_footer() {
 # Hot/Cold Path Session Switch Transaction Service Module
 
 sidebar_switch_execute_hot() {
-    local client_tty="$1" target_session="$2"
+    local client_tty="$1" target_session="$2" target_window="${3:-}" sidebar_pane="${4:-}"
     if [ -z "$target_session" ]; then
         return 1
     fi
-    sidebar_port_switch_client "$client_tty" "$target_session"
+    local target_spec="=$target_session:"
+    if [ -n "$sidebar_pane" ]; then
+        if [ -n "$client_tty" ]; then
+            sidebar_tmux_cmd switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null
+        else
+            sidebar_tmux_cmd switch-client -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null
+        fi
+    else
+        sidebar_port_switch_client "$client_tty" "$target_session"
+    fi
 }
 
 sidebar_switch_reconcile_cold() {
@@ -1430,11 +1439,6 @@ sidebar_window_ready()
     [ -n "$pane_id" ] || return 1
     pane_dead="$(sidebar_tmux_cmd display-message -p -t "$pane_id" '#{pane_dead}' 2>/dev/null || true)"
     pane_pid="$(sidebar_tmux_cmd display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
-    if [ "$ready" != 1 ]; then
-        ready=0
-        sidebar_tmux_cmd capture-pane -p -t "$pane_id" 2>/dev/null |
-            grep -Fxq 'sessions' && ready=1
-    fi
     [ "$pane_dead" = 0 ] && [ -n "$pane_pid" ] && [ "$ready" = 1 ]
 }
 
@@ -2567,16 +2571,16 @@ sidebar_selection_sync_ack_ready()
 
 sidebar_content_ready()
 {
-    local window_id="$1" session_name_value="$2" pane_id content
+    local window_id="$1" session_name_value="$2" pane_id content ack
+    ack="$(sidebar_tmux_cmd show-option -wqv -t "$window_id" "$SIDEBAR_SELECTION_SYNC_ACK_OPTION" 2>/dev/null || true)"
+    if [ "$ack" = "$session_name_value" ]; then
+        return 0
+    fi
     pane_id="$(sidebar_window_pane "$window_id" || true)"
     [ -n "$pane_id" ] || return 1
     content="$(tmux capture-pane -p -J -t "$pane_id" 2>/dev/null || true)"
     printf '%s\n' "$content" | grep -Fxq 'sessions' || return 1
     printf '%s\n' "$content" | grep -Fq -- "$session_name_value" || return 1
-    # The selection marker is the user-visible proof that the repaired pane
-    # has rendered the target state, rather than merely starting a shell.
-    # Sidebar lines have leading whitespace (e.g. "   * ccc"), so allow
-    # optional spaces before the marker characters.
     printf '%s\n' "$content" |
         sed $'s/\033\[[0-9;]*m//g' |
         grep -Eq "(^[[:space:]]*>[*]?[[:space:]]+$session_name_value([[:space:]]|$)|^[[:space:]]*\*?[[:space:]]+$session_name_value([[:space:]]|$))"
@@ -2585,14 +2589,16 @@ sidebar_content_ready()
 wait_for_sidebar_content_ready()
 {
     local window_id="$1" session_name_value="$2" attempt
-    if sidebar_window_ready "$window_id" && sidebar_content_ready "$window_id" "$session_name_value"; then
+    if sidebar_window_ready "$window_id" &&
+        (sidebar_selection_sync_ack_ready "$window_id" "$session_name_value" ||
+         sidebar_content_ready "$window_id" "$session_name_value"); then
         trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=0 result=ready"
         return 0
     fi
     for attempt in $(seq 1 250); do
         if sidebar_window_ready "$window_id" &&
-            (sidebar_content_ready "$window_id" "$session_name_value" ||
-             sidebar_selection_sync_ack_ready "$window_id" "$session_name_value"); then
+            (sidebar_selection_sync_ack_ready "$window_id" "$session_name_value" ||
+             sidebar_content_ready "$window_id" "$session_name_value"); then
             trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=$attempt result=ready"
             return 0
         fi
@@ -2711,6 +2717,13 @@ switch_session()
     local client_switch_us=0 switch_metrics_start_us=0 switch_phase_start_us=0
     local selection_sync_ready=false selection_sync_ack="" sidebar_ready=""
     [ -n "$session_name" ] || return 0
+    if [ "$session_name" = "${current_session:-}" ]; then
+        view_mode="sessions"
+        ensure_selection_visible 2>/dev/null || true
+        render_visible_session_rows 2>/dev/null || true
+        trace_event "switch.self-transition.fast-path session=$session_name result=success"
+        return 0
+    fi
     if ! session_exists "$session_name"; then
         collect_sessions 2>/dev/null || true
         render_full stale_session 2>/dev/null || true
@@ -2802,7 +2815,7 @@ switch_session()
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"
-    if ! sidebar_tmux_switch_client "$client_tty" "$session_name" 2>/dev/null; then
+    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane"; then
         tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
         transition_context_finish failed switch-client "$operation_id"
         message_line "session switch failed: client switch was refused"
@@ -6418,7 +6431,15 @@ EOF
         for index in "${selected_indices[@]}"; do
             [ "$abort_requested" = true ] && break
             archive_path="${history_files[$index]}"
-            archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
+            archive_session=""
+            if [ -f "$archive_path" ]; then
+                while IFS=$'\t' read -r k v _ || [ -n "$k" ]; do
+                    if [ "$k" = "session" ]; then
+                        archive_session="$v"
+                        break
+                    fi
+                done < "$archive_path"
+            fi
             while [ "$active_count" -ge "$concurrency" ]; do
                 # Non-blocking poll on running worker PIDs
                 local reaped=false
@@ -7136,6 +7157,10 @@ run_tui()
                         request_full_render history-restore
                     fi
                 else
+                    # Optimistic visual feedback for immediate <50ms sensory acknowledgment
+                    if [ -n "$selected_session" ]; then
+                        message_line "⚡ switching to $selected_session..."
+                    fi
                     switch_result=0
                     switch_session "$selected_session" || switch_result=$?
                     if [ "$switch_result" -eq 0 ]; then

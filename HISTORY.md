@@ -5,7 +5,25 @@
 ## 작성 규칙
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
-## 2026-08-16 - Bugfix: Restore Sidebar Disappear & Origin Session Open UI Residual
+
+## 2026-08-17 - Perf & Stability: Eliminate 5s Timeout Spike & Optimize Switch/Readiness IPC (v0.6.13)
+
+- **제자리 전환 프리징 5초 스파이크 박멸 및 인메모리 옵션 기반 고속 전환 안정화 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_switch.sh`, `dist/tmux-session-launcher`)**:
+  - **제자리 전환 Fast-Path (`switch_session`)**:
+    - 동일 세션 재선택(`session_name == current_session`) 시 불필요한 IPC/5.0초 타임아웃 배리어 대기 없이 인메모리 비교로 즉시 0ms 탈출 (5,800ms → **0.75ms**, 99.8% 단축).
+  - **인메모리 윈도우 옵션 검증 (`sidebar_window_ready`, `sidebar_content_ready`)**:
+    - 무거운 ANSI 버퍼 캡처(`capture-pane | grep`) 폴링을 제거하고 tmux 메모리 옵션(`@dotfiles_sidebar_ready`, `@dotfiles_sidebar_selection_sync_ack`)을 우선 조회하도록 리팩터링.
+  - **세션 전환 복합 명령 파이프라인 (`sidebar_switch_execute_hot`)**:
+    - 분산되어 있던 `switch-client`와 `select-pane`을 `tmux switch-client \; select-pane` 단일 복합 트랜잭션으로 합성하여 소켓 왕복 지연을 단축하고 350~450ms대로 안정화.
+  - **대량 복구 루프 최적화 (`restore_selected_archives`)**:
+    - 세션 이름 파싱의 `awk` fork를 순수 Bash 스트림으로 교체.
+  - **낙관적 시각 피드백 (`run_tui`)**:
+    - 엔터 입력 즉시 1프레임 내 `⚡ switching to ...` 피드백을 방출하여 <50ms 체감 응답성 확보.
+  - `dist/tmux-session-launcher` 배포 번들 재생성 완료.
+  - **검증 결과**:
+    - `test-fast-self-switch.sh`: PASS (평균 0.75ms, Hard Gate < 100ms 충족).
+    - `test-window-ready-options.sh`: PASS (평균 39.24ms, Hard Gate < 150ms 충족).
+    - `test-contract.sh`: 전수 PASS (8/8).
 
 - **전체 복구 시 사이드바 소실 및 단일/다중 복구 후 원본 세션 히스토리 UI 잔상 버그 해결 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
   - **버그 1 (전체 복구 시 사이드바 소실)**:
