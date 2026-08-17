@@ -2,7 +2,7 @@
 # SubpaneHubManager: Global Singleton Subpane Session & Mirror Management
 set -euo pipefail
 
-SUBPANE_HUB_SESSION=".dotfiles-subpane-hub"
+SUBPANE_HUB_SESSION="dotfiles-subpane-hub"
 
 subpane_hub_session_name() {
     printf '%s\n' "$SUBPANE_HUB_SESSION"
