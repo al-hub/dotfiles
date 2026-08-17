@@ -1234,11 +1234,6 @@ sidebar_window_ready()
     [ -n "$pane_id" ] || return 1
     pane_dead="$(sidebar_tmux_cmd display-message -p -t "$pane_id" '#{pane_dead}' 2>/dev/null || true)"
     pane_pid="$(sidebar_tmux_cmd display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
-    if [ "$ready" != 1 ]; then
-        ready=0
-        sidebar_tmux_cmd capture-pane -p -t "$pane_id" 2>/dev/null |
-            grep -Fxq 'sessions' && ready=1
-    fi
     [ "$pane_dead" = 0 ] && [ -n "$pane_pid" ] && [ "$ready" = 1 ]
 }
 
@@ -2371,16 +2366,16 @@ sidebar_selection_sync_ack_ready()
 
 sidebar_content_ready()
 {
-    local window_id="$1" session_name_value="$2" pane_id content
+    local window_id="$1" session_name_value="$2" pane_id content ack
+    ack="$(sidebar_tmux_cmd show-option -wqv -t "$window_id" "$SIDEBAR_SELECTION_SYNC_ACK_OPTION" 2>/dev/null || true)"
+    if [ "$ack" = "$session_name_value" ]; then
+        return 0
+    fi
     pane_id="$(sidebar_window_pane "$window_id" || true)"
     [ -n "$pane_id" ] || return 1
     content="$(tmux capture-pane -p -J -t "$pane_id" 2>/dev/null || true)"
     printf '%s\n' "$content" | grep -Fxq 'sessions' || return 1
     printf '%s\n' "$content" | grep -Fq -- "$session_name_value" || return 1
-    # The selection marker is the user-visible proof that the repaired pane
-    # has rendered the target state, rather than merely starting a shell.
-    # Sidebar lines have leading whitespace (e.g. "   * ccc"), so allow
-    # optional spaces before the marker characters.
     printf '%s\n' "$content" |
         sed $'s/\033\[[0-9;]*m//g' |
         grep -Eq "(^[[:space:]]*>[*]?[[:space:]]+$session_name_value([[:space:]]|$)|^[[:space:]]*\*?[[:space:]]+$session_name_value([[:space:]]|$))"
@@ -2389,14 +2384,16 @@ sidebar_content_ready()
 wait_for_sidebar_content_ready()
 {
     local window_id="$1" session_name_value="$2" attempt
-    if sidebar_window_ready "$window_id" && sidebar_content_ready "$window_id" "$session_name_value"; then
+    if sidebar_window_ready "$window_id" &&
+        (sidebar_selection_sync_ack_ready "$window_id" "$session_name_value" ||
+         sidebar_content_ready "$window_id" "$session_name_value"); then
         trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=0 result=ready"
         return 0
     fi
     for attempt in $(seq 1 250); do
         if sidebar_window_ready "$window_id" &&
-            (sidebar_content_ready "$window_id" "$session_name_value" ||
-             sidebar_selection_sync_ack_ready "$window_id" "$session_name_value"); then
+            (sidebar_selection_sync_ack_ready "$window_id" "$session_name_value" ||
+             sidebar_content_ready "$window_id" "$session_name_value"); then
             trace_event "sidebar.content-ready window=$window_id session=$session_name_value attempts=$attempt result=ready"
             return 0
         fi
