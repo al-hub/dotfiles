@@ -29,6 +29,34 @@ sidebar_archive_validate_path() {
     [ -n "$archive_path" ] && [ -r "$archive_path" ] && [ -s "$archive_path" ]
 }
 
+sidebar_archive_set_batch_busy() {
+    local val="${1:-1}"
+    if command -v tmux >/dev/null 2>&1; then
+        tmux set-option -gq "@tmux_batch_busy" "$val" 2>/dev/null || true
+        tmux set-option -gq "@dotfiles_sidebar_restore_topology" "$val" 2>/dev/null || true
+    fi
+}
+
+sidebar_archive_is_batch_busy() {
+    if command -v tmux >/dev/null 2>&1; then
+        [ "$(tmux show-option -gqv "@tmux_batch_busy" 2>/dev/null || true)" = "1" ] || \
+        [ "$(tmux show-option -gqv "@dotfiles_sidebar_restore_topology" 2>/dev/null || true)" = "1" ]
+    else
+        return 1
+    fi
+}
+
+sidebar_archive_mark_window_lazy() {
+    local window_target="${1:-}"
+    [ -n "$window_target" ] || return 0
+    if command -v tmux >/dev/null 2>&1; then
+        tmux set-option -wq -t "$window_target" "@dotfiles_sidebar_managed" 1 2>/dev/null || true
+        tmux set-option -wq -t "$window_target" "@dotfiles_sidebar_ready" 0 2>/dev/null || true
+        tmux set-option -wq -t "$window_target" "@dotfiles_sidebar_provisioning" "lazy" 2>/dev/null || true
+    fi
+}
+
+
 
 # --- END sidebar_archive.sh ---
 # --- BEGIN sidebar_coordinator.sh ---
@@ -283,6 +311,7 @@ SIDEBAR_SELECTION_SYNC_ACK_OPTION="@dotfiles_sidebar_selection_sync_ack"
 SIDEBAR_RESTORE_TOPOLOGY_OPTION="@dotfiles_sidebar_restore_topology"
 SIDEBAR_WIDTH_APPLY_GUARD_OPTION="@dotfiles_sidebar_width_apply_guard"
 SIDEBAR_PROVISION_OPTION="@dotfiles_sidebar_provisioning"
+TMUX_BATCH_BUSY_OPTION="@tmux_batch_busy"
 FAIL_STEP="${TMUX_SESSION_LAUNCHER_FAIL_STEP:-}"
 SIDEBAR_ASYNC_RESTORE="${TMUX_SESSION_SIDEBAR_ASYNC_RESTORE:-true}"
 METRICS_FILE="${TMUX_SESSION_LAUNCHER_METRICS_FILE:-}"
@@ -387,9 +416,24 @@ sidebar_runtime_get()
     fi
 }
 
+_sidebar_local_action_generation=0
+_sidebar_action_generation_dirty=0
+
+flush_action_generation_if_dirty()
+{
+    [ "${_sidebar_action_generation_dirty:-0}" -eq 1 ] || return 0
+    _sidebar_action_generation_dirty=0
+    if [ -n "${SIDEBAR_WINDOW_ID:-}" ]; then
+        sidebar_tmux_cmd set-option -wq -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_ACTION_GENERATION_OPTION" "${_sidebar_local_action_generation:-0}" 2>/dev/null || true
+    else
+        sidebar_tmux_cmd set-option -gq "$SIDEBAR_ACTION_GENERATION_OPTION" "${_sidebar_local_action_generation:-0}" 2>/dev/null || true
+    fi
+}
+
 restore_topology_guard_active()
 {
-    [ "$(sidebar_tmux_cmd show-option -gqv "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 2>/dev/null || true)" = 1 ]
+    [ "$(sidebar_tmux_cmd show-option -gqv "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 2>/dev/null || true)" = 1 ] || \
+    [ "$(sidebar_tmux_cmd show-option -gqv "$TMUX_BATCH_BUSY_OPTION" 2>/dev/null || true)" = 1 ]
 }
 prompt_result=""
 prompt_cancelled=false
@@ -2724,6 +2768,7 @@ switch_session()
         trace_event "switch.self-transition.fast-path session=$session_name result=success"
         return 0
     fi
+    flush_action_generation_if_dirty 2>/dev/null || true
     if ! session_exists "$session_name"; then
         collect_sessions 2>/dev/null || true
         render_full stale_session 2>/dev/null || true
@@ -6093,18 +6138,23 @@ restore_archive()
     restore_client_tty="$(tmux list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null |
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
 
-    trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local"
-    # A restored session can contain more than one window. Explicitly provision every
-    # restored target window before applying each archived full-window layout.
+    trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local batch=$restore_batch_mode"
+    # A restored session can contain more than one window. In batch mode, we mark
+    # windows as lazily managed and defer presenter provisioning until focused.
     for restore_window_target in "${restore_window_targets[@]}"; do
         [ -n "$restore_window_target" ] || continue
+        if [ "$restore_batch_mode" = true ]; then
+            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
+            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
+            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_PROVISION_OPTION" "lazy" 2>/dev/null || true
+            continue
+        fi
         if ! provision_sidebar_window "$restore_window_target" "$(sidebar_width)"; then
             trace_event "restore.sidebar.provision.error session=$restore_name window=$restore_window_target"
             restore_abort ensure-sidebar
             return 1
         fi
-        if [ "$restore_batch_mode" != true ] &&
-            ! wait_for_sidebar_window_ready "$restore_window_target"; then
+        if ! wait_for_sidebar_window_ready "$restore_window_target"; then
             trace_event "restore.sidebar.ready-timeout session=$restore_name window=$restore_window_target"
             restore_abort ensure-sidebar-ready
             return 1
@@ -6119,25 +6169,25 @@ restore_archive()
             restore_abort ensure-sidebar-ready
             return 1
         }
+        # The work-only layout is needed while panes are created, but the final
+        # user-visible geometry also includes the sidebar. Reapply the archived
+        # full-window layout only after the new sidebar pane has been provisioned
+        # and mapped to the archived pane identity.
+        for window_index in "${!restore_window_targets[@]}"; do
+            if [ -n "${restore_window_sidebar_layouts[$window_index]:-}" ]; then
+                restore_archived_sidebar_layout \
+                    "${restore_window_targets[$window_index]}" \
+                    "${restore_window_sidebar_layouts[$window_index]}" \
+                    "${restore_window_sidebar_panes[$window_index]:-}" \
+                    "${restore_window_sidebar_active[$window_index]:-}" \
+                    "${restore_window_sidebar_pane[$window_index]:-}" \
+                    "${restore_window_work_panes[$window_index]:-}" || {
+                    restore_abort sidebar-layout
+                    return 1
+                }
+            fi
+        done
     fi
-    # The work-only layout is needed while panes are created, but the final
-    # user-visible geometry also includes the sidebar. Reapply the archived
-    # full-window layout only after the new sidebar pane has been provisioned
-    # and mapped to the archived pane identity.
-    for window_index in "${!restore_window_targets[@]}"; do
-        if [ -n "${restore_window_sidebar_layouts[$window_index]:-}" ]; then
-            restore_archived_sidebar_layout \
-                "${restore_window_targets[$window_index]}" \
-                "${restore_window_sidebar_layouts[$window_index]}" \
-                "${restore_window_sidebar_panes[$window_index]:-}" \
-                "${restore_window_sidebar_active[$window_index]:-}" \
-                "${restore_window_sidebar_pane[$window_index]:-}" \
-                "${restore_window_work_panes[$window_index]:-}" || {
-                restore_abort sidebar-layout
-                return 1
-            }
-        fi
-    done
     trace_event "restore.sidebar.provision.end session=$restore_name model=window-local"
     check_restore_precondition "$restore_operation_id" before-client-switch "$restore_owner_identity" "$restore_original_session" "$restore_original_identity" "$restore_name" || {
         restore_abort external-conflict
@@ -6308,6 +6358,7 @@ restore_batch_finalize()
         trace_event "restore.batch.finalize.error operation_id=$operation_id reason=precondition"
         restore_batch_mode=false
         sidebar_operation_finish failed "$operation_id" || true
+        sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
         return 1
     fi
@@ -6320,6 +6371,7 @@ restore_batch_finalize()
         trace_event "restore.batch.finalize.error operation_id=$operation_id reason=managed-sidebar-snapshot-not-ready"
         restore_batch_mode=false
         sidebar_operation_finish failed "$operation_id" || true
+        sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
         return 1
     fi
@@ -6328,15 +6380,21 @@ restore_batch_finalize()
         trace_event "restore.batch.finalize.error operation_id=$operation_id reason=switch-client target=$target_session"
         restore_batch_mode=false
         sidebar_operation_finish failed "$operation_id" || true
+        sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
         return 1
     fi
     restore_active_window="$(sidebar_tmux_cmd display-message -p -t "$client_tty" '#{window_id}' 2>/dev/null || true)"
     target_window="$(sidebar_tmux_session_window "$target_session" || true)"
+    local final_target_window="${restore_active_window:-$target_window}"
+    if [ -n "$final_target_window" ] && [ -z "$(sidebar_window_pane "$final_target_window" 2>/dev/null || true)" ]; then
+        provision_sidebar_window "$final_target_window" "$(sidebar_width)" || true
+    fi
     wait_for_managed_sidebar_session "$target_session" "${restore_active_window:-$target_window}" || {
         trace_event "restore.batch.finalize.error operation_id=$operation_id reason=sidebar-not-ready target=$target_session"
         restore_batch_mode=false
         sidebar_operation_finish failed "$operation_id" || true
+        sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
         return 1
     }
@@ -6355,6 +6413,7 @@ restore_batch_finalize()
     done
     restore_batch_mode=false
     sidebar_operation_finish idle "$operation_id" || true
+    sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
     sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
     local finalize_duration_us=$(( $(metrics_now_us) - finalize_start ))
     [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=finalize operation_id=$operation_id target=$target_session restored=$restored_count selected=$selected_count history=$history_imported/$restored_count history_failed=$history_failed duration_us=$finalize_duration_us"
@@ -6411,6 +6470,7 @@ EOF
         new_sidebar_operation_id
         batch_operation_id="$sidebar_operation_id_result"
         sidebar_operation_set restoring "$batch_operation_id"
+        sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 1 2>/dev/null || true
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 1 2>/dev/null || true
         trace_event "restore.batch.begin operation_id=$batch_operation_id selected=$selected_count"
         [ -n "$METRICS_FILE" ] && metrics_write "op=batch-restore phase=begin operation_id=$batch_operation_id selected=$selected_count"
@@ -6526,6 +6586,7 @@ EOF
         else
             restore_batch_mode=false
             sidebar_operation_finish failed "$batch_operation_id" || true
+            sidebar_tmux_cmd set-option -gq "$TMUX_BATCH_BUSY_OPTION" 0 2>/dev/null || true
             sidebar_tmux_cmd set-option -gq "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 0 2>/dev/null || true
         fi
         batch_duration_us=$(( $(metrics_now_us) - batch_start ))
@@ -6651,6 +6712,7 @@ tui_new_session()
 execute_tui_session_delete_action()
 {
     local archive_flag="${1:-false}"
+    flush_action_generation_if_dirty
     debug_log "tui_delete_session confirm action selected=$selected_session current=$current_session archive=$archive_flag"
     deleted_session="$selected_session"
     deleting_current_session=false
@@ -6807,8 +6869,8 @@ move_selection()
     else
         render_visible_rows
     fi
-    gen="$(sidebar_tmux_cmd show-option -wqv -t "${SIDEBAR_WINDOW_ID:-}" "$SIDEBAR_ACTION_GENERATION_OPTION" 2>/dev/null || echo 0)"
-    sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$(( ${gen:-0} + 1 ))"
+    _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
+    _sidebar_action_generation_dirty=1
     trace_event "selection.render.end id=$trace_id old_index=$old_index new_index=$selected_index"
     trace_event "selection.update.end id=$trace_id index=$selected_index session=$selected_session"
     if [ -n "$metrics_input_start" ]; then
@@ -6903,6 +6965,8 @@ move_history_selection()
 
     ensure_history_visible
     render_history
+    _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
+    _sidebar_action_generation_dirty=1
 }
 
 toggle_history_mark()
@@ -7020,6 +7084,8 @@ run_tui()
     trace_event "sidebar.first-render.begin pane=${TMUX_PANE:-none}"
     render_full initial
     trace_event "sidebar.first-render.end pane=${TMUX_PANE:-none}"
+    _sidebar_local_action_generation=0
+    _sidebar_action_generation_dirty=0
     sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" 0
     sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
     sidebar_runtime_set "$SIDEBAR_PROMPT_READY_OPTION" 0
@@ -7089,6 +7155,7 @@ run_tui()
             trace_event "input.read.result action_id=$current_action_id result=key key_name=$key key_hex=$(trace_key_hex "$key_raw")"
         else
             post_operation_fast_read=false
+            flush_action_generation_if_dirty
             trace_event "input.read.result result=timeout timeout=$read_timeout"
         fi
         if [ -n "$METRICS_FILE" ]; then
@@ -7111,7 +7178,10 @@ run_tui()
             current_action_id=""
         fi
         if [ -n "$key" ]; then
-            sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 0
+            case "$key" in
+                up|down) ;;
+                *) sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 0 ;;
+            esac
             trace_event "input.dispatch.begin action_id=$current_action_id key_name=$key view_mode=$view_mode current=$current_session selected=$selected_session"
         fi
         if [ "$geometry_signal_pending" = true ]; then
@@ -7401,10 +7471,19 @@ run_tui()
         fi
 
         if [ -n "$key" ]; then
-            action_generation=$((action_generation + 1))
-            sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
-            sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$action_generation"
-            trace_event "action.complete action_id=$current_action_id generation=$action_generation key_name=$key current=$current_session selected=$selected_session view_mode=$view_mode"
+            case "$key" in
+                up|down)
+                    # Navigation hot path: generation counter is updated in-memory and flushed on idle/action.
+                    ;;
+                *)
+                    flush_action_generation_if_dirty
+                    action_generation=$((action_generation + 1))
+                    _sidebar_local_action_generation="$action_generation"
+                    sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
+                    sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$action_generation"
+                    ;;
+            esac
+            trace_event "action.complete action_id=$current_action_id generation=${_sidebar_local_action_generation:-$action_generation} key_name=$key current=$current_session selected=$selected_session view_mode=$view_mode"
             current_action_id=""
         fi
         metrics_flush
@@ -7501,8 +7580,11 @@ main()
             return 0
             ;;
         --restore-archive)
-            restore_archive "${2:-}" "${3:-}"
+            restore_archive "${2:-}" "${3:-}" "${4:-false}"
             return $?
+            ;;
+        --source-only)
+            return 0
             ;;
         --sidebar|"")
             ;;
