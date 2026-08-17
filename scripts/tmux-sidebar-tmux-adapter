@@ -71,7 +71,7 @@ sidebar_tmux_work_pane()
 {
     local target_window="$1"
     sidebar_tmux_cmd list-panes -t "$target_window" -F '#{pane_id}|#{pane_title}|#{pane_active}' 2>/dev/null |
-        awk -F '|' '$2 != "dotfiles-session-sidebar" && $3 == 1 { print $1; exit }'
+        awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" && $3 == 1 { print $1; exit }'
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
         return 1
     fi
@@ -81,7 +81,7 @@ sidebar_tmux_any_work_pane()
 {
     local target_window="$1"
     sidebar_tmux_cmd list-panes -t "$target_window" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' '$2 != "dotfiles-session-sidebar" { print $1; exit }'
+        awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" { print $1; exit }'
 }
 
 sidebar_tmux_work_pane_summary()
@@ -89,7 +89,7 @@ sidebar_tmux_work_pane_summary()
     local target_window="$1"
     sidebar_tmux_cmd list-panes -t "$target_window" \
         -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' '$2 != "dotfiles-session-sidebar" { if (first == "") first=$1; count++ } END { print first "|" (count + 0) }'
+        awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" { if (first == "") first=$1; count++ } END { print first "|" (count + 0) }'
 }
 
 sidebar_tmux_pane_context()

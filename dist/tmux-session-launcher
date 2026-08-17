@@ -1843,9 +1843,9 @@ save_work_layout()
 
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_OPTION" "$layout" 2>/dev/null || true
     work_pane_ids="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title { print $1 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        awk -F '|' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle { print $1 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
     active_work_pane="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{pane_active}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title && $3 == 1 { print $1; exit }')"
+        awk -F '|' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle && $3 == 1 { print $1; exit }')"
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_PANES_OPTION" "$work_pane_ids" 2>/dev/null || true
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_GEOMETRY_OPTION" "$(tmux list-panes -t "$window_id" -F '#{pane_left},#{pane_top},#{pane_width},#{pane_height},#{pane_active}' 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')" 2>/dev/null || true
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_GENERATION_OPTION" "$(date +%s%N)" 2>/dev/null || true
@@ -1865,7 +1865,7 @@ snapshot_work_layout_transaction()
         return $?
     fi
     work_pane="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }')"
+        awk -F '|' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle { print $1; exit }')"
     [ -n "$work_pane" ] || return 1
     width="$(tmux display-message -p -t "$sidebar_pane" '#{pane_width}' 2>/dev/null || true)"
     holder_window="$(tmux break-pane -d -s "$sidebar_pane" -P -F '#{window_id}' 2>/dev/null || true)"
@@ -1873,9 +1873,9 @@ snapshot_work_layout_transaction()
     sleep 0.05
     layout="$(tmux display-message -p -t "$window_id" '#{window_layout}' 2>/dev/null || true)"
     work_pane_ids="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title { print $1 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        awk -F '|' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle { print $1 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
     active_work_pane="$(tmux list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{pane_active}' 2>/dev/null |
-        awk -F '|' -v title="$SIDEBAR_TITLE" '$2 != title && $3 == 1 { print $1; exit }')"
+        awk -F '|' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle && $3 == 1 { print $1; exit }')"
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_OPTION" "$layout" 2>/dev/null || true
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_PANES_OPTION" "$work_pane_ids" 2>/dev/null || true
     tmux set-option -wq -t "$window_id" "$WORK_LAYOUT_GEOMETRY_OPTION" "$(tmux list-panes -t "$window_id" -F '#{pane_left},#{pane_top},#{pane_width},#{pane_height},#{pane_active}' 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')" 2>/dev/null || true
@@ -1952,6 +1952,8 @@ prepare_window_for_archive_snapshot()
             [ "$pane_session" = "=$target:" ] || continue
         if [ "$pane_title" = "$SIDEBAR_TITLE" ]; then
             sidebar_present=true
+        elif [ "$pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ]; then
+            :
         else
             work_pane_count=$((work_pane_count + 1))
         fi
@@ -2697,7 +2699,7 @@ current_window_work_pane()
     target_window="${1:-$(window_target)}"
     pane_id="$(
         tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}	#{pane_active}' 2>/dev/null |
-            awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title && $3 == 1 { print $1; exit }'
+            awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle && $3 == 1 { print $1; exit }'
     )"
     if [ -n "$pane_id" ]; then
         printf '%s\n' "$pane_id"
@@ -2705,7 +2707,7 @@ current_window_work_pane()
     fi
 
     tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}' 2>/dev/null |
-        awk -F '\t' -v title="$SIDEBAR_TITLE" '$2 != title { print $1; exit }'
+        awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle { print $1; exit }'
 }
 
 split_work_pane()
@@ -3375,6 +3377,7 @@ session_ai_pane_for_session()
     while IFS="$(printf '\t')" read -r pane_session pane_id pane_title command_name; do
         [ "$pane_session" = "$session_name" ] || continue
         [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        [ "$pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ] && continue
         if is_ai_cli_command "$command_name" || pane_has_ai_cli_process "$pane_id"; then
             printf '%s\n' "$pane_id"
             return 0
@@ -3993,6 +3996,7 @@ EOF
     while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command pane_activity pane_pid; do
         [ -n "$pane_session" ] || continue
         [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        [ "$pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ] && continue
 
         cached_pane_activity["$pane_id"]="$pane_activity"
         cached_pane_pid["$pane_id"]="$pane_pid"
@@ -4420,10 +4424,12 @@ render_footer()
 {
     width="${cached_pane_width:-35}"
     height="${cached_pane_height:-20}"
-    help='j/k Enter c/r/d o/a q'
+    help='j/k Enter c/r/d o/a m q'
 
-    if [ "$width" -ge 30 ]; then
-        help='j/k | Enter | c/r/d | o/a | q'
+    if [ "$width" -ge 45 ]; then
+        help='j/k | Enter | c/r/d | o/a | m: subpane | q'
+    elif [ "$width" -ge 30 ]; then
+        help='j/k | Enter | c/r/d | o/a | m | q'
     fi
 
     move_cursor "$height" 1
@@ -5367,7 +5373,7 @@ archivable_window_count()
 
     while IFS= read -r window_index; do
         if tmux list-panes -t "=$session_name:$window_index" -F '#{pane_title}' 2>/dev/null |
-            awk -v title="$SIDEBAR_TITLE" '$0 != title { found = 1 } END { exit found ? 0 : 1 }'; then
+            awk -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$0 != title && $0 != subtitle { found = 1 } END { exit found ? 0 : 1 }'; then
             count=$((count + 1))
         fi
     done <<EOF
@@ -5434,6 +5440,7 @@ clear_restored_work_panes()
     while IFS="$(printf '\t')" read -r pane_session pane_id pane_title; do
         [ "$pane_session" = "$session_name" ] || continue
         [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
+        [ "$pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ] && continue
         tmux send-keys -t "$pane_id" C-l 2>/dev/null || true
         tmux clear-history -t "$pane_id" 2>/dev/null || true
     done <<EOF
@@ -5626,6 +5633,9 @@ archive_session()
         if [ "$archive_pane_title" = "$SIDEBAR_TITLE" ]; then
             [ -n "${archive_window_sidebar_pane["$archive_pane_window"]:-}" ] ||
                 archive_window_sidebar_pane["$archive_pane_window"]="$archive_pane_id"
+            continue
+        fi
+        if [ "$archive_pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ]; then
             continue
         fi
         archive_window_pane_counts["$archive_pane_window"]=$((
@@ -7062,6 +7072,7 @@ read_key()
         o) key_result=history ;;
         ' ') key_result=mark ;;
         a) key_result=mark-all ;;
+        m|M) key_result=toggle-subpane ;;
         q) key_result=quit ;;
         ''|$'\n'|$'\r')
             key_result=enter
@@ -7428,6 +7439,11 @@ run_tui()
                 if [ "$view_mode" = "history" ]; then
                     toggle_history_mark_all
                 fi
+                ;;
+            m|M|toggle-subpane)
+                trace_event "action.begin type=toggle-subpane"
+                toggle_sidebar_subpane_global
+                request_full_render subpane-toggle
                 ;;
             esc)
                 if [ "$view_mode" = "history" ]; then

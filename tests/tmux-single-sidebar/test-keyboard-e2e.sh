@@ -197,9 +197,9 @@ case "$SYSCALL_TRACE" in
         ;;
 esac
 case "$SCENARIO" in
-    full|minimal|split-cycle|direct-layout|rapid-operations|session-create-latency|arbitrary-topology|multi-window-topology|window-local-switch|window-local-lifecycle|window-local-toggle|delete-zero-stale-row|history-select-all) ;;
+    subpane|full|minimal|split-cycle|direct-layout|rapid-operations|session-create-latency|arbitrary-topology|multi-window-topology|window-local-switch|window-local-lifecycle|window-local-toggle|delete-zero-stale-row|history-select-all) ;;
     *)
-        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be full, minimal, split-cycle, direct-layout, rapid-operations, session-create-latency, arbitrary-topology, multi-window-topology, window-local-switch, window-local-lifecycle, window-local-toggle, delete-zero-stale-row, or history-select-all\n' >&2
+        printf 'TMUX_KEYBOARD_E2E_SCENARIO must be subpane, full, minimal, split-cycle, direct-layout, rapid-operations, session-create-latency, arbitrary-topology, multi-window-topology, window-local-switch, window-local-lifecycle, window-local-toggle, delete-zero-stale-row, or history-select-all\n' >&2
         exit 2
         ;;
 esac
@@ -223,6 +223,60 @@ fi
 count_sessions()
 {
     tmuxc list-sessions -F '#{session_name}' 2>/dev/null | wc -l | tr -d ' '
+}
+
+count_subpanes()
+{
+    local win_id
+    win_id="$(client_window_id 2>/dev/null || true)"
+    if [ -n "$win_id" ]; then
+        tmuxc list-panes -t "$win_id" -F '#{pane_title}' 2>/dev/null |
+            awk '$0 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+    else
+        tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
+            awk '$0 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+    fi
+}
+
+active_pane_title()
+{
+    local client_tty
+    client_tty="$(client_tty || true)"
+    if [ -n "$client_tty" ]; then
+        tmuxc display-message -c "$client_tty" -p '#{pane_title}' 2>/dev/null || true
+    else
+        tmuxc display-message -p '#{pane_title}' 2>/dev/null || true
+    fi
+}
+
+run_subpane_reproduction()
+{
+    test_log "step=subpane.start"
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+
+    [ "$(count_subpanes)" -eq 0 ] || {
+        printf 'ERROR: subpane unexpectedly present before toggle\n' >&2
+        return 1
+    }
+
+    test_log "step=subpane.toggle_on"
+    send_keys 'm'
+    wait_until 'subpane opened' 1 count_subpanes
+    [ "$(active_pane_title)" = "dotfiles-session-sidebar" ] || {
+        printf 'ERROR: active pane title is "%s", expected dotfiles-session-sidebar\n' "$(active_pane_title)" >&2
+        return 1
+    }
+
+    test_log "step=subpane.toggle_off"
+    send_keys 'm'
+    wait_until 'subpane closed' 0 count_subpanes
+    [ "$(active_pane_title)" = "dotfiles-session-sidebar" ] || {
+        printf 'ERROR: active pane title is "%s", expected dotfiles-session-sidebar\n' "$(active_pane_title)" >&2
+        return 1
+    }
+
+    printf 'PASS: subpane toggled on and off with m key while preserving launcher focus\n'
 }
 
 run_delete_zero_stale_row_reproduction()
@@ -1980,6 +2034,11 @@ observer_read_loop &
 OBSERVER_LOG_PID=$!
 sleep 0.1
 test_log "observer.started pid=$OBSERVER_PID"
+
+if [ "$SCENARIO" = subpane ]; then
+    run_subpane_reproduction
+    exit 0
+fi
 
 if [ "$SCENARIO" = window-local-switch ]; then
     run_window_local_switch_contract
