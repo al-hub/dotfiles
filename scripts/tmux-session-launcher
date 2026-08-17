@@ -182,6 +182,20 @@ sidebar_runtime_get()
     fi
 }
 
+_sidebar_local_action_generation=0
+_sidebar_action_generation_dirty=0
+
+flush_action_generation_if_dirty()
+{
+    [ "${_sidebar_action_generation_dirty:-0}" -eq 1 ] || return 0
+    _sidebar_action_generation_dirty=0
+    if [ -n "${SIDEBAR_WINDOW_ID:-}" ]; then
+        sidebar_tmux_cmd set-option -wq -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_ACTION_GENERATION_OPTION" "${_sidebar_local_action_generation:-0}" 2>/dev/null || true
+    else
+        sidebar_tmux_cmd set-option -gq "$SIDEBAR_ACTION_GENERATION_OPTION" "${_sidebar_local_action_generation:-0}" 2>/dev/null || true
+    fi
+}
+
 restore_topology_guard_active()
 {
     [ "$(sidebar_tmux_cmd show-option -gqv "$SIDEBAR_RESTORE_TOPOLOGY_OPTION" 2>/dev/null || true)" = 1 ]
@@ -2519,6 +2533,7 @@ switch_session()
         trace_event "switch.self-transition.fast-path session=$session_name result=success"
         return 0
     fi
+    flush_action_generation_if_dirty 2>/dev/null || true
     if ! session_exists "$session_name"; then
         collect_sessions 2>/dev/null || true
         render_full stale_session 2>/dev/null || true
@@ -6446,6 +6461,7 @@ tui_new_session()
 execute_tui_session_delete_action()
 {
     local archive_flag="${1:-false}"
+    flush_action_generation_if_dirty
     debug_log "tui_delete_session confirm action selected=$selected_session current=$current_session archive=$archive_flag"
     deleted_session="$selected_session"
     deleting_current_session=false
@@ -6602,8 +6618,8 @@ move_selection()
     else
         render_visible_rows
     fi
-    gen="$(sidebar_tmux_cmd show-option -wqv -t "${SIDEBAR_WINDOW_ID:-}" "$SIDEBAR_ACTION_GENERATION_OPTION" 2>/dev/null || echo 0)"
-    sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$(( ${gen:-0} + 1 ))"
+    _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
+    _sidebar_action_generation_dirty=1
     trace_event "selection.render.end id=$trace_id old_index=$old_index new_index=$selected_index"
     trace_event "selection.update.end id=$trace_id index=$selected_index session=$selected_session"
     if [ -n "$metrics_input_start" ]; then
@@ -6698,6 +6714,8 @@ move_history_selection()
 
     ensure_history_visible
     render_history
+    _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
+    _sidebar_action_generation_dirty=1
 }
 
 toggle_history_mark()
@@ -6815,6 +6833,8 @@ run_tui()
     trace_event "sidebar.first-render.begin pane=${TMUX_PANE:-none}"
     render_full initial
     trace_event "sidebar.first-render.end pane=${TMUX_PANE:-none}"
+    _sidebar_local_action_generation=0
+    _sidebar_action_generation_dirty=0
     sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" 0
     sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
     sidebar_runtime_set "$SIDEBAR_PROMPT_READY_OPTION" 0
@@ -6884,6 +6904,7 @@ run_tui()
             trace_event "input.read.result action_id=$current_action_id result=key key_name=$key key_hex=$(trace_key_hex "$key_raw")"
         else
             post_operation_fast_read=false
+            flush_action_generation_if_dirty
             trace_event "input.read.result result=timeout timeout=$read_timeout"
         fi
         if [ -n "$METRICS_FILE" ]; then
@@ -6906,7 +6927,10 @@ run_tui()
             current_action_id=""
         fi
         if [ -n "$key" ]; then
-            sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 0
+            case "$key" in
+                up|down) ;;
+                *) sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 0 ;;
+            esac
             trace_event "input.dispatch.begin action_id=$current_action_id key_name=$key view_mode=$view_mode current=$current_session selected=$selected_session"
         fi
         if [ "$geometry_signal_pending" = true ]; then
@@ -7196,10 +7220,19 @@ run_tui()
         fi
 
         if [ -n "$key" ]; then
-            action_generation=$((action_generation + 1))
-            sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
-            sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$action_generation"
-            trace_event "action.complete action_id=$current_action_id generation=$action_generation key_name=$key current=$current_session selected=$selected_session view_mode=$view_mode"
+            case "$key" in
+                up|down)
+                    # Navigation hot path: generation counter is updated in-memory and flushed on idle/action.
+                    ;;
+                *)
+                    flush_action_generation_if_dirty
+                    action_generation=$((action_generation + 1))
+                    _sidebar_local_action_generation="$action_generation"
+                    sidebar_runtime_set "$SIDEBAR_INPUT_READY_OPTION" 1
+                    sidebar_runtime_set "$SIDEBAR_ACTION_GENERATION_OPTION" "$action_generation"
+                    ;;
+            esac
+            trace_event "action.complete action_id=$current_action_id generation=${_sidebar_local_action_generation:-$action_generation} key_name=$key current=$current_session selected=$selected_session view_mode=$view_mode"
             current_action_id=""
         fi
         metrics_flush
@@ -7298,6 +7331,9 @@ main()
         --restore-archive)
             restore_archive "${2:-}" "${3:-}"
             return $?
+            ;;
+        --source-only)
+            return 0
             ;;
         --sidebar|"")
             ;;
