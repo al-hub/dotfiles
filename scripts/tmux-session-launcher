@@ -218,6 +218,8 @@ render_request_reason=""
 render_generation=0
 transition_render_coalesced=false
 transition_generation=0
+_pending_transition_target=""
+_transition_sequence_id=0
 current_transition_operation_id=""
 current_transition_source=""
 current_transition_target=""
@@ -710,6 +712,12 @@ transition_context_finish()
         current_transition_target=""
         current_transition_target_window=""
         transition_lock_release
+        if [ -n "${_pending_transition_target:-}" ]; then
+            local next_target="$_pending_transition_target"
+            _pending_transition_target=""
+            trace_event "transition.drain_pending next_target=$next_target seq=$_transition_sequence_id"
+            switch_session "$next_target"
+        fi
         return 0
     fi
     [ "$result" = success ] || tmux set-option -gq "$SIDEBAR_FAST_TRANSITION_OPTION" 0 2>/dev/null || true
@@ -742,6 +750,12 @@ transition_context_finish()
     current_transition_source=""
     current_transition_target=""
     transition_lock_release
+    if [ -n "${_pending_transition_target:-}" ]; then
+        local next_target="$_pending_transition_target"
+        _pending_transition_target=""
+        trace_event "transition.drain_pending next_target=$next_target seq=$_transition_sequence_id"
+        switch_session "$next_target"
+    fi
 }
 
 transition_rollback()
@@ -2570,12 +2584,18 @@ switch_session()
         trace_event "switch.skip reason=already-on-target source=$source_session target=$session_name client_tty=$client_tty"
         return 0
     fi
-    # Multiple window-local sidebar processes observe the same shared
-    # selection transition. Only the first process may own the client switch;
-    # a duplicate Enter must not start a second transaction that can race
-    # sidebar provision/reconcile and invalidate target pane metadata.
+    # Last-Write-Wins (LWW) Transition Request Coalescing:
+    # If a transition is currently in flight, record the latest target and sequence
+    # to be automatically drained when the current transition finishes.
     if transition_is_active; then
-        trace_event "switch.skip reason=transition-active source=$source_session target=$session_name state=$(tmux show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
+        _pending_transition_target="$session_name"
+        _transition_sequence_id=$((_transition_sequence_id + 1))
+        if [ -n "$session_name" ]; then
+            move_cursor "${cached_pane_height:-20}" 1 2>/dev/null || true
+            clear_line 2>/dev/null || true
+            printf '%s' "⚡ queued switch to $session_name (#$_transition_sequence_id)..." 2>/dev/null || true
+        fi
+        trace_event "switch.coalesce target=$session_name seq=$_transition_sequence_id source=$source_session state=$(tmux show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
         return 0
     fi
     new_sidebar_operation_id
