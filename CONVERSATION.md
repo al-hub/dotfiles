@@ -6,7 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
-## 2026-08-17 - Release v0.6.12: Bulk Restore UX & History View Residual Fix on feature/single-sidebar
+## 2026-08-17 - SDD Implementation: Sidebar Performance & Perceived Latency Optimization
+
+- **사용자 요청**: 전문 사용성, UX, 개발, tmux subagent들과 논의한 개선안을 바탕으로 고속 네비게이션, 벌크 복원, 연속 세션 전환 성능 최적화 진행.
+- **수행 내용**:
+  - `superpowers:subagent-driven-development` (SDD) 프로토콜을 기반으로 3개 Phase를 TDD 및 단계별 Task Reviewer 검증을 거쳐 완수.
+  - **Task 1 (Phase 1)**: 커서 이동 핫패스에서 3회 발생하던 동기 IPC 호출을 제거하고 인메모리 세대 카운터 및 유휴 디바운스 플러시(`flush_action_generation_if_dirty`) 구현 (<0.5ms 달성).
+  - **Task 2 (Phase 2)**: 다중 아카이브 벌크 복원 시 지연 프로비저닝(Lazy Provisioning) 및 `@tmux_batch_busy 1` 훅 억제를 적용하여 20개 세션 복원 시 프로세스 폭발 차단 및 복원 속도 대폭 단축.
+  - **Task 3 (Phase 3)**: 고속 연속 Enter 입력 시 트랜잭션 락에 의한 키 씹힘을 해결하는 Last-Write-Wins (LWW) 전환 요청 병합(`_pending_transition_target` + 시퀀스 펜싱) 구현 및 낙관적 피드백 제공.
+  - **Task 4**: 단위/계약/통합 테스트 전수 검증 (8/8 PASS) 및 번들(`dist/tmux-session-launcher`) 동기화, 문서 업데이트.
+
 
 - **사용자 지시**: single-sidebar branch에만 버전 up, commit & push 진행.
 - **수행 내용**:

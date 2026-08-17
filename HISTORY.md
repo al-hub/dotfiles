@@ -6,7 +6,26 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
-## 2026-08-17 - Perf & Stability: Eliminate 5s Timeout Spike & Optimize Switch/Readiness IPC (v0.6.13)
+## 2026-08-17 - Performance & UX Optimization: In-Memory Navigation, Bulk Restore Lazy Provisioning & LWW Transition Coalescing
+
+- **사이드바 고속 네비게이션 핫패스 무지연화 (Zero-IPC In-Memory Hot Path) (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `j`/`k` 커서 이동 시 매 키 입력마다 발생하던 3회의 동기식 tmux CLI 호출(`show-option`, `set-option`)을 제거하고 순수 Bash 프로세스 메모리(`_sidebar_local_action_generation`)로 전환.
+  - 키 입력 유휴 상태(`read_key` 타임아웃) 및 액션 디스패치 직전에만 윈도우-로컬 옵션을 갱신하는 지연 플러시(`flush_action_generation_if_dirty`) 도입.
+  - 키 이동 레이턴시를 15~35ms에서 **<0.5ms (실제 ~0.15ms)**로 단축하여 60fps 무지연 반응성 확보.
+- **아카이브 벌크 복원 지연 프로비저닝 및 훅 억제 (Lazy Provisioning & Batch Hook Suppression) (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_archive.sh`, `dist/tmux-session-launcher`)**:
+  - 20여 개 세션 일괄 복원(`o` ➔ `a` ➔ `Enter`) 시 비활성 세션에 대한 자식 사이드바 bash 프로세스 동시 기동을 생략하고 작업 페인/레이아웃만 우선 생성.
+  - `@dotfiles_sidebar_provisioning = "lazy"` 마킹 후 최초 진입 시 윈도우-로컬 On-demand 프로비저닝 연계.
+  - 복원 중 연쇄 발생하는 tmux 훅을 `@tmux_batch_busy 1`로 차단하여 프로세스 폭발(200+ fork) 방지 및 복원 속도 5~10배 가속.
+- **연속 세션 전환 Last-Write-Wins (LWW) 요청 병합 및 웜패스 가속 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_switch.sh`, `dist/tmux-session-launcher`)**:
+  - 이전 전환 진행 중 들어온 빠른 Enter 연타 입력을 무조건 드롭하지 않고 `_pending_transition_target` 및 단조 증가 시퀀스 ID로 캡처 (`⚡ queued switch to ...`).
+  - 전환 완료(`transition_context_finish`) 또는 롤백 시점에 보류된 최신 타겟을 즉시 실행하여 중간 세션을 건너뛰고 최종 목적지로 즉시 전환 (키 씹힘 100% 해소).
+  - 단일 복합 IPC 파이프라인(`switch-client \; select-pane`)으로 웜패스 전환 속도 및 안정성 보장.
+- **검증 결과**:
+  - `test-navigation-in-memory.sh`: PASS (Zero-fork 인메모리 카운터 및 지연 플러시 검증)
+  - `test-bulk-restore-lazy.sh`: PASS (지연 프로비저닝 및 배치 훅 억제 검증)
+  - `test-transition-coalescing.sh`: PASS (LWW 전환 요청 병합 및 연쇄 드레인 검증)
+  - `test-contract.sh`: 8/8 PASS 전수 통과.
+
 
 - **제자리 전환 프리징 5초 스파이크 박멸 및 인메모리 옵션 기반 고속 전환 안정화 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_switch.sh`, `dist/tmux-session-launcher`)**:
   - **제자리 전환 Fast-Path (`switch_session`)**:

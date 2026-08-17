@@ -1,7 +1,10 @@
-# Subagent-Driven Development Progress Ledger
-Plan: 2026-08-09-launcher-refactoring-plan.md
-Task 1: complete (Layer 0 Pure Domain, test-domain-unit.sh PASS)
-Task 2: complete (Layer 1 Ports & Archive, test-port-tmux-unit.sh PASS, test-archive-unit.sh PASS)
-Task 3: complete (Layer 2 Presenter & UI, test-presenter-unit.sh PASS)
-Task 4: complete (Layer 3 Services, test-switch-unit.sh PASS, test-coordinator-unit.sh PASS)
-Task 5: complete (Composition Root & Symlink Hardening, build-dist.sh PASS, test-contract.sh PASS)
+# SDD Progress Ledger: Sidebar Performance & Latency Optimization
+
+Plan: `docs/superpowers/plans/2026-08-17-sidebar-performance-optimization.md`
+Base Commit: `7c539dbf12dba9703ce93e18d1b4eba539ad498a`
+
+- [x] Task 1: Phase 1 - In-Memory Navigation Hot Path & Idle Option Flush (commits 7c539db..7a6f24b, review clean)
+- [x] Task 2: Phase 2 - Bulk Restore Lazy Provisioning & Batch Hook Suppression (commits 7a6f24b..bc90808, review clean)
+- [x] Task 3: Phase 3 - Transition Request Coalescing (LWW) & Warm Fast-Path (commits bc90808..97fa548, review clean)
+- [x] Task 4: Integration Verification & Documentation Update (review clean)
+
