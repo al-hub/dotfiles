@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-18 - Architecture: WindowTopologyManager Deep Module & Subpane Isolation (TDD & SOLID)
+
+- **단일 책임 원칙(SRP) 기반 `WindowTopologyManager` 구축 (`scripts/lib/sidebar_topology.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-sidebar-tmux-adapter`)**:
+  - Pane 분류, 불변 메타데이터 식별, 윈도우 로컬 사이드바/서브패널 클러스터 관리를 전담하는 Deep Module 구축.
+  - 가변적인 `pane_title` 대신 불변 pane option(`@dotfiles_sidebar_subpane 1`)을 기준으로 조회하도록 개선하여, 쉘 프롬프트(zsh/bash)의 OSC 타이틀 변경 시에도 서브패널 식별이 100% 보존되도록 해결.
+  - `topology_inspect`, `topology_ensure_window`, `topology_destroy_sidebar_cluster`의 단순 인터페이스 뒤로 내부 tmux 명령 및 옵션 불변식을 은닉.
+- **레이아웃 스냅샷 및 세션 아카이브 서브패널 오염 원천 박멸 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `snapshot_work_layout_transaction` 및 아카이브 스냅샷 헬퍼에서 서브패널을 사이드바와 함께 원자적으로 격리하여 순수 작업창(`work_layout`)에 서브패널이 영구 합체되거나 레이아웃이 3단으로 찌그러지는 결함 박멸.
+  - v3 TSV 세션 아카이브 시 서브패널이 일반 `pane 1`로 오인되어 저장되는 문제를 옵션 검사로 완벽히 배제.
+- **TDD 계약 및 E2E 회귀 검증 (`tests/tmux-single-sidebar/test-topology-unit.sh`, `test-topology-contract.sh`, `test-layout-subpane-isolation.sh`, `test-keyboard-e2e-subpane.sh`)**:
+  - 불변 옵션 판별 단위 테스트, WindowTopologyManager 계약 테스트, 레이아웃 스냅샷 격리 테스트, 타이틀 변조 후 `m` 키 토글 및 사이드바 토글 E2E 테스트 100% PASS 검증 완료.
+
 ## 2026-08-17 - Feature: Sidebar Sub-Pane (Satellite Interactive Shell Terminal)
 
 - **사이드바 서브페인 (하단 보조 쉘 터미널) 온디맨드 토글 지원 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `dist/tmux-session-launcher`)**:

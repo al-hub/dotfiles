@@ -6,6 +6,24 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-18 - Subpane Topology Isolation & WindowTopologyManager Deepening (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/grill-me` tmux 를 띄워 놓았다. 바로직전의 수정 후 오류내용을 점검하려고한다. 오류내용 점검 후, 구조적인 문제점을 먼저 파악하려고한다. 지금은 코드 수정없이, 오류사항만 점검하려고한다.
+  - 실사용자 조건으로 띄워진 tmux를 조작하여 관련 문제점들을 최대한 파악하여 정리.
+  - `/diagnosing-bugs` 상기 내용에 대해 원인을 명확하게 점검.
+  - `/improve-codebase-architecture` 전문 subagents 들과 코드와 현재내용을 검토하고, 보강할 부분을 찾아서 최종 안을 제시.
+  - `/plan` TDD, SOLID 기반으로 개선 계획을 수립.
+  - `/implement` 진행.
+- **주요 결함 실측 및 규명**:
+  1. **가변 타이틀 식별 소실**: 쉘(zsh/bash)의 OSC 프롬프트 타이틀 변경으로 `pane_title` 기반 subpane 검색이 실패하여 `m` 키로 닫기 불가(좀비 subpane 잔존).
+  2. **레이아웃 스냅샷 오염**: `snapshot_work_layout_transaction`이 사이드바만 break-pane하고 subpane을 분리하지 않아 work_layout에 subpane이 영구 합체되어 3단 분할로 레이아웃 왜곡.
+  3. **세션 아카이브 오염**: subpane이 일반 `pane 1`로 오인되어 TSV 아카이브에 영구 기록되는 현상.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **단일 책임 원칙 (SRP) `WindowTopologyManager` (`scripts/lib/sidebar_topology.sh`)**: 불변 메타데이터(`@dotfiles_sidebar_subpane 1`) 기반 단일 Pane Registry 구축.
+  2. **레이아웃 스냅샷 격리**: `snapshot_work_layout_transaction` 및 아카이브 스냅샷에서 subpane을 사이드바와 함께 원자적으로 격리/복원.
+  3. **회귀 검증**: `test-topology-unit.sh`, `test-topology-contract.sh`, `test-layout-subpane-isolation.sh`, `test-keyboard-e2e-subpane.sh`, `test-contract.sh` 전 스위트 100% PASS.
+
 ## 2026-08-17 - Sidebar Sub-Pane (Satellite Interactive Shell Terminal) Feature
 
 - **사용자 요청**:

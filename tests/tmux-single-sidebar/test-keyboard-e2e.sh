@@ -230,11 +230,11 @@ count_subpanes()
     local win_id
     win_id="$(client_window_id 2>/dev/null || true)"
     if [ -n "$win_id" ]; then
-        tmuxc list-panes -t "$win_id" -F '#{pane_title}' 2>/dev/null |
-            awk '$0 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+        tmuxc list-panes -t "$win_id" -F '#{@dotfiles_sidebar_subpane}|#{pane_title}' 2>/dev/null |
+            awk -F '|' '$1 == "1" || $2 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
     else
-        tmuxc list-panes -a -F '#{pane_title}' 2>/dev/null |
-            awk '$0 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+        tmuxc list-panes -a -F '#{@dotfiles_sidebar_subpane}|#{pane_title}' 2>/dev/null |
+            awk -F '|' '$1 == "1" || $2 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
     fi
 }
 
@@ -268,7 +268,15 @@ run_subpane_reproduction()
         return 1
     }
 
-    test_log "step=subpane.toggle_off"
+    # Simulate shell/prompt mutating subpane title
+    local win_id sub_p
+    win_id="$(client_window_id 2>/dev/null || true)"
+    sub_p="$(tmuxc list-panes -t "$win_id" -F '#{pane_id}|#{@dotfiles_sidebar_subpane}' 2>/dev/null | awk -F '|' '$2 == "1" { print $1; exit }')"
+    if [ -n "$sub_p" ]; then
+        tmuxc select-pane -t "$sub_p" -T "al-hub@custom_host: ~/workspace"
+    fi
+
+    test_log "step=subpane.toggle_off_after_title_mutation"
     send_keys 'm'
     wait_until 'subpane closed' 0 count_subpanes
     [ "$(active_pane_title)" = "dotfiles-session-sidebar" ] || {
