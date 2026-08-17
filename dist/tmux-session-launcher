@@ -357,8 +357,15 @@ provision_sidebar_subpane() {
         total_h="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{window_height}' 2>/dev/null || echo 40)"
         height="$(sidebar_subpane_default_height "$total_h")"
     fi
+    if declare -f subpane_hub_ensure_session >/dev/null 2>&1; then
+        subpane_hub_ensure_session
+    fi
     if [ -z "$cmd" ]; then
-        cmd="${SHELL:-/bin/bash}"
+        if declare -f subpane_hub_attach_command >/dev/null 2>&1; then
+            cmd="$(subpane_hub_attach_command)"
+        else
+            cmd="${SHELL:-/bin/bash}"
+        fi
     fi
 
     local sub_pane
@@ -475,6 +482,47 @@ sidebar_presenter_render_footer() {
     printf "\033[1;30m%-*s\033[0m\n" "$width" "$help_text"
 }
 # --- END sidebar_presenter.sh ---
+# --- BEGIN sidebar_subpane_hub.sh ---
+# SubpaneHubManager: Global Singleton Subpane Session & Mirror Management
+
+SUBPANE_HUB_SESSION="dotfiles-subpane-hub"
+
+subpane_hub_session_name() {
+    printf '%s\n' "$SUBPANE_HUB_SESSION"
+}
+
+subpane_hub_default_command() {
+    local zdot="${HOME}/.cache/dotfiles"
+    if [ -x "/bin/zsh" ]; then
+        printf 'exec env ZDOTDIR="%s" /bin/zsh\n' "$zdot"
+    else
+        printf 'exec env ZDOTDIR="%s" %s\n' "$zdot" "${SHELL:-/bin/bash}"
+    fi
+}
+
+subpane_hub_attach_command() {
+    printf 'tmux attach-session -t =%s:\n' "$SUBPANE_HUB_SESSION"
+}
+
+subpane_hub_is_alive() {
+    sidebar_tmux_cmd has-session -t "=$(subpane_hub_session_name):" >/dev/null 2>&1
+}
+
+subpane_hub_ensure_session() {
+    if ! subpane_hub_is_alive; then
+        local cmd
+        cmd="$(subpane_hub_default_command)"
+        sidebar_tmux_cmd new-session -d -s "$(subpane_hub_session_name)" -x 30 -y 12 "$cmd" 2>/dev/null || true
+        sidebar_tmux_cmd set-option -t "=$(subpane_hub_session_name):" remain-on-exit off 2>/dev/null || true
+    fi
+}
+
+subpane_hub_destroy() {
+    if subpane_hub_is_alive; then
+        sidebar_tmux_cmd kill-session -t "=$(subpane_hub_session_name):" 2>/dev/null || true
+    fi
+}
+# --- END sidebar_subpane_hub.sh ---
 # --- BEGIN sidebar_switch.sh ---
 # Hot/Cold Path Session Switch Transaction Service Module
 

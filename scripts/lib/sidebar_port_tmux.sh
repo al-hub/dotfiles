@@ -82,8 +82,15 @@ provision_sidebar_subpane() {
         total_h="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{window_height}' 2>/dev/null || echo 40)"
         height="$(sidebar_subpane_default_height "$total_h")"
     fi
+    if declare -f subpane_hub_ensure_session >/dev/null 2>&1; then
+        subpane_hub_ensure_session
+    fi
     if [ -z "$cmd" ]; then
-        cmd="${SHELL:-/bin/bash}"
+        if declare -f subpane_hub_attach_command >/dev/null 2>&1; then
+            cmd="$(subpane_hub_attach_command)"
+        else
+            cmd="${SHELL:-/bin/bash}"
+        fi
     fi
 
     local sub_pane
