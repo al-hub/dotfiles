@@ -6,6 +6,19 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-17 - Diagnosing-Bugs & Performance Optimization: Sequential IPC Compound Pipeline, In-Memory Existence & Background Scan Suppression
+
+- **세션 전환 핫패스 직렬 IPC 오버헤드 제거 (Sequential IPC Elimination & In-Memory Fast Lookup) (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_switch.sh`, `dist/tmux-session-launcher`)**:
+  - `switch_session()` 핫패스에서 발생하던 19회의 개별 동기식 `tmux` CLI fork(~1,019ms)를 분석하여 병목 제거.
+  - 인메모리 세션 배열(`session_names`)을 통한 즉시 유효성 검사로 매 전환 시의 `tmux has-session` fork(145ms) 제거.
+  - `sidebar_switch_execute_hot`을 통해 `switch-client \; select-pane` 복합 원자적 트랜잭션으로 단일 소켓 왕복 전환 달성.
+- **이탈된 소스(Source) 사이드바의 백그라운드 풀 스캔 차단 (Inactive Sidebar Background Scan Suppression) (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - 세션 전환 성공 후 이미 클라이언트가 이탈한 소스 세션 사이드바에서 24개 세션/50개 페인에 대한 무의미한 백그라운드 `collect_sessions`(222ms) 및 `render_full`을 즉시 스킵하도록 개선.
+  - 전환 즉시 타겟 세션으로 CPU/소켓 I/O를 양보하여 전환 체감 반응성 극대화.
+- **검증 결과**:
+  - 단위 테스트: `test-switch-unit.sh`, `test-archive-unit.sh`, `test-domain-unit.sh`, `test-port-tmux-unit.sh` (ALL PASS).
+  - Gate A/B/C/D E2E 테스트: `test-contract.sh`, `test-delete-zero-stale-row.sh`, `test-keyboard-e2e-direct-layout.sh`, `test-keyboard-e2e-history-select-all.sh`, `test-keyboard-e2e-rapid-operations.sh`, `test-multi-client-operation-conflict.sh`, `test-keyboard-e2e-multi-window-topology.sh` (ALL PASS).
+
 ## 2026-08-17 - Architectural Refactoring & SOLID Deepening: Dead Code Purge, Archive Pure Calculation Extraction & Socket Robustness
 
 - **레거시 데드 코드 및 인터페이스 누수 정리 (Dead Code & Seam Purge) (`scripts/tmux-sidebar-controller`, `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-session-launcher`)**:

@@ -2476,7 +2476,14 @@ switch_session()
         return 0
     fi
     flush_action_generation_if_dirty 2>/dev/null || true
-    if ! session_exists "$session_name"; then
+    local in_memory_exists=false s
+    for s in "${session_names[@]}"; do
+        if [ "$s" = "$session_name" ]; then
+            in_memory_exists=true
+            break
+        fi
+    done
+    if [ "$in_memory_exists" != true ] && ! session_exists "$session_name"; then
         collect_sessions 2>/dev/null || true
         render_full stale_session 2>/dev/null || true
         message_line "session switch failed: session '$session_name' does not exist"
@@ -2566,14 +2573,10 @@ switch_session()
     IFS='|' read -r sidebar_pid target_layout_before <<< "$(tmux display-message -p -t "$sidebar_pane" '#{pane_pid}|#{window_layout}' 2>/dev/null || true)"
     trace_event "switch.target-layout.snapshot session=$session_name window=$target_window layout=${target_layout_before:-none}"
     trace_event "switch.target-sidebar.ready session=$session_name window=$target_window pane=$sidebar_pane pid=${sidebar_pid:-none}"
-    # The target is detached until switch-client. Publishing the marker is
-    # sufficient; signaling and waiting here can race the target read loop and
-    # cause the pane to be recreated at the switch boundary. The post-switch
-    # fallback signal/content barrier remains authoritative.
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"
-    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane"; then
+    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane" "$(sidebar_width)"; then
         tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
         transition_context_finish failed switch-client "$operation_id"
         message_line "session switch failed: client switch was refused"
@@ -6811,7 +6814,7 @@ run_tui()
         # target sidebar on the short polling boundary while that marker is
         # pending; otherwise the passive 1s read timeout can delay the delta
         # marker until after the client has visibly changed.
-        if native_selection_sync_pending; then
+        if native_selection_sync_pending || [ "$refresh_signal_pending" = true ]; then
             read_timeout="$SIDEBAR_POLL_TIMEOUT"
         fi
         if [ "$post_operation_fast_read" = "true" ] || IFS= read -rsn1 -t 0 key_pending 2>/dev/null; then
@@ -6917,9 +6920,7 @@ run_tui()
                     switch_session "$selected_session" || switch_result=$?
                     if [ "$switch_result" -eq 0 ]; then
                         refresh_signal_pending=false
-                        collect_sessions false "$selected_session"
                         align_selection_to_session "$selected_session"
-                        render_full session-switch-complete
                     else
                         request_full_render transition-failed
                     fi

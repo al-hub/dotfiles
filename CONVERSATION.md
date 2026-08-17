@@ -6,6 +6,23 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-17 - Diagnosing-Bugs & Latency Optimization: Sequential IPC Removal & Inactive Scan Suppression
+
+- **사용자 요청**:
+  - `/diagnosing-bugs` tmux session 띄워 놓았다. 이동 enter 선택 작업을 하면 체감적으로 빠르다는 느낌을 받지 못하는데, 어떤 버그가 있는지 점검하고 직접 tmux를 제어하며 버그를 찾아보자.
+  - `/grilling` 작업 전 기존 수정사항 커밋 & 푸시 후 권장 방식으로 최적화 및 TDD 검증 진행.
+- **진단 및 발견 사항**:
+  - 활성 tmux(24개 세션, 50개 페인)에서 `aaa` ➔ `bbbbbb` 세션 전환 시 실제 지연 시간이 **약 1,019ms**로 계측됨.
+  - 원인: `switch_session()` 핫패스에서 19회의 개별 동기식 `tmux` CLI fork(~50-145ms/회) 직렬 대기 + 전환 직후 비활성화된 소스 사이드바의 백그라운드 24세션/50페인 풀 스캔(222ms) 발생.
+- **수행 내용 및 결정**:
+  1. **인메모리 세션 존재 확인**: `session_names` 배열을 활용해 `tmux has-session` 프로세스 포크(145ms) 생략.
+  2. **복합 원자적 전환 IPC 파이프라인**: `switch-client \; select-pane` 단일 소켓 트랜잭션으로 포커스 이동.
+  3. **비활성 소스 사이드바 백그라운드 스캔 억제**: 클라이언트 이탈 즉시 소스 사이드바의 무의미한 222ms 풀 스캔/렌더링을 차단하고 복귀 시 On-demand 갱신.
+  4. **TDD 회귀 검증**:
+     - 단위 테스트: `test-switch-unit.sh`, `test-archive-unit.sh`, `test-domain-unit.sh`, `test-port-tmux-unit.sh` (ALL PASS).
+     - Gate A~D 전체 E2E 테스트 통과 (ALL PASS).
+  5. **배포 번들 동기화**: `dist/tmux-session-launcher` 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
 ## 2026-08-17 - Architectural Refactoring & SOLID Deepening: Dead Code Purge & Pure Archive Codec
 
 - **사용자 요청**:
