@@ -6226,7 +6226,15 @@ EOF
         for index in "${selected_indices[@]}"; do
             [ "$abort_requested" = true ] && break
             archive_path="${history_files[$index]}"
-            archive_session="$(awk -F '\t' '$1 == "session" { print $2; exit }' "$archive_path" 2>/dev/null || true)"
+            archive_session=""
+            if [ -f "$archive_path" ]; then
+                while IFS=$'\t' read -r k v _ || [ -n "$k" ]; do
+                    if [ "$k" = "session" ]; then
+                        archive_session="$v"
+                        break
+                    fi
+                done < "$archive_path"
+            fi
             while [ "$active_count" -ge "$concurrency" ]; do
                 # Non-blocking poll on running worker PIDs
                 local reaped=false
