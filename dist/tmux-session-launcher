@@ -56,6 +56,116 @@ sidebar_archive_mark_window_lazy() {
     fi
 }
 
+# --- Pure Layout Calculations & Checksums ---
+
+sidebar_archive_layout_pane_count()
+{
+    local layout="$1"
+    printf '%s\n' "$layout" |
+        awk '{
+            count = 0
+            while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                count++
+                $0 = substr($0, RSTART + RLENGTH)
+            }
+            print count
+        }'
+}
+
+sidebar_archive_layout_body()
+{
+    local layout="$1"
+    case "$layout" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
+        *) printf '%s\n' "$layout" ;;
+    esac
+}
+
+sidebar_archive_layout_with_checksum()
+{
+    local body="$1"
+    local checksum=0
+    local bytes byte
+    bytes="$(printf '%s' "$body" | od -An -tu1 -v)"
+
+    for byte in $bytes; do
+        checksum=$((((checksum >> 1) | ((checksum & 1) << 15))))
+        checksum=$(((checksum + byte) & 65535))
+    done
+
+    printf '%04x,%s\n' "$checksum" "$body"
+}
+
+sidebar_archive_layout_with_pane_ids()
+{
+    local layout="$1"
+    local pane_ids="$2"
+    local body replaced
+
+    body="$(sidebar_archive_layout_body "$layout")"
+    replaced="$(
+        printf '%s\n' "$body" |
+        awk -v pane_ids="$pane_ids" '
+            BEGIN {
+                split(pane_ids, ids, " ")
+                pane_index = 1
+            }
+            {
+                output = ""
+                rest = $0
+                while (match(rest, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                    token = substr(rest, RSTART, RLENGTH)
+                    replacement = token
+                    if (ids[pane_index] != "") {
+                        sub(/,[0-9]+$/, "," ids[pane_index], replacement)
+                    }
+                    output = output substr(rest, 1, RSTART - 1) replacement
+                    rest = substr(rest, RSTART + RLENGTH)
+                    pane_index++
+                }
+                print output rest
+            }'
+    )"
+
+    sidebar_archive_layout_with_checksum "$replaced"
+}
+
+# --- Pure Archive Validation (v1, v2, v3) ---
+
+sidebar_archive_validate_file()
+{
+    local archive_path_value="$1"
+    [ -s "$archive_path_value" ] || return 1
+    local version="" session_found=0 windows=0 panes=0 ends=0 valid=1
+    local record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10
+    while IFS=$'\t' read -r record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 || [ -n "$record" ]; do
+        case "$record" in
+            version) version="$f1" ;;
+            session) [ -n "$f1" ] && session_found=1 ;;
+            window)
+                windows=$((windows + 1))
+                [ -n "$f4" ] || valid=0
+                ;;
+            pane)
+                panes=$((panes + 1))
+                if [ "$version" = "2" ] || [ "$version" = "3" ]; then
+                    [ -n "$f9" ] || valid=0
+                else
+                    [ -n "$f2" ] || valid=0
+                fi
+                ;;
+            endwindow) ends=$((ends + 1)) ;;
+        esac
+    done < "$archive_path_value"
+
+    [ "$version" = "1" ] || [ "$version" = "2" ] || [ "$version" = "3" ] || valid=0
+    [ "$session_found" -eq 1 ] || valid=0
+    [ "$windows" -gt 0 ] || valid=0
+    [ "$panes" -gt 0 ] || valid=0
+    [ "$windows" -eq "$ends" ] || valid=0
+    [ "$valid" -eq 1 ]
+}
+
 
 
 # --- END sidebar_archive.sh ---
@@ -146,7 +256,13 @@ sidebar_domain_layout_body() {
 
 if ! declare -f sidebar_tmux_cmd >/dev/null 2>&1; then
     sidebar_tmux_cmd() {
-        tmux "$@"
+        local tmux_socket="${TMUX:-}"
+        tmux_socket="${tmux_socket%%,*}"
+        if [ -n "$tmux_socket" ] && [ -S "$tmux_socket" ]; then
+            tmux -S "$tmux_socket" "$@"
+        else
+            tmux "$@"
+        fi
     }
 fi
 
@@ -259,12 +375,6 @@ SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
 [ -r "$SIDEBAR_ADAPTER_PATH" ] || {
     printf 'tmux-session-launcher: missing tmux adapter: %s\n' "$SIDEBAR_ADAPTER_PATH" >&2
     exit 1
-}
-SIDEBAR_CONTROLLER_PATH="$LAUNCHER_DIR/tmux-sidebar-controller"
-[ -r "$SIDEBAR_CONTROLLER_PATH" ] || {
-    launcher_test_dir="${LAUNCHER:-}"
-    [ -n "$launcher_test_dir" ] && launcher_test_dir="$(cd "$(dirname "$launcher_test_dir")" && pwd)"
-    [ -n "$launcher_test_dir" ] && SIDEBAR_CONTROLLER_PATH="$launcher_test_dir/tmux-sidebar-controller"
 }
 # Sourced in dev; bundled in prod
 source "$SIDEBAR_ADAPTER_PATH"
@@ -1778,78 +1888,10 @@ EOF
     printf '%s\n' "$window_layout"
 }
 
-layout_pane_count()
-{
-    layout="$1"
-
-    printf '%s\n' "$layout" |
-        awk '{
-            count = 0
-            while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
-                count++
-                $0 = substr($0, RSTART + RLENGTH)
-            }
-            print count
-        }'
-}
-
-layout_body()
-{
-    layout="$1"
-
-    case "$layout" in
-        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
-        *) printf '%s\n' "$layout" ;;
-    esac
-}
-
-layout_with_checksum()
-{
-    body="$1"
-    checksum=0
-    bytes="$(printf '%s' "$body" | od -An -tu1 -v)"
-
-    for byte in $bytes; do
-        checksum=$((((checksum >> 1) | ((checksum & 1) << 15))))
-        checksum=$(((checksum + byte) & 65535))
-    done
-
-    printf '%04x,%s\n' "$checksum" "$body"
-}
-
-layout_with_pane_ids()
-{
-    layout="$1"
-    pane_ids="$2"
-    body="$(layout_body "$layout")"
-    replaced=""
-
-    replaced="$(
-        printf '%s\n' "$body" |
-        awk -v pane_ids="$pane_ids" '
-            BEGIN {
-                split(pane_ids, ids, " ")
-                pane_index = 1
-            }
-            {
-                output = ""
-                rest = $0
-                while (match(rest, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
-                    token = substr(rest, RSTART, RLENGTH)
-                    replacement = token
-                    if (ids[pane_index] != "") {
-                        sub(/,[0-9]+$/, "," ids[pane_index], replacement)
-                    }
-                    output = output substr(rest, 1, RSTART - 1) replacement
-                    rest = substr(rest, RSTART + RLENGTH)
-                    pane_index++
-                }
-                print output rest
-            }'
-    )"
-
-    layout_with_checksum "$replaced"
-}
+layout_pane_count() { sidebar_archive_layout_pane_count "$@"; }
+layout_body() { sidebar_archive_layout_body "$@"; }
+layout_with_checksum() { sidebar_archive_layout_with_checksum "$@"; }
+layout_with_pane_ids() { sidebar_archive_layout_with_pane_ids "$@"; }
 
 list_window_panes()
 {
@@ -5244,39 +5286,7 @@ append_archive_history()
     done < "$archive_path" >> "$history_file"
 }
 
-validate_archive_file()
-{
-    local archive_path_value="$1"
-    [ -s "$archive_path_value" ] || return 1
-    local version="" session_found=0 windows=0 panes=0 ends=0 valid=1
-    local line record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10
-    while IFS=$'\t' read -r record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 || [ -n "$record" ]; do
-        case "$record" in
-            version) version="$f1" ;;
-            session) [ -n "$f1" ] && session_found=1 ;;
-            window)
-                windows=$((windows + 1))
-                [ -n "$f4" ] || valid=0
-                ;;
-            pane)
-                panes=$((panes + 1))
-                if [ "$version" = "2" ] || [ "$version" = "3" ]; then
-                    [ -n "$f9" ] || valid=0
-                else
-                    [ -n "$f2" ] || valid=0
-                fi
-                ;;
-            endwindow) ends=$((ends + 1)) ;;
-        esac
-    done < "$archive_path_value"
-
-    [ "$version" = "1" ] || [ "$version" = "2" ] || [ "$version" = "3" ] || valid=0
-    [ "$session_found" -eq 1 ] || valid=0
-    [ "$windows" -gt 0 ] || valid=0
-    [ "$panes" -gt 0 ] || valid=0
-    [ "$windows" -eq "$ends" ] || valid=0
-    [ "$valid" -eq 1 ]
-}
+validate_archive_file() { sidebar_archive_validate_file "$@"; }
 
 append_archive_history_once()
 {
@@ -5493,7 +5503,7 @@ archive_session()
             archive_window_sidebar_panes["$archive_pane_window"]="$(tmux show-option -wqv -t "=$session_name:$archive_pane_window" "$SIDEBAR_LAYOUT_PANES_OPTION" 2>/dev/null || true)"
             archive_window_sidebar_active["$archive_pane_window"]="$(tmux show-option -wqv -t "=$session_name:$archive_pane_window" "$SIDEBAR_LAYOUT_ACTIVE_PANE_OPTION" 2>/dev/null || true)"
             if [ -n "$archive_global_sidebar_pane" ]; then
-                archive_window_sidebar_pane["$archive_pane_window"]="$(printf '%s\n' "${archive_window_sidebar_panes[$archive_pane_window]}" | tr ' ' '\n' | grep -F "$archive_global_sidebar_pane" | head -1)"
+                archive_window_sidebar_pane["$archive_pane_window"]="$(printf '%s\n' "${archive_window_sidebar_panes[$archive_pane_window]}" | tr ' ' '\n' | grep -F "$archive_global_sidebar_pane" | head -1 || true)"
             fi
         fi
         archive_window_all_panes["$archive_pane_window"]+="${archive_window_all_panes["$archive_pane_window"]:+ }$archive_pane_id"
@@ -6443,12 +6453,13 @@ restore_batch_finalize()
 
 restore_selected_archives()
 {
-    local selected_count=0 restored_count=0 index archive_path archive_session abort_requested=false
+    local selected_count=0 index archive_path archive_session abort_requested=false
     local batch_operation_id target_session batch_start batch_duration_us concurrency active_count=0
     local wait_pid wait_status
     local -a selected_indices=() restored_archives=() restored_sessions=()
     local -a batch_pids=()
     declare -A batch_pid_archives=() batch_pid_sessions=()
+    restored_count=0
     while IFS= read -r index; do
         [ -n "$index" ] || continue
         selected_indices+=("$index")
@@ -7074,12 +7085,10 @@ run_tui()
     local action_generation=0
     trace_event "sidebar.process.begin pane=${TMUX_PANE:-none}"
     setup_terminal
-    if sidebar_tmux_control_start; then
-        trace_event "tmux.control.start result=ok pid=$SIDEBAR_TMUX_CONTROL_PID"
-    else
-        trace_event "tmux.control.start result=fallback mode=cli"
+    if [ -n "${TMUX_PANE:-}" ]; then
+        SIDEBAR_WINDOW_ID="$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}' 2>/dev/null || true)"
     fi
-    SIDEBAR_WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
+    [ -n "$SIDEBAR_WINDOW_ID" ] || SIDEBAR_WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
     if [ -n "$SIDEBAR_WINDOW_ID" ]; then
         tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_WINDOW_PANE_OPTION" "${TMUX_PANE:-}" 2>/dev/null || true
         tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
@@ -7510,8 +7519,6 @@ run_tui()
     done
 }
 
-# shellcheck disable=SC1090
-source "$SIDEBAR_CONTROLLER_PATH"
 
 main()
 {
@@ -7589,6 +7596,10 @@ main()
             ;;
         --mouse-select)
             handle_mouse_select "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+            return 0
+            ;;
+        --archive-session)
+            archive_session "${2:-}" "${3:-false}"
             return 0
             ;;
         --delete-session-after-archive)

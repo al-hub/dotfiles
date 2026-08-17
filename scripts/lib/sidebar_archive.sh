@@ -53,5 +53,115 @@ sidebar_archive_mark_window_lazy() {
     fi
 }
 
+# --- Pure Layout Calculations & Checksums ---
+
+sidebar_archive_layout_pane_count()
+{
+    local layout="$1"
+    printf '%s\n' "$layout" |
+        awk '{
+            count = 0
+            while (match($0, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                count++
+                $0 = substr($0, RSTART + RLENGTH)
+            }
+            print count
+        }'
+}
+
+sidebar_archive_layout_body()
+{
+    local layout="$1"
+    case "$layout" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F],*) printf '%s\n' "${layout#*,}" ;;
+        *) printf '%s\n' "$layout" ;;
+    esac
+}
+
+sidebar_archive_layout_with_checksum()
+{
+    local body="$1"
+    local checksum=0
+    local bytes byte
+    bytes="$(printf '%s' "$body" | od -An -tu1 -v)"
+
+    for byte in $bytes; do
+        checksum=$((((checksum >> 1) | ((checksum & 1) << 15))))
+        checksum=$(((checksum + byte) & 65535))
+    done
+
+    printf '%04x,%s\n' "$checksum" "$body"
+}
+
+sidebar_archive_layout_with_pane_ids()
+{
+    local layout="$1"
+    local pane_ids="$2"
+    local body replaced
+
+    body="$(sidebar_archive_layout_body "$layout")"
+    replaced="$(
+        printf '%s\n' "$body" |
+        awk -v pane_ids="$pane_ids" '
+            BEGIN {
+                split(pane_ids, ids, " ")
+                pane_index = 1
+            }
+            {
+                output = ""
+                rest = $0
+                while (match(rest, /[0-9]+x[0-9]+,[0-9]+,[0-9]+,[0-9]+/)) {
+                    token = substr(rest, RSTART, RLENGTH)
+                    replacement = token
+                    if (ids[pane_index] != "") {
+                        sub(/,[0-9]+$/, "," ids[pane_index], replacement)
+                    }
+                    output = output substr(rest, 1, RSTART - 1) replacement
+                    rest = substr(rest, RSTART + RLENGTH)
+                    pane_index++
+                }
+                print output rest
+            }'
+    )"
+
+    sidebar_archive_layout_with_checksum "$replaced"
+}
+
+# --- Pure Archive Validation (v1, v2, v3) ---
+
+sidebar_archive_validate_file()
+{
+    local archive_path_value="$1"
+    [ -s "$archive_path_value" ] || return 1
+    local version="" session_found=0 windows=0 panes=0 ends=0 valid=1
+    local record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10
+    while IFS=$'\t' read -r record f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 || [ -n "$record" ]; do
+        case "$record" in
+            version) version="$f1" ;;
+            session) [ -n "$f1" ] && session_found=1 ;;
+            window)
+                windows=$((windows + 1))
+                [ -n "$f4" ] || valid=0
+                ;;
+            pane)
+                panes=$((panes + 1))
+                if [ "$version" = "2" ] || [ "$version" = "3" ]; then
+                    [ -n "$f9" ] || valid=0
+                else
+                    [ -n "$f2" ] || valid=0
+                fi
+                ;;
+            endwindow) ends=$((ends + 1)) ;;
+        esac
+    done < "$archive_path_value"
+
+    [ "$version" = "1" ] || [ "$version" = "2" ] || [ "$version" = "3" ] || valid=0
+    [ "$session_found" -eq 1 ] || valid=0
+    [ "$windows" -gt 0 ] || valid=0
+    [ "$panes" -gt 0 ] || valid=0
+    [ "$windows" -eq "$ends" ] || valid=0
+    [ "$valid" -eq 1 ]
+}
+
 
 

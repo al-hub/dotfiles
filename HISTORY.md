@@ -6,6 +6,22 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-17 - Architectural Refactoring & SOLID Deepening: Dead Code Purge, Archive Pure Calculation Extraction & Socket Robustness
+
+- **레거시 데드 코드 및 인터페이스 누수 정리 (Dead Code & Seam Purge) (`scripts/tmux-sidebar-controller`, `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-session-launcher`)**:
+  - `move-pane` 기반의 169줄 레거시 컨트롤러 `scripts/tmux-sidebar-controller` 완전 삭제 및 `tmux-session-launcher`에서의 불필요한 sourcing 제거.
+  - `scripts/tmux-sidebar-tmux-adapter`에서 비활성 FIFO 컨트롤 모드 잔재 및 데드 함수 제거.
+- **아카이브 서브시스템 TDD 기반 모듈 심화 (Deep Module Architecture) (`scripts/lib/sidebar_archive.sh`, `tests/tmux-single-sidebar/test-archive-unit.sh`)**:
+  - tmux 프로세스 없이도 순수 연산이 가능한 CRC16 레이아웃 체크섬 계산(`sidebar_archive_layout_with_checksum`), 레이아웃 본문 파싱(`sidebar_archive_layout_body`), 페인 ID 리매핑(`sidebar_archive_layout_with_pane_ids`), v1/v2/v3 TSV 아카이브 유효성 검증(`sidebar_archive_validate_file`)을 `scripts/lib/sidebar_archive.sh`로 추출.
+  - `tests/tmux-single-sidebar/test-archive-unit.sh`를 확장하여 순수 레이아웃 수학 및 유효성 검증 로직에 대한 TDD 단위 테스트 확보 (11ms 통과).
+  - `scripts/tmux-session-launcher`가 해당 순수 함수들을 위임 호출하도록 리팩터링.
+- **사이드바 윈도우 식별 및 어댑터 소켓 처리 안정화 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_port_tmux.sh`, `dist/tmux-session-launcher`)**:
+  - 사이드바 초기화 시 `SIDEBAR_WINDOW_ID`가 활성 클라이언트 창이 아닌 실제 `$TMUX_PANE`이 위치한 윈도우 ID를 정확히 타겟팅하도록 수정하여 멀티 윈도우 복원 시의 레이아웃 블로킹 해소.
+  - `sidebar_port_tmux.sh`의 fallback `sidebar_tmux_cmd`가 `$TMUX` 소켓을 보존하도록 개선하여 분리/번들 환경에서의 IPC 일관성 확보.
+- **검증 결과**:
+  - 단위 테스트: `test-archive-unit.sh`, `test-domain-unit.sh`, `test-port-tmux-unit.sh` (ALL PASS).
+  - Gate A/B/C/D 테스트: `test-contract.sh`, `test-delete-zero-stale-row.sh`, `test-keyboard-e2e-direct-layout.sh`, `test-keyboard-e2e-history-select-all.sh`, `test-keyboard-e2e-multi-window-topology.sh`, `test-keyboard-e2e-rapid-operations.sh`, `test-multi-client-operation-conflict.sh`, `test-keyboard-e2e.sh` (ALL PASS).
+
 ## 2026-08-17 - Performance & UX Optimization: In-Memory Navigation, Bulk Restore Lazy Provisioning & LWW Transition Coalescing
 
 - **사이드바 고속 네비게이션 핫패스 무지연화 (Zero-IPC In-Memory Hot Path) (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:

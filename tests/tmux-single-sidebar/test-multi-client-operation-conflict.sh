@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export TERM="${TERM:-xterm-256color}"
+
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 LAUNCHER="$REPO_ROOT/scripts/tmux-session-launcher"
@@ -119,7 +121,7 @@ start_sidebar()
         [ "$("${TMUX[@]}" list-panes -a -F '#{pane_title}' | awk '$0 == "dotfiles-session-sidebar" { count++ } END { print count + 0 }')" -eq 1 ] && break
         sleep 0.05
     done
-    script -qefc "${TMUX[*]} attach-session -t owner" "$RUN_DIR/owner.log" >/dev/null 2>&1 &
+    script -qefc "TERM=xterm-256color ${TMUX[*]} attach-session -t owner" "$RUN_DIR/owner.log" >/dev/null 2>&1 &
     CLIENT_PID=$!
     for attempt in $(seq 1 80); do
         owner_tty="$("${TMUX[@]}" list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F '|' '$1 != 1 { print $2; exit }')"
@@ -148,7 +150,7 @@ start_sidebar
 
 run_delete_conflict target-attach op-attach
 wait_for_trace 'operation.worker.begin operation_id=op-attach'
-script -qefc "${TMUX[*]} attach-session -t target-attach" "$RUN_DIR/external-attach.log" >/dev/null 2>&1 &
+script -qefc "TERM=xterm-256color ${TMUX[*]} attach-session -t target-attach" "$RUN_DIR/external-attach.log" >/dev/null 2>&1 &
 external_pid=$!
 external_tty="$(wait_for_external_client)"
 "${TMUX[@]}" switch-client -c "$external_tty" -t =target-attach

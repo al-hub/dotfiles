@@ -52,4 +52,63 @@ touch "$empty_file"
 ! sidebar_archive_validate_path "$tmp_dir/nonexistent.txt" || { echo "FAIL: validate_path expected false for nonexistent file"; exit 1; }
 ! sidebar_archive_validate_path "" || { echo "FAIL: validate_path expected false for empty string path"; exit 1; }
 
+# 4. Test Pure Layout Calculations and CRC16 Checksum
+sample_layout="5ee3,238x53,0,0,14"
+pane_count="$(sidebar_archive_layout_pane_count "$sample_layout")"
+[ "$pane_count" -eq 1 ] || { echo "FAIL: layout_pane_count expected 1 got $pane_count"; exit 1; }
+
+body="$(sidebar_archive_layout_body "$sample_layout")"
+[ "$body" = "238x53,0,0,14" ] || { echo "FAIL: layout_body expected 238x53,0,0,14 got $body"; exit 1; }
+
+with_cs="$(sidebar_archive_layout_with_checksum "$body")"
+[ "$with_cs" = "$sample_layout" ] || { echo "FAIL: layout_with_checksum expected $sample_layout got $with_cs"; exit 1; }
+
+multi_layout="b624,238x53,0,0[238x26,0,0,14,238x26,0,27,15]"
+multi_count="$(sidebar_archive_layout_pane_count "$multi_layout")"
+[ "$multi_count" -eq 2 ] || { echo "FAIL: multi_count expected 2 got $multi_count"; exit 1; }
+
+recomputed="$(sidebar_archive_layout_with_pane_ids "$multi_layout" "99 100")"
+[ "$(sidebar_archive_layout_pane_count "$recomputed")" -eq 2 ] || { echo "FAIL: recomputed count mismatch"; exit 1; }
+[[ "$recomputed" == *",99,"* ]] || [[ "$recomputed" == *",99]"* ]] || { echo "FAIL: recomputed did not contain pane id 99: $recomputed"; exit 1; }
+
+# 5. Test v3 TSV Archive Validation
+v3_valid_tsv="$tmp_dir/v3_valid.tsv"
+cat <<'EOF' > "$v3_valid_tsv"
+version	3
+session	test-sess
+archived_at	1700000000
+window	0	main	1	242e,238x53,0,0,14	0,0,238,53,1
+pane	0	%14	0	0	238	53	1	/tmp	bash	work
+endwindow
+created	1700000000
+EOF
+
+sidebar_archive_validate_file "$v3_valid_tsv" || { echo "FAIL: v3_valid_tsv failed validation"; exit 1; }
+
+# Test malformed v3 (missing endwindow)
+v3_invalid_tsv="$tmp_dir/v3_invalid.tsv"
+cat <<'EOF' > "$v3_invalid_tsv"
+version	3
+session	test-sess
+archived_at	1700000000
+window	0	main	1	242e,238x53,0,0,14	0,0,238,53,1
+pane	0	%14	0	0	238	53	1	/tmp	bash	work
+created	1700000000
+EOF
+
+! sidebar_archive_validate_file "$v3_invalid_tsv" || { echo "FAIL: v3_invalid_tsv unexpectedly passed validation"; exit 1; }
+
+# 6. Test v1/v2 Backward Compatibility
+v1_valid_tsv="$tmp_dir/v1_valid.tsv"
+cat <<'EOF' > "$v1_valid_tsv"
+version	1
+session	v1-sess
+window	0	main	1	layout	0,0,80,24,1
+pane	0	%1	0	0	80	24	1	/tmp	bash
+endwindow
+created	1600000000
+EOF
+
+sidebar_archive_validate_file "$v1_valid_tsv" || { echo "FAIL: v1_valid_tsv failed validation"; exit 1; }
+
 echo "PASS: archive unit tests"

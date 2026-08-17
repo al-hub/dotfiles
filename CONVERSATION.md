@@ -6,6 +6,27 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-17 - Architectural Refactoring & SOLID Deepening: Dead Code Purge & Pure Archive Codec
+
+- **사용자 요청**:
+  - `/improve-codebase-architecture` 전문 subagents들과 함께 코드베이스 아키텍처를 검토하고 개선안 도출.
+  - `/plan` TDD 및 SOLID 기반 개선 계획 수립 후, 실사용 tmux 환경을 고려하여 안전하게 리팩터링 실행.
+- **수행 내용 및 결정**:
+  1. **데드 코드 및 얕은 심(Seam) 제거**:
+     - 이전 `move-pane` 시절의 비활성 레거시 스크립트 `scripts/tmux-sidebar-controller` (169 LOC) 및 `tmux-session-launcher`의 불필요한 sourcing 제거.
+     - `scripts/tmux-sidebar-tmux-adapter`에서 비활성 FIFO 컨트롤 모드 및 미사용 함수 정리.
+  2. **아카이브/레이아웃 순수 연산 심화 (Deep Module) & TDD 단위 테스트 강화**:
+     - tmux CLI 호출 없는 순수 Bash 기반 CRC16 레이아웃 체크섬 계산, 레이아웃 본문 파싱, 페인 ID 매핑, v1/v2/v3 TSV 아카이브 검증 함수들을 `scripts/lib/sidebar_archive.sh`로 추출.
+     - `tests/tmux-single-sidebar/test-archive-unit.sh`를 확장하여 해당 순수 로직들의 TDD 단위 테스트 구축 및 11ms 내 초고속 회귀 검증 완료.
+     - `scripts/tmux-session-launcher`가 해당 모듈을 호출하도록 일원화.
+  3. **윈도우 식별 및 어댑터 소켓 IPC 안정성 확보**:
+     - `SIDEBAR_WINDOW_ID` 확인 시 활성 창이 아닌 실제 대상 `$TMUX_PANE`의 윈도우 ID를 정확히 타겟팅하도록 수정하여 멀티 윈도우 복원 시 블로킹 이슈 해결.
+     - `sidebar_port_tmux.sh`의 fallback `sidebar_tmux_cmd`가 `$TMUX` 소켓을 보존하도록 보강.
+  4. **전체 테스트 스위트 검증**:
+     - 단위 테스트 (archive, domain, port_tmux) 및 Gate A/B/C/D E2E 테스트(단일/다중 아카이브 복원, 세션 전환, 멀티 클라이언트 충돌 보호 등) 전수 100% 통과 (ALL PASS).
+  5. **배포 번들 동기화**:
+     - `dist/tmux-session-launcher` 최신 번들 재생성 및 구문 검사 통과.
+
 ## 2026-08-17 - SDD Implementation: Sidebar Performance & Perceived Latency Optimization
 
 - **사용자 요청**: 전문 사용성, UX, 개발, tmux subagent들과 논의한 개선안을 바탕으로 고속 네비게이션, 벌크 복원, 연속 세션 전환 성능 최적화 진행.

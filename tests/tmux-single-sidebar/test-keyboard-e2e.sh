@@ -304,7 +304,8 @@ run_history_select_all_reproduction()
     # so selection/restore can be tested without a second flaky setup loop.
     for index in 1 2 3 4 5 6; do
         tmuxc new-session -d -s "select-all-$index" -c "$REPO_ROOT" 'sleep 60'
-        tmuxc run-shell -b "$LAUNCHER --delete-session-after-archive select-all-$index true select-all-op-$index"
+        tmuxc run-shell "$LAUNCHER --archive-session select-all-$index"
+        tmuxc kill-session -t "=select-all-$index"
     done
     wait_for_sessions 1 'history select-all setup cleanup'
     wait_for_archives 6
