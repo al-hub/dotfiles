@@ -7157,9 +7157,11 @@ run_tui()
                         request_full_render history-restore
                     fi
                 else
-                    # Optimistic visual feedback for immediate <50ms sensory acknowledgment
+                    # Non-blocking optimistic visual feedback for immediate <50ms sensory acknowledgment
                     if [ -n "$selected_session" ]; then
-                        message_line "⚡ switching to $selected_session..."
+                        move_cursor "${cached_pane_height:-20}" 1
+                        clear_line
+                        printf '%s' "⚡ switching to $selected_session..."
                     fi
                     switch_result=0
                     switch_session "$selected_session" || switch_result=$?
