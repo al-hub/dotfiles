@@ -30,6 +30,14 @@ SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
 [ -r "$LAUNCHER_DIR/lib/sidebar_archive.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_archive.sh"
 source "$SIDEBAR_ADAPTER_PATH"
 
+if [ "$(type -t tmux 2>/dev/null || true)" != function ]; then
+    tmux()
+    {
+        declare -f metrics_external_count >/dev/null 2>&1 && metrics_external_count tmux || true
+        sidebar_tmux_cmd "$@"
+    }
+fi
+
 SIDEBAR_TITLE="dotfiles-session-sidebar"
 SIDEBAR_WIDTH="${TMUX_SESSION_SIDEBAR_WIDTH:-35}"
 SIDEBAR_WIDTH_STATE_FILE="${TMUX_SESSION_SIDEBAR_WIDTH_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-width}"
@@ -314,14 +322,6 @@ metrics_external_count()
         *) eval "${prefix}other=\$((\${prefix}other + 1))" ;;
     esac
 }
-
-if [ "$(type -t tmux 2>/dev/null || true)" != function ]; then
-    tmux()
-    {
-        metrics_external_count tmux
-        command tmux "$@"
-    }
-fi
 
 if [ "$(type -t pgrep 2>/dev/null || true)" != function ]; then
     pgrep()
@@ -1799,6 +1799,7 @@ provision_sidebar_window()
     local window_id="$1" width="${2:-$(sidebar_width)}"
     local existing_pane global_pane global_window work_pane pane_path pane_id pane_state pane_dead
     [ -n "$window_id" ] || return 1
+    sidebar_tmux_cmd set-option -gq "$SIDEBAR_ENABLED_OPTION" 1 2>/dev/null || true
     trace_event "sidebar.provision.begin window=$window_id width=$width"
     reconcile_sidebar_window "$window_id"
     existing_pane="$(sidebar_window_pane "$window_id" || true)"
@@ -1822,7 +1823,9 @@ provision_sidebar_window()
         tmux set-option -p -q -t "$existing_pane" remain-on-exit on 2>/dev/null || true
         tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$existing_pane" 2>/dev/null || true
         enforce_sidebar_width "$existing_pane" "$width" || true
+        ensure_sidebar_subpane_window "$window_id" "$existing_pane" || true
         trace_event "sidebar.provision.end window=$window_id pane=$existing_pane result=existing"
+        printf '%s\n' "$existing_pane"
         return 0
     fi
     work_pane="$(sidebar_tmux_any_work_pane "$window_id" || true)"
@@ -1854,11 +1857,14 @@ provision_sidebar_window()
     existing_pane="$(sidebar_window_pane "$window_id" || true)"
     if [ -n "$existing_pane" ] && [ "$existing_pane" != "$pane_id" ]; then
         trace_event "sidebar.window.provision.raced window=$window_id created=$pane_id canonical=$existing_pane"
+        printf '%s\n' "$existing_pane"
         return 0
     fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
+    ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
     trace_event "sidebar.window.provision.end window=$window_id pane=$pane_id"
     trace_event "sidebar.provision.end window=$window_id pane=$pane_id result=created"
+    printf '%s\n' "$pane_id"
     return 0
 }
 
@@ -1872,6 +1878,7 @@ remove_sidebar_window()
         printf -v "_cache_window_ready_${win_clean}" '0'
         printf -v "_cache_window_pane_${win_clean}" ''
     fi
+    destroy_sidebar_subpane "$window_id"
     pane_id="$(sidebar_window_pane "$window_id" || true)"
     [ -n "$pane_id" ] || return 0
     trace_event "sidebar.window.remove.begin window=$window_id pane=$pane_id"
