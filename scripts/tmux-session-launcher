@@ -2610,7 +2610,7 @@ switch_session()
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"
-    if ! sidebar_tmux_switch_client "$client_tty" "$session_name" 2>/dev/null; then
+    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane"; then
         tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
         transition_context_finish failed switch-client "$operation_id"
         message_line "session switch failed: client switch was refused"
