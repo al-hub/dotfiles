@@ -56,6 +56,14 @@ sidebar_port_session_is_managed() {
     [ "$(sidebar_tmux_cmd show-option -qv -t "=$session:" "$opt" 2>/dev/null || true)" = "1" ]
 }
 
+sidebar_window_pane() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || return 0
+    local title="${SIDEBAR_TITLE:-dotfiles-session-sidebar}"
+    sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{@dotfiles_sidebar_pane}|#{pane_title}' 2>/dev/null |
+        awk -F '|' -v title="$title" '$2 == "1" || $3 == title { print $1; exit }'
+}
+
 sidebar_window_subpane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
@@ -76,25 +84,20 @@ sidebar_port_is_subpane() {
 provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
     [ -n "$launcher_pane" ] || return 1
-    local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
     if [ -z "$height" ]; then
         local total_h
         total_h="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{window_height}' 2>/dev/null || echo 40)"
         height="$(sidebar_subpane_default_height "$total_h")"
     fi
-    if declare -f subpane_hub_ensure_session >/dev/null 2>&1; then
-        subpane_hub_ensure_session
-    fi
-    if [ -z "$cmd" ]; then
-        if declare -f subpane_hub_attach_command >/dev/null 2>&1; then
-            cmd="$(subpane_hub_attach_command)"
-        else
-            cmd="${SHELL:-/bin/bash}"
-        fi
+
+    if declare -f subpane_hub_acquire_pane >/dev/null 2>&1; then
+        subpane_hub_acquire_pane "$launcher_pane" "$height"
+        return $?
     fi
 
+    local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
     local sub_pane
-    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v -t "$launcher_pane" -l "$height" "$cmd" 2>/dev/null || true)"
+    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
@@ -108,10 +111,14 @@ destroy_sidebar_subpane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
     local sub_pane
-    sub_pane="$(sidebar_window_subpane "$window_id" || true)"
-    if [ -n "$sub_pane" ]; then
-        sidebar_tmux_cmd kill-pane -t "$sub_pane" 2>/dev/null || true
-    fi
+    while IFS= read -r sub_pane; do
+        [ -n "$sub_pane" ] || continue
+        if declare -f subpane_hub_release_pane >/dev/null 2>&1; then
+            subpane_hub_release_pane "$sub_pane"
+        else
+            sidebar_tmux_cmd kill-pane -t "$sub_pane" 2>/dev/null || true
+        fi
+    done < <(sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{@dotfiles_sidebar_subpane}' 2>/dev/null | awk -F '|' '$2 == "1" { print $1 }')
 }
 
 ensure_sidebar_subpane_window() {
@@ -143,16 +150,25 @@ toggle_sidebar_subpane_global() {
     [ "$current" = "1" ] && next=0
     sidebar_tmux_cmd set-option -gq "$opt" "$next" 2>/dev/null || true
 
-    local win_id
-    while IFS= read -r win_id; do
+    local win_id sess_name sess_managed
+    local hub_name="dotfiles-subpane-hub"
+    declare -f subpane_hub_session_name >/dev/null 2>&1 && hub_name="$(subpane_hub_session_name)"
+    while IFS='|' read -r win_id sess_name sess_managed; do
         [ -n "$win_id" ] || continue
+        [ "$sess_name" = "$hub_name" ] && continue
         ensure_sidebar_subpane_window "$win_id" ""
-    done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}' 2>/dev/null || true)
+    done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}|#{@dotfiles_sidebar_managed}' 2>/dev/null || true)
 }
 
 provision_sidebar_window() {
     local window_id="${1:-}" width="${2:-30}" cmd="${3:-}"
     [ -n "$window_id" ] || return 1
+    local win_sess
+    win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
+    [ "$win_sess" != "dotfiles-subpane-hub" ] || return 0
+    local existing
+    existing="$(sidebar_window_pane "$window_id" || true)"
+    [ -z "$existing" ] || return 0
     local work_pane
     work_pane="$(sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{@dotfiles_sidebar_subpane}' 2>/dev/null |
         awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" && $3 != "1" { print $1; exit }')"

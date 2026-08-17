@@ -17,24 +17,109 @@ subpane_hub_default_command() {
     fi
 }
 
-subpane_hub_attach_command() {
-    printf 'tmux attach-session -t =%s:\n' "$SUBPANE_HUB_SESSION"
-}
-
 subpane_hub_is_alive() {
     sidebar_tmux_cmd has-session -t "=$(subpane_hub_session_name):" >/dev/null 2>&1
 }
 
 subpane_hub_ensure_session() {
     if ! subpane_hub_is_alive; then
-        local cmd
+        local zdot="${HOME}/.cache/dotfiles"
+        mkdir -p "$zdot" 2>/dev/null || true
+        if [ ! -f "$zdot/.zshrc" ]; then
+            cat <<'EOF' > "$zdot/.zshrc" 2>/dev/null || true
+PROMPT='$ '
+RPROMPT=''
+autoload -Uz compinit 2>/dev/null || true
+compinit -u 2>/dev/null || true
+EOF
+        fi
+        local cmd hub_sess
+        hub_sess="$(subpane_hub_session_name)"
         cmd="$(subpane_hub_default_command)"
-        sidebar_tmux_cmd new-session -d -s "$(subpane_hub_session_name)" -x 30 -y 12 "$cmd" 2>/dev/null || true
-        sidebar_tmux_cmd set-option -t "=$(subpane_hub_session_name):" remain-on-exit off 2>/dev/null || true
+        sidebar_tmux_cmd new-session -d -s "$hub_sess" -n "hub" -x 30 -y 12 "$cmd" 2>/dev/null || true
+        sidebar_tmux_cmd set-option -t "=$hub_sess:" remain-on-exit off 2>/dev/null || true
+        sidebar_tmux_cmd set-option -s -t "$hub_sess" @dotfiles_sidebar_managed 0 2>/dev/null || true
+        sidebar_tmux_cmd set-hook -t "$hub_sess" -u window-linked 2>/dev/null || true
+        sidebar_tmux_cmd set-hook -t "$hub_sess" -u window-unlinked 2>/dev/null || true
+        sidebar_tmux_cmd set-hook -t "$hub_sess" -u session-created 2>/dev/null || true
+        sidebar_tmux_cmd set-hook -t "$hub_sess" -u client-session-changed 2>/dev/null || true
+        sleep 0.3
+    fi
+}
+
+subpane_hub_get_pane() {
+    local pane_id
+    # 1. Search if any pane has @dotfiles_subpane_hub_pane 1 across server
+    pane_id="$(sidebar_tmux_cmd list-panes -a -F '#{pane_id}|#{@dotfiles_subpane_hub_pane}' 2>/dev/null | awk -F '|' '$2 == "1" { print $1; exit }')"
+    if [ -n "$pane_id" ]; then
+        printf '%s\n' "$pane_id"
+        return 0
+    fi
+    # 2. Search in hub session
+    if subpane_hub_is_alive; then
+        pane_id="$(sidebar_tmux_cmd list-panes -t "=$(subpane_hub_session_name):" -F '#{pane_id}' 2>/dev/null | head -n 1)"
+        if [ -n "$pane_id" ]; then
+            sidebar_tmux_cmd set-option -p -q -t "$pane_id" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
+            printf '%s\n' "$pane_id"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+subpane_hub_acquire_pane() {
+    local target_launcher="${1:-}" height="${2:-12}"
+    [ -n "$target_launcher" ] || return 1
+    local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
+
+    subpane_hub_ensure_session
+
+    local hub_pane
+    hub_pane="$(subpane_hub_get_pane || true)"
+    if [ -z "$hub_pane" ]; then
+        subpane_hub_ensure_session
+        hub_pane="$(subpane_hub_get_pane || true)"
+    fi
+    [ -n "$hub_pane" ] || return 1
+
+    # Join pane from hub or background into target launcher column
+    if ! sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+        sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
+    fi
+
+    sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
+    sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
+    sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
+    sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
+    sidebar_tmux_cmd select-pane -t "$target_launcher" 2>/dev/null || true
+    local client_tty
+    while IFS= read -r client_tty; do
+        [ -n "$client_tty" ] || continue
+        sidebar_tmux_cmd select-pane -t "$target_launcher" -c "$client_tty" 2>/dev/null || true
+    done < <(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null || true)
+
+    printf '%s\n' "$hub_pane"
+}
+
+subpane_hub_release_pane() {
+    local sub_pane="${1:-}"
+    [ -n "$sub_pane" ] || return 0
+    # Unset active subpane option and reset title upon release
+    sidebar_tmux_cmd set-option -p -u -t "$sub_pane" @dotfiles_sidebar_subpane 2>/dev/null || true
+    sidebar_tmux_cmd select-pane -t "$sub_pane" -T "dotfiles-subpane-hub" 2>/dev/null || true
+    subpane_hub_ensure_session
+    # Return pane to hub session window, or break-pane as fallback
+    if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "=$(subpane_hub_session_name):" 2>/dev/null; then
+        sidebar_tmux_cmd break-pane -d -s "$sub_pane" 2>/dev/null || true
     fi
 }
 
 subpane_hub_destroy() {
+    local hub_pane
+    hub_pane="$(subpane_hub_get_pane || true)"
+    if [ -n "$hub_pane" ]; then
+        sidebar_tmux_cmd kill-pane -t "$hub_pane" 2>/dev/null || true
+    fi
     if subpane_hub_is_alive; then
         sidebar_tmux_cmd kill-session -t "=$(subpane_hub_session_name):" 2>/dev/null || true
     fi

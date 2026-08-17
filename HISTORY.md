@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-18 - Feature & Architecture: Global Singleton Subpane Hub & Unified Minimal Prompt (TDD & SOLID)
+
+- **전역 단일 서브패널 프로세스 보존 허브 구축 (`scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_port_tmux.sh`, `dist/tmux-session-launcher`)**:
+  - `SubpaneHubManager` Deep Module을 구현하여 독립 전역 세션(`dotfiles-subpane-hub`) 기반 C-level `join-pane` / `break-pane` 아키텍처 구축.
+  - 세션을 전환하거나 `m` 키로 서브패널을 토글하여 닫았다가 다시 열어도 실행 중이던 프로세스, 작업 상태, 입력 히스토리가 100% 동일하게 유지되는 전역 싱글톤 영속성 보장.
+  - 전역 허브 마커(`@dotfiles_subpane_hub_pane 1`)와 unmanaged 격리 설정을 통해 사이드바 자동 프로비저닝 훅 및 세션 아카이브와의 상호 간섭 원천 차단.
+- **작업창과 일관된 간결한 프롬프트 통일 (Unified Minimal Prompt `$ `)**:
+  - 서브패널 쉘 시작 시 dotfiles 캐시 경로(`~/.cache/dotfiles/.zshrc`)의 경량 환경(`PROMPT='$ '`)을 기본 적용하여 작업창과 완전히 동일한 깔끔한 터미널 인터페이스 제공.
+- **TDD 단위/계약/E2E 전 스위트 검증 통과 (`tests/tmux-single-sidebar/test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-window-local-contract.sh`, `test-keyboard-e2e-subpane.sh`)**:
+  - 서브패널 멱등성/명령어 빌더 단위 테스트, 허브 세션 라이프사이클 및 acquire/release 계약 테스트, attached PTY 키보드 E2E(`m` 키 반복 토글 간 마커 텍스트 보존 검증) 전체 100% GREEN PASS.
+
 ## 2026-08-18 - Architecture: WindowTopologyManager Deep Module & Subpane Isolation (TDD & SOLID)
 
 - **단일 책임 원칙(SRP) 기반 `WindowTopologyManager` 구축 (`scripts/lib/sidebar_topology.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-sidebar-tmux-adapter`)**:

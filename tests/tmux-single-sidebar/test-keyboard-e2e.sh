@@ -230,11 +230,11 @@ count_subpanes()
     local win_id
     win_id="$(client_window_id 2>/dev/null || true)"
     if [ -n "$win_id" ]; then
-        tmuxc list-panes -t "$win_id" -F '#{@dotfiles_sidebar_subpane}|#{pane_title}' 2>/dev/null |
-            awk -F '|' '$1 == "1" || $2 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+        tmuxc list-panes -t "$win_id" -F '#{@dotfiles_sidebar_subpane}' 2>/dev/null |
+            awk '$1 == "1" { count++ } END { print count + 0 }'
     else
-        tmuxc list-panes -a -F '#{@dotfiles_sidebar_subpane}|#{pane_title}' 2>/dev/null |
-            awk -F '|' '$1 == "1" || $2 == "dotfiles-sidebar-subpane" { count++ } END { print count + 0 }'
+        tmuxc list-panes -a -F '#{@dotfiles_sidebar_subpane}' 2>/dev/null |
+            awk '$1 == "1" { count++ } END { print count + 0 }'
     fi
 }
 
@@ -268,23 +268,48 @@ run_subpane_reproduction()
         return 1
     }
 
-    # Simulate shell/prompt mutating subpane title
-    local win_id sub_p
+    # Test Subpane Hub process persistence across toggles
+    local win_id sub_p capture_text
     win_id="$(client_window_id 2>/dev/null || true)"
     sub_p="$(tmuxc list-panes -t "$win_id" -F '#{pane_id}|#{@dotfiles_sidebar_subpane}' 2>/dev/null | awk -F '|' '$2 == "1" { print $1; exit }')"
     if [ -n "$sub_p" ]; then
-        tmuxc select-pane -t "$sub_p" -T "al-hub@custom_host: ~/workspace"
+        sleep 0.5
+        tmuxc send-keys -t "$sub_p" 'echo UNIQUE_SUBPANE_MARKER_12345' C-m
+        sleep 0.5
     fi
 
-    test_log "step=subpane.toggle_off_after_title_mutation"
+    test_log "step=subpane.toggle_off_for_persistence_test"
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
     send_keys 'm'
-    wait_until 'subpane closed' 0 count_subpanes
-    [ "$(active_pane_title)" = "dotfiles-session-sidebar" ] || {
-        printf 'ERROR: active pane title is "%s", expected dotfiles-session-sidebar\n' "$(active_pane_title)" >&2
+    if ! wait_until 'subpane closed' 0 count_subpanes; then
+        printf 'DEBUG: Pane list on failure:\n' >&2
+        tmuxc list-panes -a -F '#{session_name}:#{window_id}:#{pane_id}|#{@dotfiles_sidebar_subpane}|#{pane_title}' >&2
         return 1
-    }
+    fi
 
-    printf 'PASS: subpane toggled on and off with m key while preserving launcher focus\n'
+    test_log "step=subpane.toggle_on_reopen"
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+    send_keys 'm'
+    wait_until 'subpane reopened' 1 count_subpanes
+
+    sub_p="$(tmuxc list-panes -t "$win_id" -F '#{pane_id}|#{@dotfiles_sidebar_subpane}' 2>/dev/null | awk -F '|' '$2 == "1" { print $1; exit }')"
+    [ -n "$sub_p" ] || { printf 'ERROR: subpane not found on reopen\n' >&2; return 1; }
+
+    capture_text="$(tmuxc capture-pane -pt "$sub_p" -S - 2>/dev/null || true)"
+    if ! echo "$capture_text" | grep -q "UNIQUE_SUBPANE_MARKER_12345"; then
+        printf 'ERROR: Subpane Hub process was not persistent across toggle! Output was: %s\n' "$capture_text" >&2
+        return 1
+    fi
+
+    test_log "step=subpane.toggle_off_final"
+    focus_sidebar_via_prefix
+    wait_for_sidebar_input_ready
+    send_keys 'm'
+    wait_until 'subpane closed finally' 0 count_subpanes
+
+    printf 'PASS: subpane toggled on/off, preserved process across toggles, and unified clean prompt\n'
 }
 
 run_delete_zero_stale_row_reproduction()
@@ -1068,16 +1093,20 @@ assert_archive_work_layout_metadata()
 
 focus_sidebar_via_prefix()
 {
-    local pane_id attempt
+    local pane_id attempt tty_val
     pane_id="$(sidebar_pane_id 2>/dev/null || true)"
+    tty_val="${CLIENT_TTY:-$(client_tty 2>/dev/null || true)}"
     if [ -n "$pane_id" ]; then
         tmuxc select-pane -t "$pane_id" 2>/dev/null || true
-        [ -n "${CLIENT_TTY:-}" ] && tmuxc select-pane -t "$pane_id" -c "$CLIENT_TTY" 2>/dev/null || true
+        [ -n "$tty_val" ] && tmuxc select-pane -t "$pane_id" -c "$tty_val" 2>/dev/null || true
     fi
     if [ "$(sidebar_is_active)" != true ]; then
         tmuxc run-shell -b "$LAUNCHER --open-sidebar" 2>/dev/null || true
     fi
     for attempt in $(seq 1 40); do
+        if [ -n "$pane_id" ] && [ -n "$tty_val" ]; then
+            tmuxc select-pane -t "$pane_id" -c "$tty_val" 2>/dev/null || true
+        fi
         if [ "$(sidebar_is_active)" = true ]; then
             return 0
         fi
@@ -1825,16 +1854,13 @@ send_keys()
         esac
     else
         local fd="${ATTACHED[1]:-1}"
-        if [ "$payload" = "c" ]; then
+        if [ "$payload" = "c" ] || [ "$payload" = "m" ] || [ "$payload" = "M" ]; then
             local c_pane
             c_pane="$(sidebar_pane_id 2>/dev/null || true)"
             if [ -n "$c_pane" ]; then
                 tmuxc select-pane -t "$c_pane" 2>/dev/null || true
-                [ -n "${CLIENT_TTY:-}" ] && tmuxc select-pane -t "$c_pane" -c "$CLIENT_TTY" 2>/dev/null || true
-                tmuxc send-keys -t "$c_pane" -l "c" 2>/dev/null || true
-            else
-                printf 'c' >&"$fd" 2>/dev/null || true
             fi
+            printf '%s' "$payload" >&"$fd" 2>/dev/null || true
         elif [[ "$payload" == $'\001'* ]]; then
             printf '%b' "${payload:0:1}" >&"$fd"
             sleep "0.$(printf '%03d' "$PREFIX_DELAY_MS")"

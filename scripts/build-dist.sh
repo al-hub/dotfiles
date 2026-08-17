@@ -16,16 +16,30 @@ cat <<'EOF' > "$OUTPUT_BIN"
 set -euo pipefail
 EOF
 
-# Append lib modules
-for lib in "$REPO_ROOT"/scripts/lib/sidebar_*.sh; do
+# Append lib modules in dependency order
+LIBS=(
+    "sidebar_domain.sh"
+    "sidebar_port_tmux.sh"
+    "sidebar_subpane_hub.sh"
+    "sidebar_topology.sh"
+    "sidebar_switch.sh"
+    "sidebar_presenter.sh"
+    "sidebar_coordinator.sh"
+    "sidebar_archive.sh"
+)
+
+for lib_name in "${LIBS[@]}"; do
+    lib="$REPO_ROOT/scripts/lib/$lib_name"
     [ -r "$lib" ] || continue
-    echo "# --- BEGIN ${lib##*/} ---" >> "$OUTPUT_BIN"
+    echo "# --- BEGIN $lib_name ---" >> "$OUTPUT_BIN"
     grep -v '^#!/usr/bin/env bash' "$lib" | grep -v '^set -euo pipefail' >> "$OUTPUT_BIN"
-    echo "# --- END ${lib##*/} ---" >> "$OUTPUT_BIN"
+    echo "# --- END $lib_name ---" >> "$OUTPUT_BIN"
 done
 
 # Append main launcher body (excluding individual lib sourcing lines)
 grep -v 'LAUNCHER_DIR/lib/sidebar_' "$REPO_ROOT/scripts/tmux-session-launcher" | grep -v '^#!/usr/bin/env bash' | grep -v '^set -euo pipefail' >> "$OUTPUT_BIN" || true
 
 chmod +x "$OUTPUT_BIN"
+cp "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" "$DIST_DIR/" 2>/dev/null || true
+cp "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" ~/.local/bin/ 2>/dev/null || true
 echo "Production bundle created successfully: $OUTPUT_BIN"

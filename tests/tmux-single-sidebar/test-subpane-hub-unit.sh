@@ -6,6 +6,5 @@ source "$SCRIPT_DIR/scripts/lib/sidebar_subpane_hub.sh"
 
 [ "$(subpane_hub_session_name)" = "dotfiles-subpane-hub" ] || { echo "FAIL: session name"; exit 1; }
 [[ "$(subpane_hub_default_command)" == *"ZDOTDIR"* ]] || { echo "FAIL: default command missing ZDOTDIR"; exit 1; }
-[ "$(subpane_hub_attach_command)" = "tmux attach-session -t =dotfiles-subpane-hub:" ] || { echo "FAIL: attach command"; exit 1; }
 
 echo "PASS: subpane hub unit tests"

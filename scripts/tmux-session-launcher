@@ -18,12 +18,20 @@ SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
     [ -n "$launcher_test_dir" ] && SIDEBAR_ADAPTER_PATH="$launcher_test_dir/tmux-sidebar-tmux-adapter"
 }
 [ -r "$SIDEBAR_ADAPTER_PATH" ] || {
+    [ -r "$LAUNCHER_DIR/../scripts/tmux-sidebar-tmux-adapter" ] && SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/../scripts/tmux-sidebar-tmux-adapter"
+}
+[ -r "$SIDEBAR_ADAPTER_PATH" ] || {
+    [ -r "${DOTFILES_DIR:-$HOME/workspace/dotfiles}/scripts/tmux-sidebar-tmux-adapter" ] && SIDEBAR_ADAPTER_PATH="${DOTFILES_DIR:-$HOME/workspace/dotfiles}/scripts/tmux-sidebar-tmux-adapter"
+}
+[ -r "$SIDEBAR_ADAPTER_PATH" ] || {
     printf 'tmux-session-launcher: missing tmux adapter: %s\n' "$SIDEBAR_ADAPTER_PATH" >&2
     exit 1
 }
 # Sourced in dev; bundled in prod
 [ -r "$LAUNCHER_DIR/lib/sidebar_domain.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_domain.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_port_tmux.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_port_tmux.sh"
+[ -r "$LAUNCHER_DIR/lib/sidebar_subpane_hub.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_subpane_hub.sh"
+[ -r "$LAUNCHER_DIR/lib/sidebar_topology.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_topology.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_switch.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_switch.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_presenter.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_presenter.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_coordinator.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_coordinator.sh"
@@ -2047,6 +2055,22 @@ remove_managed_sidebars()
 
 open_sidebar()
 {
+    local cur_sess
+    cur_sess="$(tmux display-message -p '#S' 2>/dev/null || true)"
+    if [ "$cur_sess" = "dotfiles-subpane-hub" ]; then
+        return 0
+    fi
+    if sidebar_provisioning_active; then
+        trace_event "sidebar.open.suppressed reason=provisioning"
+        return 0
+    fi
+    local existing_count
+    existing_count="$(sidebar_tmux_sidebar_pane_count)"
+    if [ "$existing_count" -gt 0 ]; then
+        set_sidebar_enabled 0
+        remove_managed_sidebars || return 1
+        return 0
+    fi
     target="${1:-}"
     refresh="${2:-false}"
     width="${3:-$(sidebar_width)}"
@@ -2057,20 +2081,18 @@ open_sidebar()
     if [ -z "$target" ]; then
         mark_session_managed "$(tmux display-message -p '#S' 2>/dev/null || true)" || true
     fi
-    global_existing_pane="$(find_sidebar_pane "${target:-}")"
-    if [ -n "$global_existing_pane" ]; then
-        if [ -n "$target" ]; then
-            target_session_name="$(tmux display-message -p -t "$target" '#{session_name}' 2>/dev/null || true)"
-            [ -n "$target_session_name" ] || return 1
-            target_window="$(window_target "$target" || true)"
-            provision_sidebar_window "$target_window" "$width" || return 1
-            wait_for_sidebar_window_ready "$target_window" || return 1
-        else
-            target_window="$(active_client_window || true)"
-            provision_sidebar_window "$target_window" "$width" || return 1
-            wait_for_sidebar_window_ready "$target_window" || return 1
-            existing_pane="$(sidebar_window_pane "$target_window" || true)"
-            owner_client="$(sidebar_owner_client 2>/dev/null || true)"
+    set_sidebar_enabled 1
+    provision_managed_sidebars "$width" || return 1
+    local target_window existing_pane owner_client
+    if [ -n "$target" ]; then
+        target_window="$(window_target "$target" || true)"
+    else
+        target_window="$(active_client_window || true)"
+    fi
+    if [ -n "$target_window" ]; then
+        existing_pane="$(sidebar_window_pane "$target_window" || true)"
+        owner_client="$(sidebar_owner_client 2>/dev/null || true)"
+        if [ -n "$existing_pane" ]; then
             if [ -n "$owner_client" ]; then
                 tmux select-pane -t "$existing_pane" -c "$owner_client" 2>/dev/null || true
             else
@@ -2078,72 +2100,9 @@ open_sidebar()
             fi
             save_sidebar_layout "$target_window" || true
         fi
-        install_sidebar_hooks
-        return 0
-    fi
-    trace_event "sidebar.open.begin target=${target:-current} refresh=$refresh width=$width preserve_layout=$preserve_layout"
-    trace_event "sidebar.existing-lookup.begin target=${target:-current}"
-    existing_pane="$(find_sidebar_pane "$target")"
-    trace_event "sidebar.existing-lookup.end target=${target:-current} pane=${existing_pane:-none}"
-
-    if [ -n "$existing_pane" ]; then
-        trace_event "sidebar.existing-resize.begin pane=$existing_pane"
-        tmux resize-pane -t "$existing_pane" -x "$width" 2>/dev/null || true
-        trace_event "sidebar.existing-resize.end pane=$existing_pane"
-        if [ "$refresh" = "true" ]; then
-            trace_event "sidebar.existing-respawn.begin pane=$existing_pane"
-            tmux respawn-pane -k -t "$existing_pane" "$SCRIPT_PATH --sidebar"
-            tmux select-pane -t "$existing_pane" -T "$SIDEBAR_TITLE"
-            trace_event "sidebar.existing-respawn.end pane=$existing_pane"
-        fi
-        tmux select-pane -t "$existing_pane"
-        save_sidebar_layout "$(window_target "$existing_pane")" || true
-        trace_event "sidebar.open.end target=${target:-current} mode=existing pane=$existing_pane"
-        install_sidebar_hooks
-        return 0
-    fi
-
-    if [ "$preserve_layout" != "true" ]; then
-        trace_event "sidebar.layout-save.begin target=${target:-current}"
-        save_work_layout "$target"
-        trace_event "sidebar.layout-save.end target=${target:-current}"
-    fi
-
-    trace_event "sidebar.window-lookup.begin target=${target:-current}"
-    target_window="$(window_target "$target")"
-    trace_event "sidebar.window-lookup.end target=${target:-current} window=${target_window:-none}"
-    before_panes="$(list_window_panes "$target_window")"
-    set_sidebar_enabled 1
-    mark_session_managed "$(sidebar_tmux_cmd display-message -p '#S' 2>/dev/null || true)" || true
-    # Existing layout hooks may still be installed while a new sidebar pane
-    # is starting. Keep those hooks from snapshotting a half-initialized TUI.
-    tmux set-option -gq "$SIDEBAR_INPUT_READY_OPTION" 0 2>/dev/null || true
-    set_sidebar_layout_hook_guard 1000
-
-    if [ -n "$target" ]; then
-        [ -n "$pane_path" ] || pane_path="$(target_pane_path "$target")"
-        trace_event "sidebar.split.begin target=$target window=${target_window:-none}"
-        tmux split-window -t "$target" -h -f -b -l "$width" \
-            -c "$pane_path" "$SCRIPT_PATH --sidebar"
-        trace_event "sidebar.split.end target=$target window=${target_window:-none}"
-    else
-        [ -n "$pane_path" ] || pane_path="$current_path"
-        trace_event "sidebar.split.begin target=current window=${target_window:-none}"
-        tmux split-window -h -f -b -l "$width" \
-            -c "$pane_path" "$SCRIPT_PATH --sidebar"
-        trace_event "sidebar.split.end target=current window=${target_window:-none}"
-    fi
-
-    trace_event "sidebar.new-pane-lookup.begin target=${target:-current}"
-    pane_id="$(new_pane_from_snapshot "$before_panes" "$target_window")"
-    trace_event "sidebar.new-pane-lookup.end target=${target:-current} pane=${pane_id:-none}"
-    if [ -n "$pane_id" ]; then
-        tmux select-pane -t "$pane_id" -T "$SIDEBAR_TITLE"
-        tmux select-pane -t "$pane_id"
-        save_sidebar_layout "$target_window" || true
     fi
     install_sidebar_hooks
-    trace_event "sidebar.open.end target=${target:-current} mode=created pane=${pane_id:-none}"
+    return 0
 }
 
 ensure_session_sidebar()
@@ -7240,6 +7199,10 @@ main()
             open_sidebar
             return 0
             ;;
+        --toggle-subpane)
+            toggle_sidebar_subpane_global
+            return 0
+            ;;
         --toggle-sidebar)
             toggle_current_sidebar
             return 0
@@ -7265,10 +7228,16 @@ main()
                 trace_event "sidebar.ensure-window.skip reason=restore-topology-guard window=${2:-none}"
                 return 0
             fi
+            local win_sess
+            win_sess="$(tmux display-message -p -t "${2:-}" '#{session_name}' 2>/dev/null || true)"
+            [ "$win_sess" != "dotfiles-subpane-hub" ] || return 0
             provision_sidebar_window "${2:-}" "${3:-$(sidebar_width)}"
             return $?
             ;;
         --ensure-sidebar-session)
+            if [ "${2:-}" = "dotfiles-subpane-hub" ]; then
+                return 0
+            fi
             if restore_topology_guard_active; then
                 trace_event "sidebar.ensure-session.skip reason=restore-topology-guard session=${2:-none}"
                 return 0

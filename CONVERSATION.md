@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-18 - Global Singleton Subpane Hub & Unified Prompt (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/grill-me` 1. subpane 은 session 에 따라 변하면 안된다. 즉 오로지 sidebar 에 종속적인 단일 pane으로 나와야 한다.
+  - 2. subpane에서 WIN-93J7DBQIEF7% 이라고 나오는데, 그냥 다른 pane 과 동일하게 $ 만 출력되면 된다.
+  - 시스템 부하(시스템 부하와 관련하여 현재 설계안만으로도 충분한지 설명) 질문에 대해 유휴 부하 0% 및 N개->1개 쉘 RAM 절감 원리 설명 후 `/implement` 승인.
+- **아키텍처 및 세부 설계 결정**:
+  1. **전역 싱글톤 세션 허브 모델 (`SubpaneHubManager`)**: 전역 백그라운드 세션(`dotfiles-subpane-hub`)에 1개의 PTY 쉘 프로세스를 영구 유지하고, 사용자가 어떤 세션/윈도우로 이동하든 C-level `join-pane`/`break-pane`으로 즉시 이동 수납.
+  2. **프롬프트 통일**: `$HOME/.cache/dotfiles/.zshrc`를 통해 일반 작업창과 동일한 `$ ` 짧은 프롬프트 적용 (`WIN-93J7DBQIEF7%` 등 호스트 프롬프트 제거).
+  3. **프로세스 영속성**: 세션 전환이나 `m` 키 온/오프 간 실행 중인 프로세스 및 터미널 버퍼 100% 보존.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-window-local-contract.sh`, `test-keyboard-e2e-subpane.sh`).
+
 ## 2026-08-18 - Subpane Topology Isolation & WindowTopologyManager Deepening (TDD & SOLID)
 
 - **사용자 요청**:
