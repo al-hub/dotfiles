@@ -60,9 +60,18 @@ sidebar_window_subpane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
-    sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}' 2>/dev/null |
-        awk -F '|' -v title="$sub_title" '$2 == title { print $1; exit }'
+    sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{@dotfiles_sidebar_subpane}|#{pane_title}' 2>/dev/null |
+        awk -F '|' -v title="$sub_title" '$2 == "1" || $3 == title { print $1; exit }'
 }
+
+sidebar_port_is_subpane() {
+    local pane_id="${1:-}"
+    [ -n "$pane_id" ] || return 1
+    local opt
+    opt="$(sidebar_tmux_cmd show-option -pqv -t "$pane_id" @dotfiles_sidebar_subpane 2>/dev/null || echo 0)"
+    [ "$opt" = "1" ]
+}
+
 
 provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
