@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-17 - Feature: Sidebar Sub-Pane (Satellite Interactive Shell Terminal)
+
+- **사이드바 서브페인 (하단 보조 쉘 터미널) 온디맨드 토글 지원 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `dist/tmux-session-launcher`)**:
+  - 사이드바 TUI(`dotfiles-session-sidebar`) 컬럼 내 하단에 독립적인 대화형 서브페인(`dotfiles-sidebar-subpane`, `$SHELL`)을 동적으로 열고 닫을 수 있는 기능 구현.
+  - TUI에서 `m` 단축키로 토글 가능하며, 서브페인 생성/소멸 시에도 키보드 포커스는 메인 세션 런처에 유지되어 끊김 없는 내비게이션 보장.
+  - 사이드바 전체 닫기/열기(`Ctrl+a s`) 시 서브페인도 라이프사이클을 함께하며, 전역 설정(`@dotfiles_sidebar_subpane_enabled`)으로 세션 전환 시에도 서브페인 열림 상태 보존.
+  - 인프라 페인 태깅(`@dotfiles_sidebar_subpane 1`)을 적용하여 작업 영역 레이아웃 분할(`Ctrl+a |`, `_`), 레이아웃 저장/복구, v3 세션 아카이브 백업에서 서브페인이 완벽히 격리되도록 처리.
+- **TDD 계약 및 회귀 검증 (`tests/tmux-single-sidebar/test-subpane-unit.sh`, `test-subpane-contract.sh`, `test-keyboard-e2e-subpane.sh`)**:
+  - 서브페인 도메인 헬퍼 단위 테스트, tmux 포트 어댑터 라이프사이클 계약 테스트, attached PTY 키보드 E2E(`m` 키 토글 & 포커스 보존) 테스트 구축 및 100% 통과.
+  - Gate A~D 전 회귀 테스트(10종 스위트) 전체 PASS 검증 완료.
+
 ## 2026-08-17 - Diagnosing-Bugs & Performance Optimization: Sequential IPC Compound Pipeline, In-Memory Existence & Background Scan Suppression
 
 - **세션 전환 핫패스 직렬 IPC 오버헤드 제거 (Sequential IPC Elimination & In-Memory Fast Lookup) (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_switch.sh`, `dist/tmux-session-launcher`)**:

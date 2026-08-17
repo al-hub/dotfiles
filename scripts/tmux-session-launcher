@@ -1827,7 +1827,6 @@ provision_sidebar_window()
         enforce_sidebar_width "$existing_pane" "$width" || true
         ensure_sidebar_subpane_window "$window_id" "$existing_pane" || true
         trace_event "sidebar.provision.end window=$window_id pane=$existing_pane result=existing"
-        printf '%s\n' "$existing_pane"
         return 0
     fi
     work_pane="$(sidebar_tmux_any_work_pane "$window_id" || true)"
@@ -1859,14 +1858,12 @@ provision_sidebar_window()
     existing_pane="$(sidebar_window_pane "$window_id" || true)"
     if [ -n "$existing_pane" ] && [ "$existing_pane" != "$pane_id" ]; then
         trace_event "sidebar.window.provision.raced window=$window_id created=$pane_id canonical=$existing_pane"
-        printf '%s\n' "$existing_pane"
         return 0
     fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
     ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
     trace_event "sidebar.window.provision.end window=$window_id pane=$pane_id"
     trace_event "sidebar.provision.end window=$window_id pane=$pane_id result=created"
-    printf '%s\n' "$pane_id"
     return 0
 }
 
@@ -3838,12 +3835,23 @@ EOF
 
     if [ "$found_selected" != true ]; then
         selected_index=0
-        for index in "${!session_names[@]}"; do
-            if [ "${session_names[$index]}" = "$current_session" ]; then
-                selected_index="$index"
-                break
-            fi
-        done
+        if [ -n "${selected_session:-}" ]; then
+            for index in "${!session_names[@]}"; do
+                if [ "${session_names[$index]}" = "$selected_session" ]; then
+                    selected_index="$index"
+                    found_selected=true
+                    break
+                fi
+            done
+        fi
+        if [ "$found_selected" != true ]; then
+            for index in "${!session_names[@]}"; do
+                if [ "${session_names[$index]}" = "$current_session" ]; then
+                    selected_index="$index"
+                    break
+                fi
+            done
+        fi
     fi
 
     selected_session="${session_names[$selected_index]}"

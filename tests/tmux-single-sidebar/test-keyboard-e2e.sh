@@ -1858,8 +1858,7 @@ send_keys()
             c_pane="$(sidebar_pane_id 2>/dev/null || true)"
             if [ -n "$c_pane" ]; then
                 tmuxc select-pane -t "$c_pane" 2>/dev/null || true
-                [ -n "${CLIENT_TTY:-}" ] && tmuxc select-pane -t "$c_pane" -c "$CLIENT_TTY" 2>/dev/null || true
-                tmuxc send-keys -t "$c_pane" -l "$text" 2>/dev/null || true
+                [ -n "$text" ] && tmuxc send-keys -t "$c_pane" -l "$text" 2>/dev/null || true
                 tmuxc send-keys -t "$c_pane" Enter 2>/dev/null || true
             else
                 local payload_crlf="${payload//$'\r'/$'\r\n'}"

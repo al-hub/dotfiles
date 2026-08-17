@@ -6,6 +6,27 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-17 - Sidebar Sub-Pane (Satellite Interactive Shell Terminal) Feature
+
+- **사용자 요청**:
+  - `/grill-me` 1. sidebar 의 위 또는 아래에 신규의 독립된 창을 만들고자한다.
+  - 2. sidebar에서만 존재하는 sub pane 으로 on/off 가능하다고 보면 될 것 같다.
+  - 3. 해당창은 sidebar 와 항상 함께 동작된다.
+  - 4. 즉, sidebar 가 실행시에만 같이 있고, 실행되지 않으면 같이 없어진다.
+  - 5. sidebar에서 m 버튼으로 toggle 하여 on/off 가능하도록 하고, 추후 short cut은 바뀔 수 있다.
+  - 6. 우선은 sidebar 아래에 배치하고(추후 설정에 따라 위에배치도 가능), 1개만 붙일수 있도록 하자.
+  - "동의" 및 "Subagent-Driven" 실행 승인.
+- **아키텍처 및 세부 설계 결정**:
+  1. **명령어**: 기본 `$SHELL`(zsh/bash), `@dotfiles_sidebar_subpane_cmd`로 커스텀 가능.
+  2. **배치 및 높이**: 사이드바 컬럼 하단(`split-window -v`), 전체 높이의 약 30%(기본 12줄).
+  3. **단축키 & 포커스**: TUI `m` 키로 온디맨드 토글. 포커스는 메인 세션 런처에 유지되어 세션 선택 흐름 방해 없음.
+  4. **라이프사이클 & 상태 보존**: 전역 옵션 `@dotfiles_sidebar_subpane_enabled` (1/0). 사이드바를 닫으면 서브페인도 함께 소멸되고, 다시 열면 서브페인이 함께 생성됨.
+  5. **인프라 격리**: `dotfiles-sidebar-subpane` 및 `@dotfiles_sidebar_subpane 1` 태깅. 작업 영역 분할(`Ctrl+a |`, `_`), 레이아웃 복원, v3 세션 아카이브 백업 대상에서 철저히 제외.
+- **구현 및 검증**:
+  - Subagent-Driven Development (Task 1 ~ Task 4) 완료.
+  - 단위/계약/E2E 테스트(`test-subpane-unit.sh`, `test-subpane-contract.sh`, `test-keyboard-e2e-subpane.sh`) 포함 Gate A~D 전 10종 테스트 스위트 100% PASS.
+  - `dist/tmux-session-launcher` 빌드 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
 ## 2026-08-17 - Diagnosing-Bugs & Latency Optimization: Sequential IPC Removal & Inactive Scan Suppression
 
 - **사용자 요청**:
