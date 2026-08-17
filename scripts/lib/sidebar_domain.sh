@@ -55,5 +55,28 @@ sidebar_domain_layout_body() {
         *) printf '%s\n' "$layout" ;;
     esac
 }
+SIDEBAR_SUBPANE_TITLE="dotfiles-sidebar-subpane"
+SIDEBAR_SUBPANE_OPTION="@dotfiles_sidebar_subpane_enabled"
 
+sidebar_subpane_title() {
+    printf '%s\n' "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
+}
 
+is_sidebar_subpane() {
+    local title="${1:-}"
+    [ "$title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ]
+}
+
+sidebar_subpane_default_height() {
+    local total="${1:-0}"
+    case "$total" in
+        ''|*[!0-9]*) total=0 ;;
+    esac
+    local h=$((total * 30 / 100))
+    if [ "$h" -lt 8 ]; then
+        h=8
+    elif [ "$h" -gt 25 ]; then
+        h=25
+    fi
+    printf '%d\n' "$h"
+}
