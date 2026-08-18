@@ -1,11 +1,11 @@
 # opencode
 
 이 문서는 opencode 설정의 현재 상태와 앞으로의 확장 방향을 정리합니다.
-설치 구조 전체 관점은 [doc/architecture.md](architecture.md)를 함께 본다.
+설치 구조 전체 관점은 [docs/architecture.md](../architecture.md)를 함께 본다.
 
 ## 현재 상태
 
-- 현재 레포에는 [`dotfiles/opencode.jsonc`](../dotfiles/opencode.jsonc) 하나가 있고, `install.toml`의 `opencode` 항목으로 설치합니다.
+- 현재 레포에는 [`dotfiles/opencode.jsonc`](../../dotfiles/opencode.jsonc) 하나가 있고, `install.toml`의 `opencode` 항목으로 설치합니다.
 - 이 파일은 personal seed configuration으로 본다.
 - 업무용 profile이나 실행 래퍼는 아직 만들지 않는다.
 - CLI는 공식 설치 스크립트 `curl -fsSL https://opencode.ai/install | bash`로 설치한다.
@@ -18,7 +18,7 @@
 - 복잡한 분기보다 단순한 기본값을 우선한다.
 - 설정은 한 번에 완성형으로 만들지 않고, 점진적으로 확장한다.
 - 추후 `oh my openagent`를 검토할 수 있지만, 현재는 저장소 자체 설정으로 운영한다.
-- `doc/architecture.md`의 module shape 규칙을 따른다.
+- [`docs/architecture.md`](../architecture.md)의 module shape 규칙을 따른다.
 
 ## 확장 지점
 

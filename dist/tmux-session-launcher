@@ -61,6 +61,7 @@ sidebar_domain_layout_body() {
 SIDEBAR_SUBPANE_TITLE="dotfiles-sidebar-subpane"
 SIDEBAR_SUBPANE_OPTION="@dotfiles_sidebar_subpane_enabled"
 SIDEBAR_SUBPANE_HEIGHT_OPTION="@dotfiles_sidebar_subpane_height"
+SIDEBAR_SUBPANE_POSITION_OPTION="@dotfiles_sidebar_subpane_position"
 
 sidebar_subpane_title() {
     printf '%s\n' "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
@@ -68,6 +69,10 @@ sidebar_subpane_title() {
 
 sidebar_subpane_height_option() {
     printf '%s\n' "${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+}
+
+sidebar_subpane_position_option() {
+    printf '%s\n' "${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
 }
 
 is_sidebar_subpane() {
@@ -233,6 +238,75 @@ remember_sidebar_subpane_height_for_window() {
     esac
 }
 
+sidebar_subpane_get_position() {
+    local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
+    local pos
+    pos="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+    case "$pos" in
+        top|TOP) printf 'top\n' ;;
+        *) printf 'bottom\n' ;;
+    esac
+}
+
+sidebar_subpane_set_position() {
+    local pos="${1:-bottom}"
+    local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
+    case "$pos" in
+        top|TOP) pos="top" ;;
+        *) pos="bottom" ;;
+    esac
+    sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
+}
+
+sidebar_subpane_swap_position() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+    [ -n "$window_id" ] || return 1
+
+    local cur_pos
+    cur_pos="$(sidebar_subpane_get_position)"
+    local new_pos="top"
+    if [ "$cur_pos" = "top" ]; then
+        new_pos="bottom"
+    fi
+    sidebar_subpane_set_position "$new_pos"
+
+    local launcher_pane sub_pane
+    launcher_pane="$(sidebar_window_pane "$window_id" 2>/dev/null || true)"
+    sub_pane="$(sidebar_window_subpane "$window_id" 2>/dev/null || true)"
+    if [ -n "$launcher_pane" ] && [ -n "$sub_pane" ]; then
+        sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" 2>/dev/null || true
+        sidebar_tmux_cmd select-pane -t "$launcher_pane" 2>/dev/null || true
+    fi
+}
+
+sync_sidebar_subpane_position_for_window() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+    [ -n "$window_id" ] || return 0
+
+    local launcher_pane sub_pane
+    launcher_pane="$(sidebar_window_pane "$window_id" 2>/dev/null || true)"
+    sub_pane="$(sidebar_window_subpane "$window_id" 2>/dev/null || true)"
+    [ -n "$launcher_pane" ] && [ -n "$sub_pane" ] || return 0
+
+    local l_top s_top
+    l_top="$(sidebar_tmux_cmd display-message -p -t "$launcher_pane" '#{pane_top}' 2>/dev/null || true)"
+    s_top="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_top}' 2>/dev/null || true)"
+    case "$l_top" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    case "$s_top" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+
+    if [ "$s_top" -lt "$l_top" ]; then
+        sidebar_subpane_set_position "top"
+    elif [ "$s_top" -gt "$l_top" ]; then
+        sidebar_subpane_set_position "bottom"
+    fi
+}
+
 provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
     [ -n "$launcher_pane" ] || return 1
@@ -256,7 +330,11 @@ provision_sidebar_subpane() {
 
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
     local sub_pane
-    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
+    local pos_flag=""
+    if [ "$(sidebar_subpane_get_position)" = "top" ]; then
+        pos_flag="-b"
+    fi
+    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
@@ -481,8 +559,15 @@ subpane_hub_relocate_pane_atomic() {
         return 0
     fi
 
-    if ! sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
-        sidebar_tmux_cmd join-pane -d -s "$sub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
+    local pos_flag=""
+    if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
+        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
+            pos_flag="-b"
+        fi
+    fi
+
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+        sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" allow-rename off 2>/dev/null || true
@@ -520,9 +605,16 @@ subpane_hub_acquire_pane() {
         return 0
     fi
 
+    local pos_flag=""
+    if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
+        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
+            pos_flag="-b"
+        fi
+    fi
+
     # Join pane from hub or background into target launcher column
-    if ! sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
-        sidebar_tmux_cmd join-pane -d -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+        sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
     sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
@@ -2057,6 +2149,9 @@ sync_sidebar_layout()
         remember_sidebar_width_for_window "$window_id"
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
+    fi
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$window_id"
     fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
@@ -4962,12 +5057,12 @@ render_footer()
 {
     width="${cached_pane_width:-35}"
     height="${cached_pane_height:-20}"
-    help='j/k Enter c/r/d o/a m q'
+    help='j/k Enter c/r/d o/a s/P q'
 
     if [ "$width" -ge 45 ]; then
-        help='j/k | Enter | c/r/d | o/a | m: subpane | q'
+        help='j/k | Enter | c/r/d | o/a | s: sub | P: pos | q'
     elif [ "$width" -ge 30 ]; then
-        help='j/k | Enter | c/r/d | o/a | m | q'
+        help='j/k | Enter | c/r/d | o/a | s/P | q'
     fi
 
     move_cursor "$height" 1
@@ -7693,7 +7788,8 @@ read_key()
         o) key_result=history ;;
         ' ') key_result=mark ;;
         a) key_result=mark-all ;;
-        m|M) key_result=toggle-subpane ;;
+        s|S|m|M) key_result=toggle-subpane ;;
+        p|P) key_result=swap-subpane-position ;;
         q) key_result=quit ;;
         ''|$'\n'|$'\r')
             key_result=enter
@@ -8063,10 +8159,15 @@ run_tui()
                     toggle_history_mark_all
                 fi
                 ;;
-            m|M|toggle-subpane)
+            s|S|m|M|toggle-subpane)
                 trace_event "action.begin type=toggle-subpane"
                 toggle_sidebar_subpane_global
                 request_full_render subpane-toggle
+                ;;
+            p|P|swap-subpane-position)
+                trace_event "action.begin type=swap-subpane-position"
+                sidebar_subpane_swap_position "${SIDEBAR_WINDOW_ID:-}"
+                request_full_render subpane-swap
                 ;;
             esc)
                 if [ "$view_mode" = "history" ]; then
@@ -8288,6 +8389,10 @@ main()
             ;;
         --toggle-subpane)
             toggle_sidebar_subpane_global
+            return 0
+            ;;
+        --swap-subpane-position|--toggle-subpane-position)
+            sidebar_subpane_swap_position "${2:-}"
             return 0
             ;;
         --toggle-sidebar)

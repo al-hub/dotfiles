@@ -1072,6 +1072,9 @@ sync_sidebar_layout()
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
     fi
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$window_id"
+    fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
         return 1
@@ -3976,12 +3979,12 @@ render_footer()
 {
     width="${cached_pane_width:-35}"
     height="${cached_pane_height:-20}"
-    help='j/k Enter c/r/d o/a m q'
+    help='j/k Enter c/r/d o/a s/P q'
 
     if [ "$width" -ge 45 ]; then
-        help='j/k | Enter | c/r/d | o/a | m: subpane | q'
+        help='j/k | Enter | c/r/d | o/a | s: sub | P: pos | q'
     elif [ "$width" -ge 30 ]; then
-        help='j/k | Enter | c/r/d | o/a | m | q'
+        help='j/k | Enter | c/r/d | o/a | s/P | q'
     fi
 
     move_cursor "$height" 1
@@ -6707,7 +6710,8 @@ read_key()
         o) key_result=history ;;
         ' ') key_result=mark ;;
         a) key_result=mark-all ;;
-        m|M) key_result=toggle-subpane ;;
+        s|S|m|M) key_result=toggle-subpane ;;
+        p|P) key_result=swap-subpane-position ;;
         q) key_result=quit ;;
         ''|$'\n'|$'\r')
             key_result=enter
@@ -7077,10 +7081,15 @@ run_tui()
                     toggle_history_mark_all
                 fi
                 ;;
-            m|M|toggle-subpane)
+            s|S|m|M|toggle-subpane)
                 trace_event "action.begin type=toggle-subpane"
                 toggle_sidebar_subpane_global
                 request_full_render subpane-toggle
+                ;;
+            p|P|swap-subpane-position)
+                trace_event "action.begin type=swap-subpane-position"
+                sidebar_subpane_swap_position "${SIDEBAR_WINDOW_ID:-}"
+                request_full_render subpane-swap
                 ;;
             esc)
                 if [ "$view_mode" = "history" ]; then
@@ -7302,6 +7311,10 @@ main()
             ;;
         --toggle-subpane)
             toggle_sidebar_subpane_global
+            return 0
+            ;;
+        --swap-subpane-position|--toggle-subpane-position)
+            sidebar_subpane_swap_position "${2:-}"
             return 0
             ;;
         --toggle-sidebar)

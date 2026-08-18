@@ -5738,3 +5738,17 @@
 - Implemented `remember_sidebar_subpane_height_for_window` in `scripts/lib/sidebar_port_tmux.sh` and wired it into `sync_sidebar_layout` and `remember_sidebar_width` in `scripts/tmux-session-launcher`.
 - Updated `provision_sidebar_subpane` to read `@dotfiles_sidebar_subpane_height` on toggle/ensure so manually adjusted subpane heights are remembered and restored across sidebar toggles.
 - Added contract test `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` verifying subpane height persistence and restoration.
+
+# Subpane Top/Bottom Position Swapping and Persistence
+
+- Added `SIDEBAR_SUBPANE_POSITION_OPTION="@dotfiles_sidebar_subpane_position"` in `scripts/lib/sidebar_domain.sh`.
+- Implemented `sidebar_subpane_get_position`, `sidebar_subpane_set_position`, and `sidebar_subpane_swap_position` in `scripts/lib/sidebar_port_tmux.sh` and updated `subpane_hub_acquire_pane`/`subpane_hub_relocate_pane` with position `-b` flag support.
+- Added `sync_sidebar_subpane_position_for_window` in `scripts/lib/sidebar_port_tmux.sh` and connected to `sync_sidebar_layout` to auto-detect and persist top/bottom state when swapped via `Ctrl+Alt+Up`/`Ctrl+Alt+Down`.
+- Added `--swap-subpane-position` CLI command in `scripts/tmux-session-launcher` and bound key `Ctrl+a P` in `dotfiles/tmux.conf`.
+- Added contract tests `tests/tmux-single-sidebar/test-subpane-position-contract.sh` and `test-subpane-ctrl-alt-swap.sh`.
+
+# Documentation Architecture, Categorization & Glossary Hub
+
+- Reorganized `docs/` into categorized subdirectories: `guides/` (user & tool guides), `design/` (core architecture & internals), `testing/` (test matrices & verification plans), and `archives/` (historical reports & regression audits).
+- Created `docs/README.md` as the central documentation hub featuring the project's Canonical Glossary and structured document index.
+- Updated all cross-references across `README.md`, `AGENTS.md`, `GEMINI.md`, `shortcut.md`, and all documents in `docs/`.

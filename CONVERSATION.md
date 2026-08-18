@@ -4803,3 +4803,52 @@
 작업 결과:
 - `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` TDD 계약 테스트 작성 및 통과.
 - `dist/tmux-session-launcher` 빌드 및 배포 완료.
+
+## 2026-08-19 - Subpane Top/Bottom Position Swapping and Persistence
+
+사용자 의도:
+- 서브페인의 위치를 좌측 하단뿐만 아니라 좌측 상단으로도 자유롭게 전환(Swap)하고 기억할 수 있도록 지원하며, `Ctrl+Alt+Up`/`Ctrl+Alt+Down`과도 연동합니다.
+
+해석/결정:
+- `@dotfiles_sidebar_subpane_position` ("top" | "bottom") 옵션을 도입하고, `join-pane` 시 상단 위치인 경우 `-b` 옵션을 적용하도록 구현했습니다.
+- 실시간 위치 전환을 위한 `sidebar_subpane_swap_position` 함수와 CLI 플래그 `--swap-subpane-position` 및 tmux 단축키 `Ctrl+a P`를 추가했습니다.
+- `sync_sidebar_subpane_position_for_window`를 통해 `Ctrl+Alt+Up`/`Ctrl+Alt+Down`으로 페인을 스왑해도 상대 좌표를 자동 감지하여 상태를 저장하도록 연동했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-position-contract.sh` 및 `test-subpane-ctrl-alt-swap.sh` TDD 계약 테스트 통과.
+- `dist/tmux-session-launcher` 빌드 및 로컬 배포 완료.
+
+## 2026-08-19 - Documentation Consolidation to docs/
+
+사용자 의도:
+- 기존 `doc/` 디렉터리에 분산되어 있던 문서들을 `docs/`로 일원화하여 디렉터리 구조를 깔끔하게 통합합니다.
+
+해석/결정:
+- `doc/architecture.md`, `doc/opencode.md`, `doc/vim.md`를 `docs/`로 이동하고 레거시 `doc/` 디렉터리를 정리했습니다.
+- `README.md`, `docs/opencode.md`, `shortcut.md`, `AGENTS.md`, `GEMINI.md` 내의 참조 경로를 모두 `docs/`로 일괄 갱신했습니다.
+
+작업 결과:
+- 문서 폴더가 `docs/` 단일 표준으로 통합 완료.
+
+## 2026-08-19 - Subpane Shortcut s / P Mapping
+
+사용자 의도:
+- 사이드바 내부에서 서브페인을 토글하는 단축키를 기존 `m`에서 직관적인 `s`로 변경합니다.
+
+해석/결정:
+- `s` (Subpane toggle)와 `P` (Position swap)를 단축키로 배정하고, 기존 `m`도 하위 호환성으로 유지했습니다.
+작업 결과:
+- `dist/tmux-session-launcher` 빌드 및 배포 완료. 전체 계약 테스트 통과.
+
+## 2026-08-19 - Documentation Architecture, Categorization & Glossary Hub
+
+사용자 의도:
+- 프로젝트 내용 파악을 용이하게 하기 위해 주요 용어의 naming을 표준화하고, 문서들을 하위 목적별로 체계화하여 파일명 및 링크의 정합성을 확보합니다.
+
+해석/결정:
+- `Sidebar`, `Presenter`, `Subpane`, `Subpane Hub`, `Work Pane`, `Managed Window`, `Marker Handover`, `Selection Coordinator`의 표준 도메인 용어 사전(Glossary)을 확립했습니다.
+- `docs/` 폴더를 `guides/`, `design/`, `testing/`, `archives/` 하위 디렉터리로 분류하고, 중앙 진입점인 `docs/README.md`를 생성했습니다.
+- `README.md`, `AGENTS.md`, `GEMINI.md`, `shortcut.md` 및 `docs/` 하위 모든 문서의 상호 참조 링크를 갱신했습니다.
+
+작업 결과:
+- 문서 디렉터리 및 용어 표준화 완료. 전체 단위/계약 테스트 통과.

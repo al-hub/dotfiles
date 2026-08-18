@@ -33,7 +33,18 @@
 - `HISTORY.md`: 파일/설정 변경 이력
 - `CONVERSATION.md`: 사용자 의도와 의사결정 맥락
 - `README.md`: 사용자용 설치/구조 안내
-- `docs/reproduction.md`: 에이전트와 사용자의 실환경 재현 및 검증 가이드
+- `docs/README.md`: dotfiles 문서 허브 및 표준 도메인 용어 사전 (Glossary)
+- `docs/keybindings.md`: dotfiles 및 tmux 주요 단축키/마우스 조작 가이드
+- `docs/architecture.md`: dotfiles 설치 모델 및 모듈 아키텍처
+- `docs/guides/reproduction.md`: 에이전트와 사용자의 실환경 재현 및 검증 가이드
+- `docs/design/tmux-single-sidebar.md`: `feature/single-sidebar` 설계 계약과 invariant
+- `docs/design/tmux-session-launcher-internals.md`: 세션 런처 내부 구조 및 IPC 파이프라인
+- `docs/testing/test-matrix.md`: 기존 sidebar 테스트의 Gate A~E 분류, 변경 범위별 최소 실행 세트와 승격 기준
+- `docs/testing/window-local-test-plan.md`: window-local sidebar 테스트 경계·정량 기준·RED/GREEN 정책
+- `docs/archives/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
+- `docs/archives/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit
+- `docs/archives/sidebar-transition-measurement.md`: sidebar 전환 레이턴시 측정 리포트
+- `docs/archives/next-session-handoff.md`: 다음 세션 재현 명령·현재 결과·다음 작업 순서
 - `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: 실제 attached PTY 입력으로 prefix/sidebar/TUI 전체 시나리오를 검증
 - `tests/tmux-single-sidebar/test-user-tmux-required-monitored.sh`: 사용자 default tmux의 현재 client/window에서 필수 live 동작과 timestamp 로그를 검증
 - `tests/tmux-single-sidebar/test-session-switch-live-correlation.sh`: attached PTY의 10회 session 전환을 operation/phase/client/sidebar 경계로 상관 분석하고 transition event, 실제 sample interval, redraw/hook count 및 첫 실패 snapshot을 보존
@@ -49,15 +60,7 @@
 - `tests/tmux-single-sidebar/test-window-local-contract.sh`: managed window별 sidebar 1개와 global toggle contract
 - `tests/tmux-single-sidebar/test-keyboard-e2e-window-local-switch.sh`: attached PTY window-local session switch contract
 - `tests/tmux-single-sidebar/test-window-local-lifecycle-contract.sh`, `test-window-local-multi-client.sh`: archive/lifecycle와 linked-window/multi-client 경계 contract
-- `docs/tmux-window-local-test-plan.md`: window-local sidebar 테스트 경계·정량 기준·RED/GREEN 정책
-- `docs/tmux-sidebar-test-matrix.md`: 기존 sidebar 테스트의 Gate A~E 분류, 변경 범위별 최소 실행 세트와 승격 기준
-- `docs/tmux-single-sidebar-design.md`: `feature/single-sidebar` 설계 계약과 invariant
-- `docs/live-session-switch-regression.md`: live `session switch failed` 재현과 원인
-- `docs/live-usage-side-effects.md`: 실사용 설치/sidebar side-effect 및 bug audit
-- `docs/next-session-handoff.md`: 다음 세션 재현 명령·현재 결과·다음 작업 순서
 - `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-sidebar-controller`: 단일 sidebar의 tmux 경계와 lifecycle 구현
-
-추가 측정 문서는 docs/sidebar-transition-measurement.md에 있습니다.
 
 ## 작업 규칙
 

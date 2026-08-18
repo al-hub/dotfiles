@@ -58,6 +58,7 @@ sidebar_domain_layout_body() {
 SIDEBAR_SUBPANE_TITLE="dotfiles-sidebar-subpane"
 SIDEBAR_SUBPANE_OPTION="@dotfiles_sidebar_subpane_enabled"
 SIDEBAR_SUBPANE_HEIGHT_OPTION="@dotfiles_sidebar_subpane_height"
+SIDEBAR_SUBPANE_POSITION_OPTION="@dotfiles_sidebar_subpane_position"
 
 sidebar_subpane_title() {
     printf '%s\n' "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
@@ -65,6 +66,10 @@ sidebar_subpane_title() {
 
 sidebar_subpane_height_option() {
     printf '%s\n' "${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+}
+
+sidebar_subpane_position_option() {
+    printf '%s\n' "${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
 }
 
 is_sidebar_subpane() {

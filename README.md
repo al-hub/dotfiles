@@ -6,7 +6,7 @@
 다음 에이전트가 작업 맥락을 이어받기 위한 문서는 [AGENTS.md](AGENTS.md)에 정리합니다.
 주요 작업 이력은 [HISTORY.md](HISTORY.md)에 누적합니다.
 주제별 대화 맥락은 [CONVERSATION.md](CONVERSATION.md)에 요약합니다.
-설치 구조와 모듈 추가 원칙은 [doc/architecture.md](doc/architecture.md)에 정리합니다.
+설치 구조와 모듈 추가 원칙은 [docs/architecture.md](docs/architecture.md)에 정리합니다.
 
 ## 빠른 설치
 
@@ -76,21 +76,25 @@ dotfiles/
 ├── get_dotfiles.sh
 ├── install_dotfiles.sh
 ├── shortcut.md
-└── doc/
-    ├── architecture.md
-    ├── opencode.md
-    └── vim.md
+└── docs/
+    ├── README.md                 ← 문서 허브 & 용어 사전
+    ├── architecture.md           ← 설치 아키텍처
+    ├── keybindings.md            ← 주요 단축키 가이드
+    ├── guides/                   ← 설정 & 사용 가이드 (opencode, vim, theme 등)
+    ├── design/                   ← 단일 사이드바 & 런처 상세 설계
+    ├── testing/                  ← 테스트 매트릭스 & 검증 계획
+    └── archives/                 ← 과거 분석 & 벤치마크 리포트
 ```
 
 `dotfiles/` 디렉터리에는 실제 배포할 설정 파일을 둡니다. `install.toml`은 어떤 파일을 설치할지, 어디에 설치할지, 필요한 실행파일과 패키지가 무엇인지 정의합니다.
-모듈이 늘어날수록 설치 구조는 [doc/architecture.md](doc/architecture.md)에서 유지합니다.
+모듈이 늘어날수록 설치 구조는 [docs/architecture.md](docs/architecture.md)에서 유지합니다.
 
 ## opencode
 
-opencode 설정은 [doc/opencode.md](doc/opencode.md)에 별도로 정리합니다.
+opencode 설정은 [docs/guides/opencode.md](docs/guides/opencode.md)에 별도로 정리합니다.
 현재는 personal-only seed config를 기준으로 두고, `install.toml`에 있는 `opencode` 항목으로 `~/.config/opencode/opencode.jsonc`를 설치합니다.
 설치 후 CLI가 없으면 공식 설치 스크립트로 자동 설치합니다.
-work profile, 실행 래퍼, allowlist 확장 방향은 [doc/opencode.md](doc/opencode.md)와 [doc/architecture.md](doc/architecture.md)에 남겨둡니다.
+work profile, 실행 래퍼, allowlist 확장 방향은 [docs/guides/opencode.md](docs/guides/opencode.md)와 [docs/architecture.md](docs/architecture.md)에 남겨둡니다.
 
 ## 설치 방식
 
@@ -155,7 +159,9 @@ tmux 설치에는 URxvt용 font resize 설정도 hidden dependency로 포함됩�
 xrdb -merge ~/.Xresources
 ```
 
-## tmux session launcher
+## tmux session launcher & 단축키 안내
+
+> 📖 **전체 상세 단축키 및 마우스 조작 가이드**: [`docs/keybindings.md`](docs/keybindings.md)
 
 tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session launcher sidebar가 열립니다.
 `Ctrl+a s`는 toggle로 동작하므로, sidebar가 이미 열려 있으면 닫고 없으면 엽니다. tmux 시작 시 sidebar는 자동으로 열리지 않습니다.

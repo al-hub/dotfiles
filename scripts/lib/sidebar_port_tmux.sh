@@ -135,6 +135,75 @@ remember_sidebar_subpane_height_for_window() {
     esac
 }
 
+sidebar_subpane_get_position() {
+    local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
+    local pos
+    pos="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+    case "$pos" in
+        top|TOP) printf 'top\n' ;;
+        *) printf 'bottom\n' ;;
+    esac
+}
+
+sidebar_subpane_set_position() {
+    local pos="${1:-bottom}"
+    local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
+    case "$pos" in
+        top|TOP) pos="top" ;;
+        *) pos="bottom" ;;
+    esac
+    sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
+}
+
+sidebar_subpane_swap_position() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+    [ -n "$window_id" ] || return 1
+
+    local cur_pos
+    cur_pos="$(sidebar_subpane_get_position)"
+    local new_pos="top"
+    if [ "$cur_pos" = "top" ]; then
+        new_pos="bottom"
+    fi
+    sidebar_subpane_set_position "$new_pos"
+
+    local launcher_pane sub_pane
+    launcher_pane="$(sidebar_window_pane "$window_id" 2>/dev/null || true)"
+    sub_pane="$(sidebar_window_subpane "$window_id" 2>/dev/null || true)"
+    if [ -n "$launcher_pane" ] && [ -n "$sub_pane" ]; then
+        sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" 2>/dev/null || true
+        sidebar_tmux_cmd select-pane -t "$launcher_pane" 2>/dev/null || true
+    fi
+}
+
+sync_sidebar_subpane_position_for_window() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+    [ -n "$window_id" ] || return 0
+
+    local launcher_pane sub_pane
+    launcher_pane="$(sidebar_window_pane "$window_id" 2>/dev/null || true)"
+    sub_pane="$(sidebar_window_subpane "$window_id" 2>/dev/null || true)"
+    [ -n "$launcher_pane" ] && [ -n "$sub_pane" ] || return 0
+
+    local l_top s_top
+    l_top="$(sidebar_tmux_cmd display-message -p -t "$launcher_pane" '#{pane_top}' 2>/dev/null || true)"
+    s_top="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_top}' 2>/dev/null || true)"
+    case "$l_top" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    case "$s_top" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+
+    if [ "$s_top" -lt "$l_top" ]; then
+        sidebar_subpane_set_position "top"
+    elif [ "$s_top" -gt "$l_top" ]; then
+        sidebar_subpane_set_position "bottom"
+    fi
+}
+
 provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
     [ -n "$launcher_pane" ] || return 1
@@ -158,7 +227,11 @@ provision_sidebar_subpane() {
 
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
     local sub_pane
-    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
+    local pos_flag=""
+    if [ "$(sidebar_subpane_get_position)" = "top" ]; then
+        pos_flag="-b"
+    fi
+    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
