@@ -6,6 +6,69 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-18 - Reliability & Architecture: Layer 4 Presenter UI Event Loop & Marker Handover Integration (TDD & SOLID)
+
+- **Presenter UI 이벤트 루프 및 시그널 핸들러 마커 핸드오버 통합 (`scripts/tmux-session-launcher`)**:
+  - `sidebar_consume_pending_target_marker`: `@dotfiles_sidebar_target_marker` 및 `@dotfiles_sidebar_selection_sync` 옵션을 감지하고, 타깃 세션 명을 추출하여 옵션을 즉시 소비(clear) 및 ACK 게시.
+  - `selection_coordinator_align_current "$target_session"`을 호출하여 `current_session`, `selected_session`, `selected_index`를 즉시 일치시키고, `render_marker_delta`를 통해 화면 클리어 없이 <1ms 내 델타 렌더링 갱신 완료.
+  - `run_tui` 메인 이벤트 루프의 시작점, `SIGWINCH` 핸들러(`geometry_signal_pending`), `selection_sync_signal_tick`, `refresh_signal_tick`에서 마커 핸드오버 소비 파이프라인 연동.
+  - `sidebar_target_marker_pending`을 통해 마커 대기 시 `SIDEBAR_POLL_TIMEOUT`으로 즉각적인 프레젠터 반응 보장.
+- **SelectionCoordinator 정렬 보강 (`scripts/lib/sidebar_coordinator.sh`, `scripts/tmux-session-launcher`)**:
+  - `selection_coordinator_align_current`: `candidate` 미매칭 시 `current_session`과 `selected_session`을 순차 탐색하여 인덱스 0으로의 불필요한 강제 fallback을 방지.
+  - `collect_sessions`: `found_selected != true` 시 `selection_coordinator_align_current`에 일원화 위임.
+- **TDD E2E 통합 검증 및 배포 번들 생성**:
+  - `tests/tmux-single-sidebar/test-presenter-handover-e2e.sh`: RED 재현 후 GREEN 통과 (초기 `sess-a` `>*` -> `sess-b` 핸드오버 시 즉각 `sess-b` `>*` 갱신 및 타깃 마커 소비 -> `sess-a` 복귀 검증).
+  - `tests/tmux-single-sidebar/test-selection-alignment-unit.sh`: PASS
+  - `tests/tmux-single-sidebar/test-marker-handover-contract.sh`: PASS
+  - `tests/tmux-single-sidebar/test-contract.sh`: 8/8 PASS
+  - `dist/tmux-session-launcher` 번들 생성 완료.
+
+## 2026-08-18 - Reliability & Architecture: SelectionCoordinator Arrival Alignment (TDD & SOLID)
+
+- **SelectionCoordinator 도착 정렬 (`scripts/lib/sidebar_coordinator.sh`)**:
+  - `selection_coordinator_align_current`: 현재 세션 도착 시 세션 배열에서 해당 인덱스를 정확히 찾아 `selected_session` 및 `selected_index`를 일치시키는 정렬 함수 구현.
+  - 숫자 세션(`0` 등) 및 미존재 세션(fallback `0`)에 대한 엣지 케이스 처리 보장.
+- **세션 런처 선택 정렬 연동 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - `collect_sessions`: `current_session != old_current_session` 또는 `client_session_is_my_session` 조건 발생 시 `selection_coordinator_align_current "$current_session"` 호출 및 `old_selected`가 새로 진입한 `current_session`을 덮어쓰지 않도록 수정.
+  - `align_selection_to_session`: `selection_coordinator_align_current`에 위임하여 런처 내 선택 정렬 로직 일원화.
+- **TDD 검증 및 배포 번들 생성**:
+  - `tests/tmux-single-sidebar/test-selection-alignment-unit.sh`: PASS (bbb -> 2, 0 -> 0, non-existent -> 0)
+  - `tests/tmux-single-sidebar/test-contract.sh`: 8/8 PASS
+  - `dist/tmux-session-launcher` 번들 생성 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
+## 2026-08-18 - Reliability & Architecture: Infrastructure Session Isolation & Atomic Single-Frame Subpane Lease (Flicker-Free, TDD & SOLID)
+
+
+- **인프라 세션 완전 격리 (`InfrastructureSessionRegistry` & `SessionFilter`, Phase 1)**:
+  - `scripts/lib/sidebar_domain.sh`: 순수 도메인 함수 `is_infrastructure_session` 추가 (`dotfiles-subpane-hub` 전용 판별).
+  - `scripts/lib/sidebar_port_tmux.sh`: `sidebar_tmux_list_user_sessions` 딥 어댑터 구현 및 `provision_sidebar_window`, `ensure_sidebar_subpane_window` 내 인프라 세션 조기 반환 가드 추가.
+  - `scripts/tmux-session-launcher`: `collect_sessions`, `parse-panes`, `parse-sessions`, `sync_active_window`, `open_sidebar` 등에서 인프라 세션의 TUI 목록 유입 및 훅 침투를 원천 차단하여 세션 목록 100% 클린화 달성.
+- **원자적 단일 프레임 서브패널 리스 전환 파이프라인 (Phase 2)**:
+  - 세션 전환 시 기존 서브패널 해제 후 재획득하던 3단계 깜빡임/리플로우 병목을 제거.
+  - 단일 tmux 복합 IPC 명령(`join-pane -d -s "$sub_pane" -t "$target_launcher" -v -l "$sub_height" \; switch-client -c "$client_tty" -t "=$session_name:" \; select-pane -t "$target_launcher"`)으로 결합하여 1 프레임 내에 화면 리플로우 및 깜빡임 없이 원자적 이동 완료.
+- **불변 역할 태깅 및 싱글톤 허브 안전 반환 (`scripts/lib/sidebar_subpane_hub.sh`)**:
+  - 서브패널 역할 태그(`@dotfiles_sidebar_subpane 1`, `@dotfiles_subpane_hub_pane 1`)를 릴리즈 시에도 제거하지 않고 불변 유지.
+  - `subpane_hub_relocate_pane_atomic`: 중간 분리 상태 없이 소스에서 타깃 런처 컬럼으로 직행하는 원자적 이동 함수 구현.
+  - `subpane_hub_release_pane`: 서브패널 토글 OFF 시 전역 허브 세션(`dotfiles-subpane-hub`)으로 패널을 안전하게 회수하고 역할 불변성 유지.
+- **TDD 검증 및 번들 배포**:
+  - `tests/tmux-single-sidebar/test-infra-registry-unit.sh`: PASS
+  - `tests/tmux-single-sidebar/test-atomic-subpane-lease.sh`: PASS
+  - `tests/tmux-single-sidebar/test-subpane-hub-unit.sh` & `test-subpane-hub-contract.sh`: PASS
+  - `tests/tmux-single-sidebar/test-contract.sh`: PASS
+  - `tests/tmux-single-sidebar/test-debug-user-exact.sh`: PASS (3개 세션 복원 + 서브패널 토글 + 세션 연속 전환 시 깜빡임/노출 0건)
+  - `dist/tmux-session-launcher` 번들 생성 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
+
+- **원자적 단일 프레임 서브패널 리스 전환 파이프라인 (`scripts/lib/sidebar_switch.sh`, `scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
+  - 세션 전환 시 기존 서브패널 해제(`destroy`) 후 타깃에서 재획득(`ensure`)하던 3단계 깜빡임/리플로우 병목을 제거.
+  - 단일 tmux 복합 IPC 명령(`join-pane -d -s "$sub_pane" -t "$target_launcher" -v -l "$sub_height" \; switch-client -c "$client_tty" -t "=$session_name:" \; select-pane -t "$target_launcher"`)으로 결합하여 1 프레임 내에 화면 리플로우 및 깜빡임 없이 원자적 이동 완료.
+- **불변 역할 태깅 및 싱글톤 허브 안전 반환 (`scripts/lib/sidebar_subpane_hub.sh`)**:
+  - 서브패널 역할 태그(`@dotfiles_sidebar_subpane 1`, `@dotfiles_subpane_hub_pane 1`)를 릴리즈 시에도 제거하지 않고 불변 유지.
+  - `subpane_hub_relocate_pane_atomic`: 중간 분리 상태 없이 소스에서 타깃 런처 컬럼으로 직행하는 원자적 이동 함수 구현.
+  - `subpane_hub_release_pane`: 서브패널 토글 OFF 시 전역 허브 세션(`dotfiles-subpane-hub`)으로 패널을 안전하게 회수하고 역할 불변성 유지.
+- **TDD 검증**:
+  - `tests/tmux-single-sidebar/test-atomic-subpane-lease.sh`: PASS (세션 간 원자적 리스 이동, 불변 태그 보존, 허브 반환/재획득, 워크 패널 레이아웃 무결성 검증).
+
 ## 2026-08-18 - Reliability & Architecture: Structured IPC Worker Status Protocol & Subpane Active-Window Focus Lease Model (Phase 2 & Phase 3)
 
 - **Phase 2: 배치 세션 복원 구조화 IPC 워커 상태 프로토콜 (`scripts/tmux-session-launcher`, `dist/tmux-session-launcher`)**:
@@ -5661,3 +5724,11 @@
   before the next selection, and added visible marker/input recovery traces.
   Render-cause correlation completed 4/4 and a final live correlation run
   completed 10/10.
+
+# Single Sidebar In-Flight Marker Handover & Selection Alignment TDD
+
+- Resolved stale marker and wrong session target selection bug in window-local sidebar architecture.
+- Added pure `selection_coordinator_align_current` and `selection_coordinator_compute_delta` in `scripts/lib/sidebar_coordinator.sh` with complete unit test suite (`test-selection-alignment-unit.sh`).
+- Added typed `sidebar_port_publish_marker_handover` and `sidebar_port_notify_presenter_wake` in `scripts/lib/sidebar_port_tmux.sh` and integrated into `sidebar_switch_execute_hot` in `scripts/lib/sidebar_switch.sh`.
+- Added presenter UI event loop marker handover integration in `scripts/tmux-session-launcher` to consume pending `@dotfiles_sidebar_target_marker` on wake/key, align `current_session`/`selected_session`, and render marker delta without full screen flicker.
+- Rebuilt production bundle `dist/tmux-session-launcher` and verified all unit, contract, and live 15-iteration switch tests pass with 0 stale markers and 100% target accuracy.

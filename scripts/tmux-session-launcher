@@ -85,6 +85,7 @@ SIDEBAR_TRANSITION_RENDER_PENDING_OPTION="@dotfiles_sidebar_transition_render_pe
 SIDEBAR_FAST_TRANSITION_OPTION="@dotfiles_sidebar_fast_transition"
 SIDEBAR_SELECTION_SYNC_OPTION="@dotfiles_sidebar_selection_sync"
 SIDEBAR_SELECTION_SYNC_ACK_OPTION="@dotfiles_sidebar_selection_sync_ack"
+SIDEBAR_TARGET_MARKER_OPTION="@dotfiles_sidebar_target_marker"
 SIDEBAR_RESTORE_TOPOLOGY_OPTION="@dotfiles_sidebar_restore_topology"
 SIDEBAR_WIDTH_APPLY_GUARD_OPTION="@dotfiles_sidebar_width_apply_guard"
 SIDEBAR_PROVISION_OPTION="@dotfiles_sidebar_provisioning"
@@ -1110,6 +1111,9 @@ sync_active_window()
     active_session="$(tmux display-message -p -c "$hook_client" '#S' 2>/dev/null || tmux display-message -p '#S' 2>/dev/null || true)"
     active_window="$(tmux display-message -p -c "$hook_client" '#{window_id}' 2>/dev/null || tmux display-message -p '#{window_id}' 2>/dev/null || true)"
     [ -n "$active_session" ] && [ -n "$active_window" ] || return 0
+    if is_infrastructure_session "$active_session"; then
+        return 0
+    fi
     if [ "$(tmux show-option -gqv "$SIDEBAR_ENABLED_OPTION" 2>/dev/null || true)" = 1 ]; then
         reconcile_sidebar_window "$active_window"
         local_pane="$(sidebar_window_pane "$active_window" || true)"
@@ -2061,7 +2065,7 @@ open_sidebar()
 {
     local cur_sess
     cur_sess="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    if [ "$cur_sess" = "dotfiles-subpane-hub" ]; then
+    if is_infrastructure_session "$cur_sess"; then
         return 0
     fi
     if sidebar_provisioning_active; then
@@ -2569,13 +2573,19 @@ switch_session()
     trace_event "switch.target-sidebar.ready session=$session_name window=$target_window pane=$sidebar_pane pid=${sidebar_pid:-none}"
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
-    local subpane_enabled
+    local subpane_enabled sub_pane="" sub_height="12"
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
     if [ "$subpane_enabled" = "1" ] && [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
-        destroy_sidebar_subpane "$source_window"
+        sub_pane="$(sidebar_window_subpane "$source_window" || true)"
+        if [ -n "$sub_pane" ]; then
+            sub_height="$(tmux display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || echo 12)"
+            [ "$sub_height" -ge 4 ] 2>/dev/null || sub_height=12
+        else
+            sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+        fi
     fi
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"
-    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane" "$(sidebar_width)"; then
+    if ! sidebar_switch_execute_hot "$client_tty" "$session_name" "$target_window" "$sidebar_pane" "$(sidebar_width)" "$sub_pane" "$sub_height"; then
         tmux set-option -wq -t "$target_window" "$SIDEBAR_SELECTION_SYNC_OPTION" "" 2>/dev/null || true
         transition_context_finish failed switch-client "$operation_id"
         message_line "session switch failed: client switch was refused"
@@ -3349,6 +3359,8 @@ collect_sessions()
         if [ "${sidebar_session_cached:-}" != "$my_session" ]; then
             sidebar_session_cached="$my_session"
             selected_session="$my_session"
+            old_selected="$my_session"
+            selection_coordinator_align_current "$my_session"
             # Pane moves are also used by async history restore. Do not reset
             # the current TUI view on an owner change: the next physical key
             # must remain in history mode when the user is restoring archives.
@@ -3402,7 +3414,7 @@ collect_sessions()
     if [ -n "$metrics_start" ]; then
         metrics_list_sessions_start="$(metrics_now_us)"
     fi
-    sessions_snapshot="$(sidebar_tmux_cmd list-sessions -F '#{session_name}	#{session_created}	#{session_activity}' 2>/dev/null || true)"
+    sessions_snapshot="$(sidebar_tmux_list_user_sessions 2>/dev/null || true)"
     while IFS="$(printf '\t')" read -r signature_name signature_created _signature_activity; do
         [ -n "$signature_name" ] || continue
         incoming_session_signature+="${signature_name}:${signature_created}|"
@@ -3534,6 +3546,9 @@ EOF
 
     while IFS="$(printf '\t')" read -r pane_session pane_id pane_title pane_command pane_activity pane_pid; do
         [ -n "$pane_session" ] || continue
+        if is_infrastructure_session "$pane_session"; then
+            continue
+        fi
         [ "$pane_title" = "$SIDEBAR_TITLE" ] && continue
         [ "$pane_title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ] && continue
 
@@ -3575,6 +3590,9 @@ EOF
 
     while IFS="$(printf '\t')" read -r name created activity; do
         [ -n "$name" ] || continue
+        if is_infrastructure_session "$name"; then
+            continue
+        fi
         if [ "$row_cache_reusable" = true ]; then
             [ "$name" = "$requested_scan_session" ] || continue
             index="$target_row_index"
@@ -3800,8 +3818,10 @@ EOF
     fi
     trace_event "collect.parse-sessions.end count=${#session_names[@]}"
 
-    if [ "$current_session" != "$old_current_session" ]; then
-        mark_full_render_required session-change
+    if [ "$current_session" != "$old_current_session" ] || [ "$client_session_is_my_session" = "true" ]; then
+        if [ "$current_session" != "$old_current_session" ]; then
+            mark_full_render_required session-change
+        fi
         # A window-local sidebar survives native switch-client. Its previous
         # selection can therefore belong to the session we just left. Align
         # the marker with the newly observed current session before rendering
@@ -3809,18 +3829,14 @@ EOF
         # selected for the next Enter/delete/archive action. During an active
         # transition, however, preserve a valid physical selection update
         # that arrived after switch-client and before this refresh completed.
-        found_selected=false
         for index in "${!session_names[@]}"; do
             if [ "${session_names[$index]}" = "$old_current_session" ] ||
                 [ "${session_names[$index]}" = "$current_session" ]; then
                 session_animation_refresh_indexes+=("$index")
             fi
-            if [ "${session_names[$index]}" = "$current_session" ] && [ "$found_selected" != true ]; then
-                selected_index="$index"
-                selected_session="$current_session"
-                found_selected=true
-            fi
         done
+        selection_coordinator_align_current "$current_session"
+        found_selected=true
     fi
 
     if [ "${#session_names[@]}" -eq 0 ]; then
@@ -3830,24 +3846,8 @@ EOF
     fi
 
     if [ "$found_selected" != true ]; then
-        selected_index=0
-        if [ -n "${selected_session:-}" ]; then
-            for index in "${!session_names[@]}"; do
-                if [ "${session_names[$index]}" = "$selected_session" ]; then
-                    selected_index="$index"
-                    found_selected=true
-                    break
-                fi
-            done
-        fi
-        if [ "$found_selected" != true ]; then
-            for index in "${!session_names[@]}"; do
-                if [ "${session_names[$index]}" = "$current_session" ]; then
-                    selected_index="$index"
-                    break
-                fi
-            done
-        fi
+        selection_coordinator_align_current "${selected_session:-$current_session}"
+        found_selected=true
     fi
 
     selected_session="${session_names[$selected_index]}"
@@ -3887,17 +3887,11 @@ ensure_selection_visible()
 align_selection_to_session()
 {
     local target_session="$1"
-    local selection_index
 
     [ -n "$target_session" ] || return 0
-    for selection_index in "${!session_names[@]}"; do
-        if [ "${session_names[$selection_index]}" = "$target_session" ]; then
-            selected_index="$selection_index"
-            selected_session="$target_session"
-            ensure_selection_visible
-            return 0
-        fi
-    done
+    selection_coordinator_align_current "$target_session"
+    ensure_selection_visible
+    return 0
 }
 
 row_is_visible()
@@ -4525,6 +4519,61 @@ selection_sync_window_pending()
 {
     [ -n "${SIDEBAR_WINDOW_ID:-}" ] || return 1
     [ -n "$(tmux show-option -wqv -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_SELECTION_SYNC_OPTION" 2>/dev/null || true)" ]
+}
+
+sidebar_target_marker_pending()
+{
+    [ -n "${SIDEBAR_WINDOW_ID:-}" ] || return 1
+    [ -n "$(tmux show-option -wqv -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_TARGET_MARKER_OPTION:-@dotfiles_sidebar_target_marker}" 2>/dev/null || true)" ] ||
+    [ -n "$(tmux show-option -wqv -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_SELECTION_SYNC_OPTION:-@dotfiles_sidebar_selection_sync}" 2>/dev/null || true)" ]
+}
+
+sidebar_consume_pending_target_marker()
+{
+    [ -n "${SIDEBAR_WINDOW_ID:-}" ] || return 1
+    local target_session=""
+    target_session="$(tmux show-option -wqv -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_TARGET_MARKER_OPTION:-@dotfiles_sidebar_target_marker}" 2>/dev/null || true)"
+    if [ -z "$target_session" ]; then
+        target_session="$(tmux show-option -wqv -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_SELECTION_SYNC_OPTION:-@dotfiles_sidebar_selection_sync}" 2>/dev/null || true)"
+    fi
+    [ -n "$target_session" ] || return 1
+
+    # 1. Retrieve the target session name ($target_session)
+    # 2. Consume/clear the @dotfiles_sidebar_target_marker option on the window
+    tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_TARGET_MARKER_OPTION:-@dotfiles_sidebar_target_marker}" "" 2>/dev/null || true
+    tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_SELECTION_SYNC_OPTION:-@dotfiles_sidebar_selection_sync}" "" 2>/dev/null || true
+    tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "${SIDEBAR_SELECTION_SYNC_ACK_OPTION:-@dotfiles_sidebar_selection_sync_ack}" "$target_session" 2>/dev/null || true
+
+    local old_current="$current_session"
+    local old_selected_index="$selected_index"
+    local old_selected_session="$selected_session"
+
+    local found=false
+    local idx
+    for idx in "${!session_names[@]}"; do
+        if [ "${session_names[$idx]}" = "$target_session" ]; then
+            found=true
+            break
+        fi
+    done
+    if [ "$found" != true ]; then
+        collect_sessions false "$target_session"
+    fi
+
+    # 3. Call selection_coordinator_align_current "$target_session"
+    selection_coordinator_align_current "$target_session"
+
+    # 4. Update current_session="$target_session" and selected_session="$target_session"
+    current_session="$target_session"
+    selected_session="$target_session"
+    ensure_selection_visible
+
+    # 5. Re-render the marker column / delta row immediately
+    if [ "$view_mode" = "sessions" ]; then
+        render_marker_delta "$old_current" "$old_selected_index" "$old_selected_session"
+    fi
+    trace_event "marker.handover.consumed target=$target_session window=$SIDEBAR_WINDOW_ID index=$selected_index"
+    return 0
 }
 
 transition_render_pending_for_current_session()
@@ -6837,6 +6886,7 @@ run_tui()
     fi
 
     while true; do
+        sidebar_consume_pending_target_marker || true
         if [ -n "$METRICS_FILE" ]; then
             maintenance_metrics_loops=$((maintenance_metrics_loops + 1))
             metrics_phase=read
@@ -6864,7 +6914,7 @@ run_tui()
         # target sidebar on the short polling boundary while that marker is
         # pending; otherwise the passive 1s read timeout can delay the delta
         # marker until after the client has visibly changed.
-        if native_selection_sync_pending || [ "$refresh_signal_pending" = true ]; then
+        if native_selection_sync_pending || [ "$refresh_signal_pending" = true ] || sidebar_target_marker_pending; then
             read_timeout="$SIDEBAR_POLL_TIMEOUT"
         fi
         if [ "$post_operation_fast_read" = "true" ] || IFS= read -rsn1 -t 0 key_pending 2>/dev/null; then
@@ -6919,6 +6969,7 @@ run_tui()
         fi
         if [ "$geometry_signal_pending" = true ]; then
             geometry_signal_pending=false
+            sidebar_consume_pending_target_marker || true
             old_width="${cached_pane_width:-}"
             old_height="${cached_pane_height:-}"
             update_pane_geometry
@@ -7040,6 +7091,9 @@ run_tui()
 
         selection_sync_signal_tick="$selection_sync_signal_pending"
         selection_sync_signal_pending=false
+        if [ "$selection_sync_signal_tick" = "true" ]; then
+            sidebar_consume_pending_target_marker || true
+        fi
         flush_full_render_request
         if [ "$full_render_required" = "true" ]; then
             trace_event "render.full.check reason=${full_render_required_reason:-unspecified} sync_window=$(sidebar_tmux_cmd show-option -wqv -t "${SIDEBAR_WINDOW_ID:-}" "$SIDEBAR_SELECTION_SYNC_OPTION" 2>/dev/null || true)"
@@ -7269,12 +7323,14 @@ main()
             fi
             local win_sess
             win_sess="$(tmux display-message -p -t "${2:-}" '#{session_name}' 2>/dev/null || true)"
-            [ "$win_sess" != "dotfiles-subpane-hub" ] || return 0
+            if is_infrastructure_session "$win_sess"; then
+                return 0
+            fi
             provision_sidebar_window "${2:-}" "${3:-$(sidebar_width)}"
             return $?
             ;;
         --ensure-sidebar-session)
-            if [ "${2:-}" = "dotfiles-subpane-hub" ]; then
+            if is_infrastructure_session "${2:-}"; then
                 return 0
             fi
             if restore_topology_guard_active; then

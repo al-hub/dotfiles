@@ -56,6 +56,42 @@ sidebar_port_session_is_managed() {
     [ "$(sidebar_tmux_cmd show-option -qv -t "=$session:" "$opt" 2>/dev/null || true)" = "1" ]
 }
 
+sidebar_port_publish_marker_handover() {
+    local window_id="${1:-}" target_session="${2:-}"
+    [ -n "$window_id" ] || return 1
+    [ -n "$target_session" ] || return 1
+    local marker_opt="${SIDEBAR_TARGET_MARKER_OPTION:-@dotfiles_sidebar_target_marker}"
+    local sync_opt="${SIDEBAR_SELECTION_SYNC_OPTION:-@dotfiles_sidebar_selection_sync}"
+    sidebar_tmux_cmd set-option -wq -t "$window_id" "$marker_opt" "$target_session" 2>/dev/null || true
+    sidebar_tmux_cmd set-option -wq -t "$window_id" "$sync_opt" "$target_session" 2>/dev/null || true
+}
+
+sidebar_port_notify_presenter_wake() {
+    local target="${1:-}"
+    [ -n "$target" ] || return 0
+    local pane_pid=""
+    pane_pid="$(sidebar_tmux_cmd display-message -p -t "$target" '#{pane_pid}' 2>/dev/null || true)"
+    if [ -z "$pane_pid" ] && declare -f sidebar_window_pane >/dev/null 2>&1; then
+        local sb_pane
+        sb_pane="$(sidebar_window_pane "$target" 2>/dev/null || true)"
+        if [ -n "$sb_pane" ]; then
+            pane_pid="$(sidebar_tmux_cmd display-message -p -t "$sb_pane" '#{pane_pid}' 2>/dev/null || true)"
+        fi
+    fi
+    if [ -n "$pane_pid" ] && [ "$pane_pid" -gt 0 ] 2>/dev/null && kill -0 "$pane_pid" 2>/dev/null; then
+        kill -WINCH "$pane_pid" 2>/dev/null || kill -SIGWINCH "$pane_pid" 2>/dev/null || true
+    fi
+    return 0
+}
+
+sidebar_tmux_list_user_sessions() {
+    local tab="$(printf '\t')"
+    local default_fmt="#{session_name}${tab}#{session_created}${tab}#{session_activity}"
+    local format="${1:-$default_fmt}"
+    sidebar_tmux_cmd list-sessions -F "$format" 2>/dev/null |
+        awk -F "$tab" '$1 != "dotfiles-subpane-hub" { print $0 }'
+}
+
 sidebar_window_pane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
@@ -124,6 +160,11 @@ destroy_sidebar_subpane() {
 ensure_sidebar_subpane_window() {
     local window_id="${1:-}" launcher_pane="${2:-}"
     [ -n "$window_id" ] || return 0
+    local win_sess
+    win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
+    if is_infrastructure_session "$win_sess"; then
+        return 0
+    fi
     [ -n "$launcher_pane" ] || launcher_pane="$(sidebar_window_pane "$window_id" || true)"
     [ -n "$launcher_pane" ] || return 0
 
@@ -183,7 +224,9 @@ provision_sidebar_window() {
     [ -n "$window_id" ] || return 1
     local win_sess
     win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
-    [ "$win_sess" != "dotfiles-subpane-hub" ] || return 0
+    if is_infrastructure_session "$win_sess"; then
+        return 0
+    fi
     local existing
     existing="$(sidebar_window_pane "$window_id" || true)"
     [ -z "$existing" ] || return 0

@@ -80,3 +80,11 @@ sidebar_subpane_default_height() {
     fi
     printf '%d\n' "$h"
 }
+
+is_infrastructure_session() {
+    local session="${1:-}"
+    case "$session" in
+        dotfiles-subpane-hub) return 0 ;;
+        *) return 1 ;;
+    esac
+}

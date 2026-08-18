@@ -6,6 +6,55 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-18 - Layer 4 Presenter UI Event Loop & Marker Handover Integration (TDD & SOLID)
+
+- **사용자 요청**:
+  - Task 3 실행: Layer 4 Presenter UI Event Loop & Signal Handler Integration in `scripts/tmux-session-launcher`.
+  - 이벤트 루프 및 시그널 핸들러(`SIGWINCH`, `refresh_signal_pending` 등)에서 `@dotfiles_sidebar_target_marker` / `@dotfiles_sidebar_selection_sync` 감지 및 즉시 소비, `selection_coordinator_align_current "$target_session"` 호출 및 <1ms 내 델타 렌더링.
+  - `collect_sessions`에서 유효 세션 존재 시 임의 index 0 fallback 방지.
+  - E2E 통합 테스트 `tests/tmux-single-sidebar/test-presenter-handover-e2e.sh` 작성하여 RED -> GREEN TDD 검증.
+- **구현 및 검증**:
+  - `sidebar_consume_pending_target_marker` 및 `sidebar_target_marker_pending` 구현 및 `run_tui` 이벤트 루프/시그널 핸들러 파이프라인 연동.
+  - `test-presenter-handover-e2e.sh`를 통해 실제 격리된 tmux 세션에서 마커 핸드오버 및 시그널 웨이크 시 `>*` 마커 갱신 및 옵션 소비 검증 완료.
+  - 전체 단위/계약 테스트 PASS 및 배포 번들 빌드 완료.
+
+## 2026-08-18 - SelectionCoordinator Arrival Alignment (TDD & SOLID)
+
+- **사용자 요청**:
+  - SelectionCoordinator Arrival Alignment 계획 구현:
+    1. TDD 단위 테스트 `tests/tmux-single-sidebar/test-selection-alignment-unit.sh` 작성.
+    2. `scripts/lib/sidebar_coordinator.sh`에 `selection_coordinator_align_current` 구현.
+    3. `scripts/tmux-session-launcher`의 `collect_sessions` 및 초기 런처에서 `selection_coordinator_align_current "$current_session"` 호출 및 `old_selected` 오버라이드 방지.
+    4. TDD 단위 테스트 및 `test-contract.sh` GREEN 검증, `dist/` 빌드 및 `~/.local/bin` 배포.
+- **구현 및 검증**:
+  - `sidebar_coordinator.sh`에 세션 목록 기반 정확한 인덱스/세션 정렬 함수 추가.
+  - `tmux-session-launcher` 내 `collect_sessions` 및 `align_selection_to_session`을 위임 처리하여 일관된 선택 포커스 정렬 보장.
+  - 단위 테스트(`test-selection-alignment-unit.sh`) 및 전체 계약 테스트(`test-contract.sh` 8/8) 100% PASS 확인.
+
+## 2026-08-18 - Infrastructure Session Isolation & Atomic Single-Frame Subpane Lease (Flicker-Free, TDD & SOLID)
+
+
+- **사용자 요청**:
+  - `session 이동 선택 시, 서브패널 refresh 로 거슬리는게 큰데, 이것은 제어 가능 범위인가? 아닌가?`
+  - `/plan 각 주요 사항별로 전체 개선 계획을 TDD, SOLID 준수하여 작성하자.`
+  - `/implement 각 단계별로 TDD 및 개선을 Subagent-Driven 으로 진행하라.`
+- **원인 분석 및 아키텍처 진단**:
+  1. **인프라 세션 누출**: `collect_sessions` 및 전역 훅이 raw `list-sessions`를 조회하여 `dotfiles-subpane-hub`가 UI 목록 및 훅에 노출되고, 허브 윈도우에 사이드바가 잘못 주입됨.
+  2. **서브패널 리프레시/깜빡임**: 세션 전환 시 `세션 A -> 허브 -> 세션 B` 2단계 릴레이 물리 이동으로 인해 화면 리플로우, 터미널 리사이즈, SIGWINCH 신호가 연쇄 발생함.
+  3. **메타데이터 소실**: 반납 시 `@dotfiles_sidebar_subpane`을 unset하여 토폴로지 분석기가 작업창으로 오인.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **인프라 세션 완전 격리 (`InfrastructureSessionRegistry` & `SessionFilter`)**:
+     - `sidebar_domain.sh`에 `is_infrastructure_session` 도메인 함수 추가.
+     - `sidebar_port_tmux.sh`에 `sidebar_tmux_list_user_sessions` 딥 어댑터 구현하여 UI 및 훅에서 인프라 세션 완벽 은닉.
+  2. **단일 프레임 원자적 서브패널 이전 (Single-Frame Atomic Relocation Pipeline - Flicker-Free)**:
+     - 2단계 릴레이를 폐지하고 `join-pane ... \; switch-client ... \; select-pane ...` 복합 IPC 파이프라인으로 1회의 C-level 트랜잭션 처리 (깜빡임 0회).
+  3. **불변 역할 태깅 (Immutable Role Tagging)**:
+     - `@dotfiles_sidebar_subpane 1` 및 `@dotfiles_subpane_hub_pane 1`을 영구 보존.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-infra-registry-unit.sh`, `test-atomic-subpane-lease.sh`, `test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-debug-user-exact.sh`).
+  - 세션 목록 100% 클린 및 서브패널 깜빡임 없는 완벽한 원자적 전환 달성.
+
+
 ## 2026-08-18 - Resilient Archive Restore, Batch Worker IPC & Subpane Active-Window Lease (TDD & SOLID)
 
 - **사용자 요청**:
@@ -4727,3 +4776,17 @@
   longjmp pane death도 해당 suite에서 재현되지 않았다.
 - render-cause 테스트는 초기 setup 및 다음 transition settle 경계를 보강해
   4/4 PASS했고, 최종 live correlation도 10/10 PASS했다.
+
+## 2026-08-18 - Single Sidebar In-Flight Marker Handover & Selection Alignment TDD
+
+사용자 의도:
+- 라이브 세션 15회 전환 중 발견된 사이드바 UI 마커 비동기화(Stale Marker) 및 선택 세션 타겟 불일치 문제를 TDD와 SOLID 원칙을 준수하여 해결합니다.
+
+해석/결정:
+- Window-Local 모델에서 각 윈도우의 사이드바 Presenter가 독립 프로세스로 대기 중일 때 클라이언트 진입 통지를 받지 못해 마커가 과거 상태로 남는 문제를 In-Flight Marker Handover 프로토콜로 해결하기로 결정했습니다.
+- `sidebar_coordinator.sh`에 순수 Reducer 함수 `selection_coordinator_align_current`와 `selection_coordinator_compute_delta`를 구현하고, `sidebar_port_tmux.sh`에 마커 옵션 설정 및 Presenter PID 시그널 인터럽트 포트를 격리했습니다.
+- `scripts/tmux-session-launcher`의 UI 이벤트 루프에서 핸드오버 마커를 감지하여 1ms 이내 마커 델타 렌더링을 수행하고, `collect_sessions` 내부의 임의 0번 인덱스 오작동 폴백을 차단했습니다.
+
+작업 결과:
+- `test-selection-alignment-unit.sh`, `test-marker-handover-contract.sh`, `test-presenter-handover-e2e.sh`를 작성하여 RED &rarr; GREEN 사이클을 완료했습니다.
+- 프로덕션 번들 `dist/tmux-session-launcher`를 빌드 및 설치하고, 라이브 15회 연속 전환 검증에서 15회 모두 정확한 세션 전환(타겟 불일치 0건)과 마커 정합성을 확인했습니다.

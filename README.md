@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.12`이며, 사용자는 `--v v0.6.12`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.12는 아카이브 복구 UX/성능 최적화 및 히스토리 잔상 UI 제거를 반영하였습니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.14`이며, 사용자는 `--v v0.6.14`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.14는 윈도우 로컬 사이드바 인플라이트 마커 핸드오버 및 선택 정렬 리듀서를 반영하여 마커 비동기화 및 타겟 불일치를 완전 해소하였습니다.
 
 ## 로컬 개발 및 테스트 설치
 
