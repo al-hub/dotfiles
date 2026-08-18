@@ -4790,3 +4790,16 @@
 작업 결과:
 - `test-selection-alignment-unit.sh`, `test-marker-handover-contract.sh`, `test-presenter-handover-e2e.sh`를 작성하여 RED &rarr; GREEN 사이클을 완료했습니다.
 - 프로덕션 번들 `dist/tmux-session-launcher`를 빌드 및 설치하고, 라이브 15회 연속 전환 검증에서 15회 모두 정확한 세션 전환(타겟 불일치 0건)과 마커 정합성을 확인했습니다.
+
+## 2026-08-19 - Subpane Height Persistence and Restoration
+
+사용자 의도:
+- 사이드바 좌우 폭뿐만 아니라 마우스로 조절한 서브페인 상하 높이도 사이드바 토글 후 그대로 기억 및 복원되도록 개선합니다.
+
+해석/결정:
+- `remember_sidebar_subpane_height_for_window` 함수를 구현하여 리사이즈 훅 및 사이드바 닫기 시 현재 높이를 `@dotfiles_sidebar_subpane_height`에 저장하도록 구성했습니다.
+- `provision_sidebar_subpane`에서 저장된 높이가 존재할 경우 기본 비율 대신 해당 높이를 재사용하도록 변경했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` TDD 계약 테스트 작성 및 통과.
+- `dist/tmux-session-launcher` 빌드 및 배포 완료.

@@ -5732,3 +5732,9 @@
 - Added typed `sidebar_port_publish_marker_handover` and `sidebar_port_notify_presenter_wake` in `scripts/lib/sidebar_port_tmux.sh` and integrated into `sidebar_switch_execute_hot` in `scripts/lib/sidebar_switch.sh`.
 - Added presenter UI event loop marker handover integration in `scripts/tmux-session-launcher` to consume pending `@dotfiles_sidebar_target_marker` on wake/key, align `current_session`/`selected_session`, and render marker delta without full screen flicker.
 - Rebuilt production bundle `dist/tmux-session-launcher` and verified all unit, contract, and live 15-iteration switch tests pass with 0 stale markers and 100% target accuracy.
+
+# Subpane Height Persistence and Restoration
+
+- Implemented `remember_sidebar_subpane_height_for_window` in `scripts/lib/sidebar_port_tmux.sh` and wired it into `sync_sidebar_layout` and `remember_sidebar_width` in `scripts/tmux-session-launcher`.
+- Updated `provision_sidebar_subpane` to read `@dotfiles_sidebar_subpane_height` on toggle/ensure so manually adjusted subpane heights are remembered and restored across sidebar toggles.
+- Added contract test `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` verifying subpane height persistence and restoration.

@@ -1716,6 +1716,11 @@ remember_sidebar_width()
                 trace_event "sidebar.width.persist.skip width=$width reason=state-write-failed"
             ;;
     esac
+    local target_win
+    target_win="$(window_target 2>/dev/null || true)"
+    if [ -n "$target_win" ] && declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+        remember_sidebar_subpane_height_for_window "$target_win"
+    fi
 }
 
 remember_sidebar_width_for_window()
@@ -1734,6 +1739,9 @@ remember_sidebar_width_for_window()
             trace_event "sidebar.width.global-save window=$window_id pane=$sidebar_pane width=$width"
             ;;
     esac
+    if declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+        remember_sidebar_subpane_height_for_window "$window_id"
+    fi
 }
 
 read_persisted_sidebar_width()

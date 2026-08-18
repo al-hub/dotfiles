@@ -116,14 +116,39 @@ sidebar_port_is_subpane() {
     [ "$opt" = "1" ]
 }
 
+remember_sidebar_subpane_height_for_window() {
+    local window_id="${1:-}"
+    [ -n "$window_id" ] || return 0
+    local sub_pane
+    sub_pane="$(sidebar_window_subpane "$window_id" || true)"
+    [ -n "$sub_pane" ] || return 0
+    local height
+    height="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
+    case "$height" in
+        ''|*[!0-9]*) return 0 ;;
+        *)
+            if [ "$height" -ge 4 ] 2>/dev/null; then
+                local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+                sidebar_tmux_cmd set-option -gq "$opt" "$height" 2>/dev/null || true
+            fi
+            ;;
+    esac
+}
 
 provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
     [ -n "$launcher_pane" ] || return 1
     if [ -z "$height" ]; then
-        local total_h
-        total_h="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{window_height}' 2>/dev/null || echo 40)"
-        height="$(sidebar_subpane_default_height "$total_h")"
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        local saved_h
+        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
+            height="$saved_h"
+        else
+            local total_h
+            total_h="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{window_height}' 2>/dev/null || echo 40)"
+            height="$(sidebar_subpane_default_height "$total_h")"
+        fi
     fi
 
     if declare -f subpane_hub_acquire_pane >/dev/null 2>&1; then
