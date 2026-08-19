@@ -4877,3 +4877,16 @@
 작업 결과:
 - `tests/tmux-single-sidebar/test-subpane-switch-position-contract.sh` 계약 테스트 작성 및 RED &rarr; GREEN 통과.
 - 전체 서브페인 테스트 스위트 통과 및 번들 배포 완료.
+
+## 2026-08-19 - Deterministic Session-Key Archive & Last-Write-Wins (Option A)
+
+사용자 의도:
+- 아카이브 파일명에서 타임스탬프와 PID를 제거하고 세션명 단위의 유일한 키(`<SessionName>.tsv`)로 관리하며, 동일 세션 재저장 시 최신 스냅샷으로 덮어쓰도록(Last-Write-Wins) 개선합니다.
+
+해석/결정:
+- `archive_session`에서 파일명을 `<safe_session_name>.tsv`로 결정론적 생성하고, 원자적 pending 이동 및 마커 동기화를 적용했습니다.
+- 아카이브 삭제/덮어쓰기 시 불필요한 `.history-imported` 마커를 자동 정리하여 재복원 시 쉘 히스토리 주입을 보장했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-archive-deterministic-naming-contract.sh` TDD RED &rarr; GREEN 검증 완료.
+- `dist/tmux-session-launcher` 번들 빌드 및 배포 완료.

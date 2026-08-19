@@ -5764,3 +5764,10 @@
 - Added `pos_flag` calculation and `-b` flag support to `join-pane` commands in `sidebar_switch_execute_hot` (`scripts/lib/sidebar_switch.sh`) and `snapshot_work_layout_transaction` (`scripts/tmux-session-launcher`).
 - Added explicit `resize-pane -t "$sub_pane" -y "$sub_height"` after `join-pane` to maintain strict height dimensions across layout operations.
 - Added TDD contract test `tests/tmux-single-sidebar/test-subpane-switch-position-contract.sh` to verify top/bottom position and height integrity when hot switching between sessions.
+
+# Deterministic Session-Key Archive & Last-Write-Wins (Option A)
+
+- Replaced timestamp/PID-prefixed archive filenames with clean, deterministic `<safe_session_name>.tsv` naming.
+- Implemented Last-Write-Wins overwrite policy per session name with atomic pending rename (`<safe_session_name>.tsv.pending` -> `<safe_session_name>.tsv`).
+- Invalidate and clean up `.history-imported` markers on archive overwrite and deletion to ensure fresh shell history replay on restore.
+- Added TDD contract test `tests/tmux-single-sidebar/test-archive-deterministic-naming-contract.sh` to verify deterministic filenames, duplicate prevention, and numeric session (`0.tsv`) compatibility.

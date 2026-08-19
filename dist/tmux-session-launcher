@@ -6303,9 +6303,10 @@ archive_session()
         trace_event "archive.prepare.error session=$session_name reason=history-directory"
         return 1
     fi
-    printf -v stamp '%(%Y%m%d-%H%M%S)T' -1
-    archive_base="${stamp}-${BASHPID:-$$}-$(safe_file_part "$session_name")"
-    archive_path="$HISTORY_DIR/${archive_base}-pending.tsv"
+    local safe_name
+    safe_name="$(safe_file_part "$session_name")"
+    archive_path="$HISTORY_DIR/${safe_name}.tsv.pending"
+    final_path="$HISTORY_DIR/${safe_name}.tsv"
     trace_event "archive.snapshot.begin session=$session_name"
     archive_global_sidebar_pane="$(find_global_sidebar_pane || true)"
     # Archive every window in the session. The empty-window target form
@@ -6424,7 +6425,6 @@ archive_session()
         metrics_archive_phase_start="$(metrics_now_us)"
     fi
 
-    final_path="$HISTORY_DIR/${archive_base}-${window_count}w.tsv"
     trace_event "archive.rename.begin session=$session_name"
     if ! validate_archive_file "$archive_path"; then
         rm -f "$archive_path"
@@ -6436,6 +6436,7 @@ archive_session()
         trace_event "archive.rename.error session=$session_name"
         return 1
     fi
+    rm -f "${final_path}${ARCHIVE_HISTORY_MARKER_SUFFIX}" 2>/dev/null || true
     archive_path_result="$final_path"
     trace_event "archive.rename.end session=$session_name"
     if [ -n "$metrics_archive_start" ]; then
@@ -7525,7 +7526,7 @@ delete_selected_archives()
     case "$answer" in
         [Yy]|[Yy][Ee][Ss])
             while IFS= read -r index; do
-                rm -f "${history_files[$index]}"
+                rm -f "${history_files[$index]}" "${history_files[$index]}${ARCHIVE_HISTORY_MARKER_SUFFIX}" 2>/dev/null || true
             done <<EOF
 $(archive_selected_indices)
 EOF
