@@ -6,6 +6,18 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-19 - Batch Restore Layout Integrity (TDD & SOLID)
+
+- **사용자 요청**:
+  - 배치 복원(Batch Restore, `restore_batch_mode=true`) 시 발생하는 작업창 너비 왜곡(distortion) 버그를 TDD 및 SOLID 원칙에 따라 해결.
+  - TDD RED Phase: `tests/tmux-single-sidebar/test-batch-restore-layout-integrity.sh`를 작성하여 복원 후 작업 패널 너비가 `25 58`이 아닌 기본 분할로 왜곡되는 현상을 재현.
+  - GREEN Phase: `scripts/tmux-session-launcher` 내 `restore_archive`에서 배치 모드 시 레이아웃 스펙을 `@dotfiles_sidebar_layout_spec`으로 윈도우에 직렬화하고, `provision_sidebar_window`에서 온디맨드 프로비저닝 시 해당 스펙을 역직렬화하여 `restore_archived_sidebar_layout`을 적용하도록 구현.
+  - 번들 빌드(`scripts/build-dist.sh`) 및 전체 계약 테스트 스위트 검증.
+- **구현 및 검증**:
+  - `test-batch-restore-layout-integrity.sh`로 RED 재현 (`42 41` 실패) 확인.
+  - `tmux-session-launcher` 수정 및 `build-dist.sh` 실행 후 `test-batch-restore-layout-integrity.sh` GREEN PASS (`25 58` 일치 확인).
+  - 전체 계약 테스트 스위트(`test-contract.sh` 8/8) 및 회귀 테스트 PASS.
+
 ## 2026-08-18 - Layer 4 Presenter UI Event Loop & Marker Handover Integration (TDD & SOLID)
 
 - **사용자 요청**:

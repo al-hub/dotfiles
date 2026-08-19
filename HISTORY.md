@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-19 - Reliability & Architecture: Batch Restore Layout Integrity & Spec Serialization (TDD & SOLID)
+
+- **배치 복원 레이아웃 무결성 직렬화 (`scripts/tmux-session-launcher`)**:
+  - `restore_archive`: `restore_batch_mode=true` 시 각 복원 대상 윈도우에 사이드바 레이아웃 스펙(`restore_window_sidebar_layouts`, `panes`, `active`, `sidebar_pane`, `work_panes`)을 `@dotfiles_sidebar_layout_spec` 옵션으로 직렬화 저장.
+  - `provision_sidebar_window`: 사이드바 지연(on-demand/lazy) 프로비저닝 완료 후 `@dotfiles_sidebar_layout_spec`이 존재하는 경우 `restore_archived_sidebar_layout`을 호출하여 아카이브 시점의 정확한 작업 패널 너비/위치 레이아웃을 복원하고 옵션을 정리(unset).
+- **TDD 검증 및 배포 번들 생성**:
+  - `tests/tmux-single-sidebar/test-batch-restore-layout-integrity.sh`: RED 재현(`42 41` 왜곡 발생) 후 GREEN 통과 (다중 세션 배치 복원 및 지연 프로비저닝 후 작업 패널 너비 `25 58` 정밀 일치 검증).
+  - `tests/tmux-single-sidebar/test-bulk-restore-lazy.sh`: PASS
+  - `tests/tmux-single-sidebar/test-archive-unit.sh`: PASS
+  - `tests/tmux-single-sidebar/test-contract.sh`: 8/8 PASS
+  - `dist/tmux-session-launcher` 번들 빌드 완료.
+
 ## 2026-08-18 - Reliability & Architecture: Layer 4 Presenter UI Event Loop & Marker Handover Integration (TDD & SOLID)
 
 - **Presenter UI 이벤트 루프 및 시그널 핸들러 마커 핸드오버 통합 (`scripts/tmux-session-launcher`)**:

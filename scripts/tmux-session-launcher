@@ -1922,6 +1922,18 @@ provision_sidebar_window()
     fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
     ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
+
+    local layout_spec
+    layout_spec="$(sidebar_tmux_cmd show-option -wqv -t "$window_id" "@dotfiles_sidebar_layout_spec" 2>/dev/null || true)"
+    if [ -n "$layout_spec" ]; then
+        local spec_layout spec_panes spec_active spec_sidebar_pane spec_work_panes
+        IFS=$'\t' read -r spec_layout spec_panes spec_active spec_sidebar_pane spec_work_panes <<< "$layout_spec"
+        if [ -n "$spec_layout" ]; then
+            restore_archived_sidebar_layout "$window_id" "$spec_layout" "$spec_panes" "$spec_active" "$spec_sidebar_pane" "$spec_work_panes" || true
+        fi
+        sidebar_tmux_cmd set-option -wu -t "$window_id" "@dotfiles_sidebar_layout_spec" 2>/dev/null || true
+    fi
+
     trace_event "sidebar.window.provision.end window=$window_id pane=$pane_id"
     trace_event "sidebar.provision.end window=$window_id pane=$pane_id result=created"
     return 0
@@ -5960,6 +5972,13 @@ restore_archive()
                     restore_abort sidebar-layout
                     return 1
                 }
+            fi
+        done
+    else
+        for window_index in "${!restore_window_targets[@]}"; do
+            if [ -n "${restore_window_sidebar_layouts[$window_index]:-}" ]; then
+                local spec="${restore_window_sidebar_layouts[$window_index]}"$'\t'"${restore_window_sidebar_panes[$window_index]:-}"$'\t'"${restore_window_sidebar_active[$window_index]:-}"$'\t'"${restore_window_sidebar_pane[$window_index]:-}"$'\t'"${restore_window_work_panes[$window_index]:-}"
+                sidebar_tmux_cmd set-option -wq -t "${restore_window_targets[$window_index]}" "@dotfiles_sidebar_layout_spec" "$spec" 2>/dev/null || true
             fi
         done
     fi
