@@ -6,6 +6,18 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-20 - Release v0.6.15: Subpane Swap, Deterministic Archive & Batch Restore Integrity
+
+- **사용자 요청**:
+  - 현재 구현된 기능 및 버그 수정을 포함하여 버전을 승격(v0.6.15)하고 커밋, 태그 생성 및 푸시 수행.
+- **주요 내용**:
+  - 서브페인 상/하 위치 전환 및 영속화, 세션 전환 유지.
+  - 서브페인 높이 리사이즈 영속화.
+  - 결정론적 세션 아카이브 명명 및 Last-Write-Wins.
+  - 배치 복원 시 다중 분할 레이아웃 무결성 직렬화.
+  - `install.toml` 매니페스트 정리.
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`의 안정 기준 버전을 `v0.6.15`(v6.15)로 승격.
+
 ## 2026-08-19 - Fix: Purge Deleted tmux-sidebar-controller from install.toml and Test Harnesses
 
 - **사용자 요청**:

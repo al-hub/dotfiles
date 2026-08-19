@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-20 - Release v0.6.15: Subpane Swap, Deterministic Archive & Batch Restore Integrity
+
+- **v0.6.15 릴리스 승격**:
+  - 서브페인 상/하 위치 전환(`Ctrl+a P`, `Ctrl+Alt+Up/Down`) 및 영속화(`@dotfiles_sidebar_subpane_position`), 세션 전환 간 위치/치수 보존.
+  - 서브페인 수동 리사이즈 높이 영속화 및 토글 복원.
+  - 결정론적 세션 아카이브 파일 명명 규칙(`<safe_session_name>.tsv`) 및 Last-Write-Wins 정책.
+  - 배치 복원 시 다중 분할 작업 영역 레이아웃 무결성 직렬화(`@dotfiles_sidebar_layout_spec`) 및 지연 프로비저닝 복원.
+  - `install.toml` 매니페스트 및 테스트 하네스에서 삭제된 `tmux-sidebar-controller` 완전 제거.
+  - 문서 허브 체계화(`docs/` 디렉터리 재구성, `docs/keybindings.md`, `docs/README.md` 용어 사전 구축).
+- **문서 및 기준 동기화**:
+  - `AGENTS.md`, `GEMINI.md`, `README.md` 안정 설치 기준 버전을 `v0.6.15`(v6.15)로 갱신.
+
 ## 2026-08-19 - Fix: Purge Deleted tmux-sidebar-controller from install.toml and Test Harnesses
 
 - **설치 매니페스트 정리 (`install.toml`)**:
