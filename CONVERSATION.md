@@ -4865,3 +4865,15 @@
 작업 결과:
 - `tests/tmux-single-sidebar/test-subpane-position-contract.sh` TDD RED &rarr; GREEN 검증 완료.
 - `dist/tmux-session-launcher` 번들 빌드 및 배포 완료.
+
+## 2026-08-19 - Subpane Switch Position Preservation Across Session Switches
+
+사용자 의도:
+- 서브페인을 상단에 배치한 상태에서 다른 세션으로 이동(`Enter`)하더라도 서브페인이 하단으로 내려오지 않고 상단 위치를 안정적으로 유지하도록 개선합니다.
+
+해석/결정:
+- 세션 전환 핫패스(`sidebar_switch_execute_hot`)와 작업 레이아웃 스냅샷 트랜잭션(`snapshot_work_layout_transaction`)에서 `join-pane` 시 `sidebar_subpane_get_position` 기반 `-b` 플래그를 누락 없이 적용하고, 조인 직후 높이(`@dotfiles_sidebar_subpane_height`)를 원자적으로 강제 재조정하도록 구현했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-switch-position-contract.sh` 계약 테스트 작성 및 RED &rarr; GREEN 통과.
+- 전체 서브페인 테스트 스위트 통과 및 번들 배포 완료.

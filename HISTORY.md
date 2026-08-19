@@ -5758,3 +5758,9 @@
 - Resolved subpane distortion during top/bottom swap: enhanced `sidebar_subpane_swap_position` in `scripts/lib/sidebar_port_tmux.sh` to immediately re-apply target height (`@dotfiles_sidebar_subpane_height`), guaranteeing the subpane retains its designated 12 lines (and launcher retains remaining height) when relocated to top or bottom.
 - Completely isolated subpane state from general work panes by removing hook leakage in `scripts/tmux-session-launcher`.
 - Verified dimension preservation and work pane isolation via TDD in `tests/tmux-single-sidebar/test-subpane-position-contract.sh`.
+
+# Subpane Top/Bottom Position Preservation Across Session Switches
+
+- Added `pos_flag` calculation and `-b` flag support to `join-pane` commands in `sidebar_switch_execute_hot` (`scripts/lib/sidebar_switch.sh`) and `snapshot_work_layout_transaction` (`scripts/tmux-session-launcher`).
+- Added explicit `resize-pane -t "$sub_pane" -y "$sub_height"` after `join-pane` to maintain strict height dimensions across layout operations.
+- Added TDD contract test `tests/tmux-single-sidebar/test-subpane-switch-position-contract.sh` to verify top/bottom position and height integrity when hot switching between sessions.

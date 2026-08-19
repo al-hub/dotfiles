@@ -1462,7 +1462,18 @@ snapshot_work_layout_transaction()
     fi
 
     if [ -n "$sub_pane" ] && [ -n "$sidebar_pane" ]; then
-        tmux join-pane -d -s "$sub_pane" -t "$sidebar_pane" -v -l "$sub_height" 2>/dev/null || true
+        local pos_flag=""
+        if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
+            if [ "$(sidebar_subpane_get_position)" = "top" ]; then
+                pos_flag="-b"
+            fi
+        fi
+        if ! tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$sub_height" 2>/dev/null; then
+            tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v 2>/dev/null || true
+        fi
+        if [ -n "$sub_height" ] && [ "$sub_height" -ge 4 ] 2>/dev/null; then
+            tmux resize-pane -t "$sub_pane" -y "$sub_height" 2>/dev/null || true
+        fi
         tmux select-pane -t "$sub_pane" -T "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" 2>/dev/null || true
         tmux set-option -p -q -t "$sub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
     elif [ -n "$sub_pane" ]; then
