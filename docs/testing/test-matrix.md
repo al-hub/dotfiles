@@ -12,7 +12,7 @@ ownership, rollback을 변경하면 반드시 실행한다.
 
 ```sh
 bash -n scripts/tmux-session-launcher
-bash -n scripts/tmux-sidebar-controller
+bash -n scripts/tmux-sidebar-tmux-adapter
 bash tests/tmux-single-sidebar/test-contract.sh
 bash tests/tmux-single-sidebar/test-window-local-contract.sh
 bash tests/tmux-single-sidebar/test-active-window.sh

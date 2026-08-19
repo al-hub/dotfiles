@@ -6,6 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-19 - Fix: Purge Deleted tmux-sidebar-controller from install.toml and Test Harnesses
+
+- **사용자 요청**:
+  - `install.sh` 실행 중 발생한 `curl: (37) Could not open file .../scripts/tmux-sidebar-controller` 원인 분석 및 수정 사항 적용, commit & push 요청.
+- **분석 및 조치**:
+  - `scripts/tmux-sidebar-controller`가 과거 커밋(`9ed7345`)에서 삭제되었으나 `install.toml` 및 테스트 하네스에서 참조가 남아있어 `install.sh` 실행 시 다운로드 에러가 발생함을 확인.
+  - `install.toml`에서 `tmux-sidebar-controller` 섹션 및 `tmux-session-launcher` 의존성 제거.
+  - 테스트 및 문서 내 잔존 참조 동기화.
+  - `install.sh` 및 계약 테스트(`test-contract.sh`, `test-window-local-contract.sh`) 통과 확인 후 커밋 및 푸시.
+
 ## 2026-08-19 - Batch Restore Layout Integrity (TDD & SOLID)
 
 - **사용자 요청**:

@@ -29,7 +29,6 @@ trap cleanup EXIT INT TERM
 mkdir -p "$HOME_DIR/.local/bin"
 ln -s "$LAUNCHER" "$HOME_DIR/.local/bin/tmux-session-launcher"
 ln -s "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" "$HOME_DIR/.local/bin/tmux-sidebar-tmux-adapter"
-ln -s "$REPO_ROOT/scripts/tmux-sidebar-controller" "$HOME_DIR/.local/bin/tmux-sidebar-controller"
 
 tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$TMUX_CONFIG" "$@"; }
 

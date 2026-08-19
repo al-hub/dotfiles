@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-19 - Fix: Purge Deleted tmux-sidebar-controller from install.toml and Test Harnesses
+
+- **설치 매니페스트 정리 (`install.toml`)**:
+  - 커밋 `9ed7345`에서 삭제된 레거시 스크립트 `scripts/tmux-sidebar-controller`에 대한 `[[dotfiles]]` 정의 블록을 삭제하고, `tmux-session-launcher`의 `depends` 배열에서 참조 제거.
+  - `install.sh` 실행 시 존재하지 않는 `scripts/tmux-sidebar-controller` 다운로드 시도로 인한 `curl (37)` 에러 해결.
+- **테스트 하네스 및 문서 동기화 (`tests/tmux-single-sidebar/`, `README.md`, `docs/testing/test-matrix.md`, `AGENTS.md`, `GEMINI.md`)**:
+  - `test-interactive-common.sh`, `test-keyboard-e2e.sh`, `test-session-name-zero.sh`에서 삭제된 `tmux-sidebar-controller` 심볼릭 링크 생성 구문 제거.
+  - `test-matrix.md`의 문법 검사 대상 목록 및 `README.md` 디렉터리 트리에서 삭제된 컨트롤러 파일 제거.
+- **검증**:
+  - `REPO_RAW_URL=file://$PWD INSTALL_TOML_URL=file://$PWD/install.toml bash install.sh`를 통한 `tmux` 설치 흐름 정상 완료 확인.
+  - 기본 문법 검사 및 `tests/tmux-single-sidebar/test-contract.sh`(8/8 PASS), `test-window-local-contract.sh`(3/3 PASS) 통과.
+
 ## 2026-08-19 - Reliability & Architecture: Batch Restore Layout Integrity & Spec Serialization (TDD & SOLID)
 
 - **배치 복원 레이아웃 무결성 직렬화 (`scripts/tmux-session-launcher`)**:

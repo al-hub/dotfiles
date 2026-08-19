@@ -63,7 +63,7 @@
 - `tests/tmux-single-sidebar/test-window-local-contract.sh`: managed window별 sidebar 1개와 global toggle contract
 - `tests/tmux-single-sidebar/test-keyboard-e2e-window-local-switch.sh`: attached PTY window-local session switch contract
 - `tests/tmux-single-sidebar/test-window-local-lifecycle-contract.sh`, `test-window-local-multi-client.sh`: archive/lifecycle와 linked-window/multi-client 경계 contract
-- `scripts/tmux-sidebar-tmux-adapter`, `scripts/tmux-sidebar-controller`: 단일 sidebar의 tmux 경계와 lifecycle 구현
+- `scripts/tmux-sidebar-tmux-adapter`: 단일 sidebar의 tmux 경계 어댑터 구현
 
 ## 작업 규칙
 

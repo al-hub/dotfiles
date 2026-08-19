@@ -168,7 +168,6 @@ trap cleanup EXIT INT TERM
 mkdir -p "$HOME_DIR/.local/bin" "$HISTORY_DIR"
 ln -sfn "$LAUNCHER" "$HOME_DIR/.local/bin/tmux-session-launcher"
 ln -sfn "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" "$HOME_DIR/.local/bin/tmux-sidebar-tmux-adapter"
-ln -sfn "$REPO_ROOT/scripts/tmux-sidebar-controller" "$HOME_DIR/.local/bin/tmux-sidebar-controller"
 
 case "$SYSCALL_TRACE" in
     auto)

@@ -26,7 +26,6 @@ KEEP_RUN_DIR="${KEEP_RUN_DIR:-false}"
 mkdir -p "$HOME_DIR/.local/bin" "$HISTORY_DIR"
 ln -sfn "$LAUNCHER" "$HOME_DIR/.local/bin/tmux-session-launcher"
 ln -sfn "$REPO_ROOT/scripts/tmux-sidebar-tmux-adapter" "$HOME_DIR/.local/bin/tmux-sidebar-tmux-adapter"
-ln -sfn "$REPO_ROOT/scripts/tmux-sidebar-controller" "$HOME_DIR/.local/bin/tmux-sidebar-controller"
 export HOME="$HOME_DIR" TMUX_SESSION_HISTORY_DIR="$HISTORY_DIR" TERM=xterm
 tmuxc() { HOME="$HOME_DIR" tmux -L "$SOCKET" -f "$REPO_ROOT/dotfiles/tmux.conf" "$@"; }
 
