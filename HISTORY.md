@@ -6,6 +6,16 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-20 - Bugfix: Purge Dangling sidebar_tmux_control_stop in restore_terminal (TDD)
+
+- **잔존 레거시 호출 제거 (`scripts/tmux-session-launcher`)**:
+  - `restore_terminal()` 내부에서 과거 FIFO 제어 모드 리팩토링 시 삭제된 미정의 함수 `sidebar_tmux_control_stop` 호출 라인 완전 제거.
+  - 세션 전체 삭제(`d -> a -> enter`) 후 런처 종료 시 `/home/al-hub/.local/bin/tmux-session-launcher: line 6025: sidebar_tmux_control_stop: command not found` 에러 출력 문제 해결.
+- **TDD 단위 테스트 추가 (`tests/tmux-single-sidebar/test-restore-terminal-unit.sh`)**:
+  - `restore_terminal` 실행 시 `command not found` 에러 없이 깨끗한 터미널 복구가 수행되는지 검증 (RED -> GREEN).
+- **프로덕션 번들 갱신 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh`를 통해 배포 번들 동기화.
+
 ## 2026-08-20 - Architecture & Performance: Look-Up Table (LUT) Waveform Engine & 30 FPS Adaptive Clock (TDD & SOLID)
 
 - **순수 도메인 애니메이션 모듈 신설 (`scripts/lib/sidebar_domain_animation.sh`)**:

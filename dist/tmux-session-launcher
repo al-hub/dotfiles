@@ -6022,7 +6022,6 @@ restore_terminal()
     if [ -n "${SIDEBAR_WINDOW_ID:-}" ]; then
         tmux set-option -wq -t "$SIDEBAR_WINDOW_ID" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
     fi
-    sidebar_tmux_control_stop
 }
 
 handle_tick_signal()

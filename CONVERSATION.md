@@ -6,6 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-20 - Bugfix: Purge Dangling sidebar_tmux_control_stop in restore_terminal (TDD)
+
+- **사용자 요청**:
+  - 세션 전체 삭제(`d -> a -> enter`) 후 런처 종료 시 `/home/al-hub/.local/bin/tmux-session-launcher: line 6025: sidebar_tmux_control_stop: command not found` 에러 메시지 발생 원인 탐지 및 TDD/SOLID 기반 Subagent-Driven 개선 요청.
+- **조치 내용**:
+  - `tests/tmux-single-sidebar/test-restore-terminal-unit.sh` 신설하여 종료 트랩 에러 발생(RED) 재현.
+  - `scripts/tmux-session-launcher` 내 `restore_terminal()`에서 과거 FIFO 제어 모드 잔재인 미정의 함수 `sidebar_tmux_control_stop` 호출 삭제.
+  - `scripts/build-dist.sh`를 통해 `dist/tmux-session-launcher` 번들 갱신.
+  - 단위 테스트 및 전체 계약 테스트(`test-contract.sh`, `test-window-local-contract.sh`, `test-animation-lut-unit.sh`) 통과(GREEN) 확인 후 커밋.
+
 ## 2026-08-20 - Architecture: AI CLI Session Name Animation Engine Refactoring (Candidate 1: LUT & 30 FPS Dynamic Clock)
 
 - **사용자 요청**:
