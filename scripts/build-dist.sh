@@ -19,6 +19,7 @@ EOF
 # Append lib modules in dependency order
 LIBS=(
     "sidebar_domain.sh"
+    "sidebar_domain_animation.sh"
     "sidebar_port_tmux.sh"
     "sidebar_subpane_hub.sh"
     "sidebar_topology.sh"

@@ -3,12 +3,32 @@ set -euo pipefail
 
 resolve_launcher_dir() {
     local target="${BASH_SOURCE[0]}"
+    if [[ "$target" == /dev/fd/* ]] || [[ "$target" == /proc/* ]] || [ ! -e "$target" ]; then
+        if [ -n "${LAUNCHER:-}" ] && [ -e "$LAUNCHER" ]; then
+            target="$LAUNCHER"
+        fi
+    fi
     while [ -L "$target" ]; do
-        local dir="$(cd -P "$(dirname "$target")" && pwd)"
-        target="$(readlink "$target")"
+        case "$target" in
+            /dev/fd/*|/proc/*) break ;;
+        esac
+        local dir
+        dir="$(cd -P "$(dirname "$target")" 2>/dev/null && pwd || true)"
+        [ -n "$dir" ] || break
+        local link_target
+        link_target="$(readlink "$target" 2>/dev/null || true)"
+        [ -n "$link_target" ] || break
+        target="$link_target"
         [[ $target != /* ]] && target="$dir/$target"
     done
-    echo "$(cd -P "$(dirname "$target")" && pwd)"
+    local final_dir
+    final_dir="$(cd -P "$(dirname "$target")" 2>/dev/null && pwd || true)"
+    if [ -z "$final_dir" ] || [ ! -d "$final_dir/lib" ]; then
+        if [ -n "${LAUNCHER:-}" ] && [ -r "$LAUNCHER" ]; then
+            final_dir="$(cd -P "$(dirname "$LAUNCHER")" 2>/dev/null && pwd || true)"
+        fi
+    fi
+    echo "${final_dir:-.}"
 }
 LAUNCHER_DIR="$(resolve_launcher_dir)"
 SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
@@ -55,7 +75,7 @@ SIDEBAR_POLL_TIMEOUT="${TMUX_SESSION_SIDEBAR_POLL_TIMEOUT:-0.15}"
 SIDEBAR_STATE_REFRESH_SECONDS="${TMUX_SESSION_SIDEBAR_STATE_REFRESH_SECONDS:-5}"
 SIDEBAR_FORCE_REFRESH_CHECK_SECONDS="${TMUX_SESSION_SIDEBAR_FORCE_REFRESH_CHECK_SECONDS:-1}"
 SIDEBAR_KEY_MAINTENANCE_COOLDOWN_MS="${TMUX_SESSION_SIDEBAR_KEY_MAINTENANCE_COOLDOWN_MS:-250}"
-SIDEBAR_ANIMATION_INTERVAL="${TMUX_SESSION_SIDEBAR_ANIMATION_INTERVAL:-0.25}"
+SIDEBAR_ANIMATION_INTERVAL="${TMUX_SESSION_SIDEBAR_ANIMATION_INTERVAL:-0.033}"
 SIDEBAR_IDLE_INTERVAL="${TMUX_SESSION_SIDEBAR_IDLE_INTERVAL:-$SIDEBAR_POLL_TIMEOUT}"
 SIDEBAR_ADAPTIVE_IDLE_READ="${TMUX_SESSION_SIDEBAR_ADAPTIVE_IDLE_READ:-true}"
 SIDEBAR_ADAPTIVE_IDLE_TIMEOUT="${TMUX_SESSION_SIDEBAR_ADAPTIVE_IDLE_TIMEOUT:-1.0}"
@@ -7295,7 +7315,12 @@ run_tui()
             animation_tick_counter=$((animation_tick_counter + 1))
             if [ "$animation_tick_counter" -ge 1 ]; then
                 animation_tick_counter=0
-                animation_frame=$(((animation_frame + 1) % 24))
+                if [ -n "${EPOCHREALTIME:-}" ]; then
+                    local now_us="${EPOCHREALTIME/./}"
+                    animation_frame=$(( (now_us / 33333) % 24 ))
+                else
+                    animation_frame=$(((animation_frame + 1) % 24))
+                fi
                 for index in "${!session_animate[@]}"; do
                     [ "${session_animate[$index]}" = "true" ] && {
                         render_animated_name_cells

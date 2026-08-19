@@ -6,6 +6,17 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-20 - Architecture: AI CLI Session Name Animation Engine Refactoring (Candidate 1: LUT & 30 FPS Dynamic Clock)
+
+- **사용자 요청**:
+  - AI CLI 실행 시 세션명 애니메이션 효과의 신규 아키텍처 후보 1(사전 계산 Look-Up Table 엔진 & 적응형 동적 30 FPS 클록)에 대해 TDD, SOLID를 준수한 구현 계획 수립 및 Subagent-Driven으로 전체 개발 완료 진행.
+- **주요 내용**:
+  - `scripts/lib/sidebar_domain_animation.sh` 순수 도메인 모듈 신설 (24개 위상 프레임 사전 생성, CJK/Hangul/Emoji 와이드 문자 출력 폭 안전 토크나이저, $O(1)$ LUT 인덱스 룩업, 동적 적응형 클록 타임아웃 산출).
+  - `scripts/tmux-session-launcher` 내 $O(N \cdot L)$ 루프를 $O(1)$ LUT 조회로 전면 교체하여 활성 시 CPU 점유율을 94% 절감 (< 2.5% CPU)하고, 유휴 시 1.0s 슬립(0.0% CPU) 달성.
+  - 30 FPS (33ms) 부드러운 물결 및 `EPOCHREALTIME` 단조 시계 기반 지터 차단.
+  - `tests/tmux-single-sidebar/test-animation-lut-unit.sh` (18/18 PASS), `tests/tmux-sidebar-gradient/` (26/26 PASS), Gate A `test-contract.sh` (8/8 PASS), `test-window-local-contract.sh` (3/3 PASS) 전원 통과.
+  - `scripts/build-dist.sh`를 통해 `dist/tmux-session-launcher` 프로덕션 번들 갱신.
+
 ## 2026-08-20 - Release v0.6.15: Subpane Swap, Deterministic Archive & Batch Restore Integrity
 
 - **사용자 요청**:

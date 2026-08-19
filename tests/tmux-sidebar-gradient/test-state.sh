@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 load_launcher_functions
 
-declare -A TEST_FINGERPRINT_BY_PANE=()
+declare -gA TEST_FINGERPRINT_BY_PANE=()
 
 session_ai_fingerprint_for_pane()
 {

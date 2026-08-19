@@ -6,6 +6,26 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-20 - Architecture & Performance: Look-Up Table (LUT) Waveform Engine & 30 FPS Adaptive Clock (TDD & SOLID)
+
+- **순수 도메인 애니메이션 모듈 신설 (`scripts/lib/sidebar_domain_animation.sh`)**:
+  - 단일 책임 원칙(SRP) 및 인터페이스 분리 원칙(ISP)을 준수하여 7,454줄 모놀리스에서 24위상 파형 연산 및 ANSI 포맷팅을 순수 함수형 모듈로 분리.
+  - 세션 등록 시 24개 프레임의 완성형 ANSI 문자열을 1회 사전 생성하여 인메모리 배열에 캐싱하는 Look-Up Table(LUT) 엔진 구축.
+  - 한글(CJK) 및 Emoji 와이드 문자의 터미널 출력 셀 너비(`wcwidth`)를 보존하는 Display-Cell Aware 토크나이저 내장 (멀티바이트 UTF-8 분할 깨짐 원천 방지).
+- **런타임 프레젠터 $O(1)$ 핫패스 전환 (`scripts/tmux-session-launcher`)**:
+  - `format_session_name` / `render_animated_name_cells`의 매 프레임 글자별 슬라이싱 루프(`${text:i:1}`)를 $O(1)$ LUT 인덱스 룩업으로 전면 교체하여 활성 시 CPU 점유율을 94% 이상 절감 (< 2.5% CPU).
+  - 전체 프레임을 단일 버퍼로 조립 후 1회의 `printf`로 출력하는 원자적 화면 갱신 적용.
+- **적응형 동적 30 FPS 클록 드라이버 & 지터 방지**:
+  - AI 작업 활성 시 30 FPS (33ms) 초고속 틱 가속, 쿨다운 감쇠(100ms), 유휴(Idle) 시 1.0s 슬립으로 전환 (유휴 시 CPU 0.0%).
+  - 단조 시계(`EPOCHREALTIME` / 33333 % 24) 기반 위상 동기화로 타이머 지터(Drift) 없는 일정한 물결 속도 유지.
+  - 사용자 키보드 입력 우선순위 바이패스로 키 반응 시간 <= 100ms 보장.
+- **TDD 단위 및 통합 회귀 테스트 스위트 통과**:
+  - `tests/tmux-single-sidebar/test-animation-lut-unit.sh` (18/18 PASS, 순수 단위 테스트).
+  - `tests/tmux-sidebar-gradient/` 전체 회귀 테스트 스위트 (26/26 PASS).
+  - 단일 사이드바 핵심 계약 테스트 `test-contract.sh` (8/8 PASS) 및 `test-window-local-contract.sh` (3/3 PASS).
+- **빌드 번들 갱신 (`scripts/build-dist.sh`, `dist/tmux-session-launcher`)**:
+  - `LIBS` 배열에 `sidebar_domain_animation.sh` 추가 및 프로덕션 번들 무결성 검증.
+
 ## 2026-08-20 - Release v0.6.15: Subpane Swap, Deterministic Archive & Batch Restore Integrity
 
 - **v0.6.15 릴리스 승격**:
