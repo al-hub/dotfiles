@@ -1072,9 +1072,6 @@ sync_sidebar_layout()
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
     fi
-    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
-        sync_sidebar_subpane_position_for_window "$window_id"
-    fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
         return 1

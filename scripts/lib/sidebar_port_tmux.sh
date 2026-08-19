@@ -172,7 +172,13 @@ sidebar_subpane_swap_position() {
     launcher_pane="$(sidebar_window_pane "$window_id" 2>/dev/null || true)"
     sub_pane="$(sidebar_window_subpane "$window_id" 2>/dev/null || true)"
     if [ -n "$launcher_pane" ] && [ -n "$sub_pane" ]; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        local target_h
+        target_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        [ -n "$target_h" ] && [ "$target_h" -ge 4 ] 2>/dev/null || target_h=12
+
         sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
         sidebar_tmux_cmd select-pane -t "$launcher_pane" 2>/dev/null || true
     fi
 }

@@ -4852,3 +4852,16 @@
 
 작업 결과:
 - 문서 디렉터리 및 용어 표준화 완료. 전체 단위/계약 테스트 통과.
+
+## 2026-08-19 - Subpane Dimension Integrity & Scope Isolation
+
+사용자 의도:
+- 서브페인 상/하단 이동 시 단순 내용 switch가 아니라 서브페인의 고유 치수(폭/높이)를 보존하는 진정한 Pane Move가 되도록 개선하고, 일반 워크페인과 격리된 사이드바 전용 기능으로 운영합니다.
+
+해석/결정:
+- `sidebar_subpane_swap_position` 시 스왑 직후 서브페인의 지정된 높이(`@dotfiles_sidebar_subpane_height`)를 즉시 재적용하여 상/하단 어디로 가든 서브페인은 12줄, 런처는 잔여 높이를 유지하도록 치수 무결성을 확보했습니다.
+- 전역 훅 의존성을 정리하여 일반 워크페인의 페인 스왑이 사이드바 상태를 변경하지 않도록 스코프를 완전히 격리했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-position-contract.sh` TDD RED &rarr; GREEN 검증 완료.
+- `dist/tmux-session-launcher` 번들 빌드 및 배포 완료.

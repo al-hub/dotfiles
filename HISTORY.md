@@ -5752,3 +5752,9 @@
 - Reorganized `docs/` into categorized subdirectories: `guides/` (user & tool guides), `design/` (core architecture & internals), `testing/` (test matrices & verification plans), and `archives/` (historical reports & regression audits).
 - Created `docs/README.md` as the central documentation hub featuring the project's Canonical Glossary and structured document index.
 - Updated all cross-references across `README.md`, `AGENTS.md`, `GEMINI.md`, `shortcut.md`, and all documents in `docs/`.
+
+# Subpane Dimension Integrity & Scope Isolation
+
+- Resolved subpane distortion during top/bottom swap: enhanced `sidebar_subpane_swap_position` in `scripts/lib/sidebar_port_tmux.sh` to immediately re-apply target height (`@dotfiles_sidebar_subpane_height`), guaranteeing the subpane retains its designated 12 lines (and launcher retains remaining height) when relocated to top or bottom.
+- Completely isolated subpane state from general work panes by removing hook leakage in `scripts/tmux-session-launcher`.
+- Verified dimension preservation and work pane isolation via TDD in `tests/tmux-single-sidebar/test-subpane-position-contract.sh`.
