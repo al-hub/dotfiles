@@ -6,6 +6,20 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Bugfix: Preserve Subpane ON State Across Full Sidebar Toggles (Ctrl+a s)
+
+- **사용자 요청**:
+  - 서브페인을 켜둔 상태에서 `Ctrl+a s`로 사이드바 전체를 닫았다가 다시 열면 서브페인의 높이는 유지되지만 서브페인이 꺼진 상태(OFF)로 나오는 현상 수정 요청.
+- **원인 분석**:
+  1. `Ctrl+a s`(`toggle_current_sidebar`)로 사이드바를 다시 켤 때, `provision_sidebar_window`가 사이드바 런처 페인만 생성하고 `ensure_sidebar_subpane_window`를 호출하지 않아 서브페인이 백그라운드 허브 세션에 남겨진 채 조인되지 않음.
+  2. 허브 세션 생성 후 `toggle_current_sidebar`의 활성 세션 감지가 `dotfiles-subpane-hub`로 치우쳐 실제 사용자 세션 프로비저닝이 누락되는 엣지 케이스 존재.
+  3. `@dotfiles_sidebar_subpane_enabled` 상태의 디스크 영속성 미지원.
+- **조치 내용**:
+  - `provision_sidebar_window`에서 런처 페인 생성/존재 확인 후 항상 `ensure_sidebar_subpane_window`를 호출하도록 통합.
+  - `toggle_current_sidebar`에서 인프라 세션을 배제하고 사용자 활성 세션을 엄격히 타깃팅하도록 개선.
+  - 서브페인 활성 상태(`SIDEBAR_SUBPANE_ENABLED_STATE_FILE`)의 디스크 영속화 및 자동 복구 추가.
+  - `Ctrl+a s` 반복 토글 및 높이/ON 상태 보존 E2E 테스트 통과 확인 후 배포.
+
 ## 2026-08-22 - Bugfix: Active Window Routing for In-Sidebar Subpane Toggle
 
 - **사용자 요청**:

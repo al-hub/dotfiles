@@ -116,6 +116,53 @@ sidebar_port_is_subpane() {
     [ "$opt" = "1" ]
 }
 
+persist_sidebar_subpane_enabled() {
+    local enabled="$1" state_dir tmp_file
+    case "$enabled" in 0|1) ;; *) return 1 ;; esac
+    local state_file="${SIDEBAR_SUBPANE_ENABLED_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-enabled}"
+    state_dir="$(dirname "$state_file")"
+    mkdir -p "$state_dir" 2>/dev/null || return 1
+    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-subpane-enabled.XXXXXX" 2>/dev/null || true)"
+    [ -n "$tmp_file" ] || return 1
+    if ! printf '%s\n' "$enabled" > "$tmp_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+    if ! mv -f -- "$tmp_file" "$state_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+}
+
+read_persisted_sidebar_subpane_enabled() {
+    local state_file="${SIDEBAR_SUBPANE_ENABLED_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-enabled}"
+    local enabled
+    [ -r "$state_file" ] || return 1
+    IFS= read -r enabled < "$state_file" || true
+    case "$enabled" in
+        0|1) printf '%s\n' "$enabled"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidebar_subpane_get_enabled() {
+    local opt="${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}"
+    local enabled
+    enabled="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+    if [ "$enabled" = "0" ] || [ "$enabled" = "1" ]; then
+        printf '%s\n' "$enabled"
+        return 0
+    fi
+    enabled="$(read_persisted_sidebar_subpane_enabled 2>/dev/null || true)"
+    if [ "$enabled" = "0" ] || [ "$enabled" = "1" ]; then
+        sidebar_tmux_cmd set-option -gq "$opt" "$enabled" 2>/dev/null || true
+        printf '%s\n' "$enabled"
+        return 0
+    fi
+    printf '0\n'
+    return 0
+}
+
 persist_sidebar_subpane_height() {
     local height="$1" state_dir tmp_file
     case "$height" in ''|*[!0-9]*) return 1 ;; esac
@@ -376,7 +423,7 @@ ensure_sidebar_subpane_window() {
     [ -n "$launcher_pane" ] || return 0
 
     local enabled sub_pane
-    enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
+    enabled="$(sidebar_subpane_get_enabled)"
     sub_pane="$(sidebar_window_subpane "$window_id" || true)"
 
     if [ "$enabled" = "1" ]; then
@@ -394,10 +441,11 @@ toggle_sidebar_subpane_global() {
     local target_window="${1:-${SIDEBAR_WINDOW_ID:-}}"
     local opt="${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}"
     local current
-    current="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || echo 0)"
+    current="$(sidebar_subpane_get_enabled)"
     local next=1
     [ "$current" = "1" ] && next=0
     sidebar_tmux_cmd set-option -gq "$opt" "$next" 2>/dev/null || true
+    persist_sidebar_subpane_enabled "$next" 2>/dev/null || true
 
     if [ "$next" = "1" ]; then
         local active_win="$target_window"
@@ -453,7 +501,10 @@ provision_sidebar_window() {
     fi
     local existing
     existing="$(sidebar_window_pane "$window_id" || true)"
-    [ -z "$existing" ] || return 0
+    if [ -n "$existing" ]; then
+        ensure_sidebar_subpane_window "$window_id" "$existing" || true
+        return 0
+    fi
     local work_pane
     work_pane="$(sidebar_tmux_cmd list-panes -t "$window_id" -F '#{pane_id}|#{pane_title}|#{@dotfiles_sidebar_subpane}' 2>/dev/null |
         awk -F '|' '$2 != "dotfiles-session-sidebar" && $2 != "dotfiles-sidebar-subpane" && $3 != "1" { print $1; exit }')"
@@ -468,6 +519,7 @@ provision_sidebar_window() {
     sidebar_tmux_cmd select-pane -t "$pane_id" -T "dotfiles-session-sidebar" 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$pane_id" remain-on-exit on 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$pane_id" @dotfiles_sidebar_pane 1 2>/dev/null || true
+    ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
     printf '%s\n' "$pane_id"
 }
 

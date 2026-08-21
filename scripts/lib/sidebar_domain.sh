@@ -55,10 +55,10 @@ sidebar_domain_layout_body() {
         *) printf '%s\n' "$layout" ;;
     esac
 }
-SIDEBAR_SUBPANE_TITLE="dotfiles-sidebar-subpane"
 SIDEBAR_SUBPANE_OPTION="@dotfiles_sidebar_subpane_enabled"
 SIDEBAR_SUBPANE_HEIGHT_OPTION="@dotfiles_sidebar_subpane_height"
 SIDEBAR_SUBPANE_POSITION_OPTION="@dotfiles_sidebar_subpane_position"
+SIDEBAR_SUBPANE_ENABLED_STATE_FILE="${TMUX_SESSION_SIDEBAR_SUBPANE_ENABLED_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-enabled}"
 SIDEBAR_SUBPANE_HEIGHT_STATE_FILE="${TMUX_SESSION_SIDEBAR_SUBPANE_HEIGHT_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-height}"
 SIDEBAR_SUBPANE_POSITION_STATE_FILE="${TMUX_SESSION_SIDEBAR_SUBPANE_POSITION_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-position}"
 

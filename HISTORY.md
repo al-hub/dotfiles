@@ -6,6 +6,15 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Bugfix: Preserve Subpane ON State Across Full Sidebar Toggles (Ctrl+a s)
+
+- **사이드바 전체 토글(`Ctrl+a s`) 시 서브페인 ON 상태 자동 복원 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:
+  - `Ctrl+a s`로 사이드바를 닫았다가 다시 열 때, `provision_sidebar_window` 및 `toggle_current_sidebar`에서 `ensure_sidebar_subpane_window` 호출이 누락되어 서브페인이 허브에 남아있고 열리지 않던 문제 해결.
+  - 사이드바 재오픈 시 인프라 세션(`dotfiles-subpane-hub`)을 건너뛰고 실제 사용자 세션을 정확히 프로비저닝하도록 세션 식별자 보정.
+  - 서브페인 활성 상태(`@dotfiles_sidebar_subpane_enabled`)를 디스크 상태 파일(`SIDEBAR_SUBPANE_ENABLED_STATE_FILE`)에 동기화하여 tmux 세션 재시작 및 전체 토글 시 ON 상태 지속성 보장.
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh` 실행 및 최신 번들 빌드 완료.
+
 ## 2026-08-22 - Bugfix: Active Window Routing for In-Sidebar Subpane Toggle
 
 - **사이드바 내 `s` 서브페인 토글 시 활성 윈도우 명시적 라우팅 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:

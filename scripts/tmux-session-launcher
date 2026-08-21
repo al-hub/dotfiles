@@ -2234,9 +2234,19 @@ toggle_current_sidebar()
         return 0
     fi
 
-    local current_session_name
-    current_session_name="$(sidebar_tmux_cmd display-message -p '#S' 2>/dev/null || true)"
-    mark_session_managed "$current_session_name" || true
+    local current_session_name="" client_tty=""
+    client_tty="$(sidebar_owner_client || true)"
+    [ -n "$client_tty" ] || client_tty="$(current_client_tty || true)"
+    if [ -n "$client_tty" ]; then
+        current_session_name="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
+    fi
+    if [ -z "$current_session_name" ] || is_infrastructure_session "$current_session_name"; then
+        current_session_name="$(sidebar_tmux_cmd display-message -p '#S' 2>/dev/null || true)"
+    fi
+    if [ -z "$current_session_name" ] || is_infrastructure_session "$current_session_name"; then
+        current_session_name="$(sidebar_tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | awk '!/dotfiles-subpane-hub/ { print $1; exit }')"
+    fi
+    [ -n "$current_session_name" ] && mark_session_managed "$current_session_name" || true
     sidebar_tmux_cmd set-option -gq "$SIDEBAR_PROVISION_OPTION" 1 2>/dev/null || true
     if ! provision_managed_sidebars; then
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_PROVISION_OPTION" 0 2>/dev/null || true
