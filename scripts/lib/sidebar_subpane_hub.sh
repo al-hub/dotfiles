@@ -3,6 +3,26 @@
 set -euo pipefail
 
 SUBPANE_HUB_SESSION="dotfiles-subpane-hub"
+SUBPANE_LEASE_OPTION="@dotfiles_subpane_lease_window"
+
+subpane_hub_get_lease_holder() {
+    sidebar_tmux_cmd show-option -gqv "$SUBPANE_LEASE_OPTION" 2>/dev/null || true
+}
+
+subpane_hub_acquire_lease() {
+    local target_win="${1:-}"
+    [ -n "$target_win" ] || return 1
+    sidebar_tmux_cmd set-option -gq "$SUBPANE_LEASE_OPTION" "$target_win" 2>/dev/null || true
+}
+
+subpane_hub_release_lease() {
+    local target_win="${1:-}"
+    local current_holder
+    current_holder="$(subpane_hub_get_lease_holder)"
+    if [ -z "$target_win" ] || [ "$current_holder" = "$target_win" ]; then
+        sidebar_tmux_cmd set-option -gu "$SUBPANE_LEASE_OPTION" 2>/dev/null || true
+    fi
+}
 
 subpane_hub_session_name() {
     printf '%s\n' "$SUBPANE_HUB_SESSION"
@@ -104,13 +124,20 @@ subpane_hub_relocate_pane_atomic() {
             height=12
         fi
     fi
-
-    local target_win sub_win
+    local target_win
     target_win="$(sidebar_tmux_cmd display-message -p -t "$target_launcher" '#{window_id}' 2>/dev/null || true)"
-    sub_win="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{window_id}' 2>/dev/null || true)"
+    [ -n "$target_win" ] && subpane_hub_acquire_lease "$target_win"
 
-    if [ -n "$target_win" ] && [ "$target_win" = "$sub_win" ]; then
-        return 0
+    if [ -z "$height" ]; then
+        local saved_h
+        if declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
+            saved_h="$(sidebar_subpane_get_height 2>/dev/null || true)"
+        fi
+        if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
+            height="$saved_h"
+        else
+            height=12
+        fi
     fi
 
     local pos_flag=""
@@ -128,25 +155,20 @@ subpane_hub_relocate_pane_atomic() {
         sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$height" 2>/dev/null || true
     fi
 
-    sidebar_tmux_cmd set-option -p -q -t "$sub_pane" allow-rename off 2>/dev/null || true
-    sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
+    # Keep role tags immutable
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
     return 0
 }
 
 subpane_hub_acquire_pane() {
-    local target_launcher="${1:-}" height="${2:-}"
+    local target_launcher="$1" height="${2:-}" sub_title="${3:-dotfiles-sidebar-subpane}"
     [ -n "$target_launcher" ] || return 1
-    local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
 
-    if [ -z "$height" ] || ! [ "$height" -ge 4 ] 2>/dev/null; then
+    if [ -z "$height" ]; then
         local saved_h
         if declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
-            saved_h="$(sidebar_subpane_get_height || true)"
-        else
-            local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
-            saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+            saved_h="$(sidebar_subpane_get_height 2>/dev/null || true)"
         fi
         if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
             height="$saved_h"
@@ -174,6 +196,7 @@ subpane_hub_acquire_pane() {
         sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
         sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
         sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
+        [ -n "$target_win" ] && subpane_hub_acquire_lease "$target_win"
         printf '%s\n' "$hub_pane"
         return 0
     fi
@@ -205,12 +228,16 @@ subpane_hub_acquire_pane() {
         sidebar_tmux_cmd select-pane -t "$target_launcher" -c "$client_tty" 2>/dev/null || true
     done < <(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null || true)
 
+    [ -n "$target_win" ] && subpane_hub_acquire_lease "$target_win"
     printf '%s\n' "$hub_pane"
 }
 
 subpane_hub_release_pane() {
     local sub_pane="${1:-}"
     [ -n "$sub_pane" ] || return 0
+    local curr_win
+    curr_win="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{window_id}' 2>/dev/null || true)"
+    [ -n "$curr_win" ] && subpane_hub_release_lease "$curr_win"
     local curr_sess hub_sess
     curr_sess="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{session_name}' 2>/dev/null || true)"
     hub_sess="$(subpane_hub_session_name)"

@@ -1880,7 +1880,7 @@ reconcile_sidebar_window()
 
 provision_sidebar_window()
 {
-    local window_id="$1" width="${2:-$(sidebar_width)}"
+    local window_id="$1" width="${2:-$(sidebar_width)}" cmd="${3:-}" subpane_enabled="${4:-}"
     local existing_pane global_pane global_window work_pane pane_path pane_id pane_state pane_dead
     [ -n "$window_id" ] || return 1
     sidebar_tmux_cmd set-option -gq "$SIDEBAR_ENABLED_OPTION" 1 2>/dev/null || true
@@ -1907,7 +1907,11 @@ provision_sidebar_window()
         tmux set-option -p -q -t "$existing_pane" remain-on-exit on 2>/dev/null || true
         tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$existing_pane" 2>/dev/null || true
         enforce_sidebar_width "$existing_pane" "$width" || true
-        ensure_sidebar_subpane_window "$window_id" "$existing_pane" || true
+        if [ "$subpane_enabled" = "0" ]; then
+            :
+        elif [ "$subpane_enabled" = "1" ] || [ "$(sidebar_subpane_get_enabled)" = "1" ]; then
+            ensure_sidebar_subpane_window "$window_id" "$existing_pane" || true
+        fi
         trace_event "sidebar.provision.end window=$window_id pane=$existing_pane result=existing"
         return 0
     fi
@@ -1943,7 +1947,11 @@ provision_sidebar_window()
         return 0
     fi
     tmux set-option -wq -t "$window_id" "$SIDEBAR_WINDOW_PANE_OPTION" "$pane_id" 2>/dev/null || true
-    ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
+    if [ "$subpane_enabled" = "0" ]; then
+        :
+    elif [ "$subpane_enabled" = "1" ] || [ "$(sidebar_subpane_get_enabled)" = "1" ]; then
+        ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
+    fi
 
     local layout_spec
     layout_spec="$(sidebar_tmux_cmd show-option -wqv -t "$window_id" "@dotfiles_sidebar_layout_spec" 2>/dev/null || true)"
@@ -2295,23 +2303,37 @@ toggle_sidebar_for_pane()
 
 current_pane_is_sidebar()
 {
-    [ "$(tmux display-message -p '#{pane_title}')" = "$SIDEBAR_TITLE" ]
+    local title opt_sub opt_sb
+    title="$(tmux display-message -p '#{pane_title}' 2>/dev/null || true)"
+    opt_sub="$(tmux show-option -pqv @dotfiles_sidebar_subpane 2>/dev/null || echo 0)"
+    opt_sb="$(tmux show-option -pqv @dotfiles_sidebar_pane 2>/dev/null || echo 0)"
+    [ "$title" = "$SIDEBAR_TITLE" ] || [ "$title" = "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" ] || [ "$opt_sub" = "1" ] || [ "$opt_sb" = "1" ]
 }
 
 current_window_work_pane()
 {
     target_window="${1:-$(window_target)}"
     pane_id="$(
-        tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}	#{pane_active}' 2>/dev/null |
-            awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle && $3 == 1 { print $1; exit }'
+        tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}	#{@dotfiles_sidebar_pane}	#{@dotfiles_sidebar_subpane}	#{pane_active}' 2>/dev/null |
+            awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '
+                $2 != title && $2 != subtitle && $3 != "1" && $4 != "1" && $5 == 1 { print $1; exit }
+            '
     )"
     if [ -n "$pane_id" ]; then
         printf '%s\n' "$pane_id"
         return 0
     fi
-
-    tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}' 2>/dev/null |
-        awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '$2 != title && $2 != subtitle { print $1; exit }'
+    pane_id="$(
+        tmux list-panes -t "$target_window" -F '#{pane_id}	#{pane_title}	#{@dotfiles_sidebar_pane}	#{@dotfiles_sidebar_subpane}' 2>/dev/null |
+            awk -F '\t' -v title="$SIDEBAR_TITLE" -v subtitle="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" '
+                $2 != title && $2 != subtitle && $3 != "1" && $4 != "1" { print $1; exit }
+            '
+    )"
+    if [ -n "$pane_id" ]; then
+        printf '%s\n' "$pane_id"
+        return 0
+    fi
+    return 1
 }
 
 split_work_pane()

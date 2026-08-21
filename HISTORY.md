@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Sidebar Column Isolation & Subpane Lease Coordinator (Candidates 1 & 2)
+
+- **사이드바 컬럼 지오메트리 방화벽 (Candidate 1 - `scripts/tmux-session-launcher`, `scripts/lib/sidebar_topology.sh`)**:
+  - `current_pane_is_sidebar` 및 `current_window_work_pane`을 서브페인(`@dotfiles_sidebar_subpane`)까지 포괄하도록 확장하여, 서브페인 포커스 상태에서 `Ctrl+a _` / `Ctrl+a |` 실행 시 메인 작업창을 정확히 타깃팅하도록 분리.
+  - 메인 작업창이 수평/수직 분할되어도 사이드바 컬럼의 내부 분할 비율(서브페인 높이)이 불변으로 유지되도록 레이아웃 격리.
+- **서브페인 싱글톤 임대 조정자 (Candidate 2 - `scripts/lib/sidebar_subpane_hub.sh`)**:
+  - `@dotfiles_subpane_lease_window` 기반 Lease Mutex를 도입하여, 활성 윈도우가 서브페인을 임대 중일 때 비동기 훅의 무단 회수 및 경합을 차단하고 "보였다가 꺼지는" 깜빡임 현상 제거.
+- **회귀 검증 테스트 추가 (`tests/tmux-single-sidebar/test-subpane-work-isolation.sh`)**:
+  - 메인 작업창 수평 분할 후 사이드바 토글 시 서브페인 높이 보존 및 격리 검증 완료 (ALL PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 배포 완료.
+
 ## 2026-08-22 - Bugfix: Preserve Subpane ON State Across Full Sidebar Toggles (Ctrl+a s)
 
 - **사이드바 전체 토글(`Ctrl+a s`) 시 서브페인 ON 상태 자동 복원 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:

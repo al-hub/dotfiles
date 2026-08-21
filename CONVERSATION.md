@@ -6,6 +6,18 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Sidebar Column Isolation & Subpane Lease Coordinator (Candidates 1 & 2)
+
+- **사용자 요청**:
+  - `/improve-codebase-architecture` 명령을 통해 분석된 3대 결함 중 Candidate 1 (사이드바 컬럼 레이아웃 격리)과 Candidate 2 (서브페인 임대 조정자/Lease Mutex)를 순차적으로 구현하여 구조적 결함 영구 해소 요청.
+- **조치 내용**:
+  1. **Candidate 1 (지오메트리 격리)**:
+     - `current_pane_is_sidebar` 및 `current_window_work_pane`을 서브페인 식별자까지 포괄하도록 정밀 분리하여, 포커스 위치와 무관하게 메인 작업 영역 분할 및 리사이즈 시 사이드바 컬럼 내부 높이가 스냅되거나 오염되지 않도록 격리.
+  2. **Candidate 2 (임대 조정자)**:
+     - `subpane_hub_acquire_lease` 및 `subpane_hub_release_lease`를 통한 원자적 소유권 잠금(`@dotfiles_subpane_lease_window`)을 구축하여, 활성 창이 임대 중일 때 비동기 훅의 무단 회수를 차단함으로써 서브페인 깜빡임 소멸 제거.
+  3. **검증 및 배포**:
+     - `tests/tmux-single-sidebar/test-subpane-work-isolation.sh` 회귀 테스트 추가 및 전체 서브페인 스위트 10개 테스트 100% 통과 확인 후 커밋/푸시 완료.
+
 ## 2026-08-22 - Bugfix: Preserve Subpane ON State Across Full Sidebar Toggles (Ctrl+a s)
 
 - **사용자 요청**:

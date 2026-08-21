@@ -492,7 +492,7 @@ toggle_sidebar_subpane_global() {
 }
 
 provision_sidebar_window() {
-    local window_id="${1:-}" width="${2:-30}" cmd="${3:-}"
+    local window_id="${1:-}" width="${2:-30}" cmd="${3:-}" subpane_enabled="${4:-}"
     [ -n "$window_id" ] || return 1
     local win_sess
     win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
@@ -502,7 +502,11 @@ provision_sidebar_window() {
     local existing
     existing="$(sidebar_window_pane "$window_id" || true)"
     if [ -n "$existing" ]; then
-        ensure_sidebar_subpane_window "$window_id" "$existing" || true
+        if [ "$subpane_enabled" = "0" ]; then
+            :
+        elif [ "$subpane_enabled" = "1" ] || [ "$(sidebar_subpane_get_enabled)" = "1" ]; then
+            ensure_sidebar_subpane_window "$window_id" "$existing" || true
+        fi
         return 0
     fi
     local work_pane
@@ -519,7 +523,11 @@ provision_sidebar_window() {
     sidebar_tmux_cmd select-pane -t "$pane_id" -T "dotfiles-session-sidebar" 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$pane_id" remain-on-exit on 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$pane_id" @dotfiles_sidebar_pane 1 2>/dev/null || true
-    ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
+    if [ "$subpane_enabled" = "0" ]; then
+        :
+    elif [ "$subpane_enabled" = "1" ] || [ "$(sidebar_subpane_get_enabled)" = "1" ]; then
+        ensure_sidebar_subpane_window "$window_id" "$pane_id" || true
+    fi
     printf '%s\n' "$pane_id"
 }
 

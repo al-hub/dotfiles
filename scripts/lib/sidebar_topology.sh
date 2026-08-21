@@ -36,7 +36,7 @@ topology_ensure_window() {
     topology_inspect "$window_id" sb sub work act_w
 
     if [ -z "$sb" ]; then
-        provision_sidebar_window "$window_id" "$width" >/dev/null 2>&1 || true
+        provision_sidebar_window "$window_id" "$width" "" "$subpane_enabled" >/dev/null 2>&1 || true
         topology_inspect "$window_id" sb sub work act_w
     fi
 
