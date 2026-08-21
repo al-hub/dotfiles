@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-21 - Bugfix: Subpane Height Persistence & Accurate Restoration on Mouse Resize and Toggle
+
+- **서브페인 높이 보존 및 복원 정밀도 개선 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/tmux-session-launcher`)**:
+  - `destroy_sidebar_subpane` 및 `subpane_hub_release_pane` 호출 시 현재 윈도우/서브페인의 실제 높이를 먼저 `@dotfiles_sidebar_subpane_height`에 저장하도록 보강하여 마우스 조작 후 즉시 `s` 토글 시 높이 유실 방지.
+  - `toggle_current_sidebar` 종료 시(`existing_count > 0`) 활성 윈도우의 사이드바 폭 및 서브페인 높이 동기 저장(`remember_sidebar_width_for_window`) 추가.
+  - `subpane_hub_relocate_pane_atomic`, `subpane_hub_acquire_pane`, `provision_sidebar_subpane`에서 `height` 인자 생략 시 `@dotfiles_sidebar_subpane_height` 옵션을 조회하여 복원하고, `join-pane`/`split-window` 후 `resize-pane -t "$sub_pane" -y "$height"`를 명시적으로 실행하여 상단(`-b`) 및 하단 배치 시 tmux 경계 반올림 오차 없이 정확한 높이를 복원하도록 보장.
+  - `switch_session` 세션 전환 시 `sub_height`를 하드코딩 `12` 대신 저장된 `@dotfiles_sidebar_subpane_height`로부터 우선 참조하도록 개선.
+- **TDD 계약 테스트 보강 (`tests/tmux-single-sidebar/test-subpane-height-persistence.sh`)**:
+  - 마우스 드래그 후 자동 높이 보존, 토글 후 복원, 상단/하단 배치 높이 일치성 검증 (PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh` 실행 및 최신 번들 빌드 완료.
+
 ## 2026-08-21 - Release v0.6.16: Look-Up Table Waveform Engine, 30 FPS Dynamic Clock & Asynchronous Multi-Session AI Activity Dashboard
 
 - **v0.6.16 릴리스 승격**:

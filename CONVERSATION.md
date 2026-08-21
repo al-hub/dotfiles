@@ -6,6 +6,21 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-21 - Bugfix: Subpane Height Persistence & Accurate Restoration on Mouse Resize and Toggle
+
+- **사용자 요청**:
+  - 서브페인 높이 값의 저장, 복원이 제대로 되는지 점검 요청 (마우스로 이동/리사이즈 후 `s`로 사이드바를 토글하면서 비교 시 복원이 제대로 안 되는 현상 제보).
+- **원인 분석**:
+  1. 마우스로 서브페인 경계선을 조작한 직후 `s`(`Ctrl+a s`)로 사이드바를 닫을 때, `after-resize-pane` 비동기 훅이 완료되기 전 `remove_managed_sidebars`가 실행되어 서브페인의 변경된 높이가 저장되지 않고 폐기되는 경쟁 상태 존재.
+  2. `destroy_sidebar_subpane` 및 `subpane_hub_release_pane`에서 페인 회수/제거 직전 현재 높이를 자동 캡처하는 로직 누락.
+  3. `subpane_hub_acquire_pane`, `subpane_hub_relocate_pane_atomic`에서 `height` 인자가 없을 때 저장된 `@dotfiles_sidebar_subpane_height`를 참조하지 않고 하드코딩된 기본값(`12`)으로 떨어지는 문제.
+  4. `join-pane -v -l <height>` 시 상단(`-b`) 배치 및 tmux 내부 반올림 오차로 인해 요청한 높이와 실제 생성 높이 사이에 1~2줄 오차 발생.
+- **조치 내용**:
+  - `destroy_sidebar_subpane` 및 `subpane_hub_release_pane` 진입 시 `remember_sidebar_subpane_height_for_window` 및 현재 높이를 즉시 `@dotfiles_sidebar_subpane_height`에 저장하도록 방어.
+  - `toggle_current_sidebar` 닫기 경로에서 `remember_sidebar_width_for_window`를 동기 호출하여 마우스 리사이즈 직후 토글 시에도 최신 폭/높이 즉시 보존.
+  - `subpane_hub_acquire_pane`, `subpane_hub_relocate_pane_atomic`, `provision_sidebar_subpane`에서 저장된 높이 옵션을 우선 조회하고, 조인 직후 `resize-pane -t "$sub_pane" -y "$height"`를 명시적으로 실행하여 상/하단 위치 무관하게 정확한 높이 복원 보장.
+  - `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` 확장 및 전체 서브페인/사이드바 계약 테스트 통과 확인 후 `dist/tmux-session-launcher` 번들 갱신.
+
 ## 2026-08-21 - Release v0.6.16: Look-Up Table Waveform Engine, 30 FPS Dynamic Clock & Asynchronous Multi-Session AI Activity Dashboard
 
 - **사용자 요청**:

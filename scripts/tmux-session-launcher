@@ -2219,6 +2219,12 @@ toggle_current_sidebar()
 
     existing_count="$(sidebar_tmux_sidebar_pane_count)"
     if [ "$existing_count" -gt 0 ]; then
+        local current_win
+        current_win="$(active_client_window 2>/dev/null || true)"
+        [ -n "$current_win" ] || current_win="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+        if [ -n "$current_win" ]; then
+            remember_sidebar_width_for_window "$current_win"
+        fi
         set_sidebar_enabled 0
         remove_managed_sidebars || {
             trace_event "sidebar.toggle.abort reason=remove-failed"
@@ -2626,15 +2632,25 @@ switch_session()
     trace_event "switch.target-sidebar.ready session=$session_name window=$target_window pane=$sidebar_pane pid=${sidebar_pid:-none}"
     trace_event "selection.sync.barrier session=$session_name window=$target_window pane=$sidebar_pane result=deferred-before-switch"
     transition_phase_set SWITCH_CLIENT "$operation_id"
-    local subpane_enabled sub_pane="" sub_height="12"
+    local subpane_enabled sub_pane="" sub_height=""
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
-    if [ "$subpane_enabled" = "1" ] && [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
-        sub_pane="$(sidebar_window_subpane "$source_window" || true)"
-        if [ -n "$sub_pane" ]; then
-            sub_height="$(tmux display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || echo 12)"
-            [ "$sub_height" -ge 4 ] 2>/dev/null || sub_height=12
-        else
-            sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+    if [ "$subpane_enabled" = "1" ]; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
+            sub_pane="$(sidebar_window_subpane "$source_window" || true)"
+            if [ -n "$sub_pane" ]; then
+                local live_h
+                live_h="$(tmux display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
+                if [ -n "$live_h" ] && [ "$live_h" -ge 4 ] 2>/dev/null; then
+                    sub_height="$live_h"
+                fi
+            else
+                sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+            fi
+        fi
+        if [ -z "$sub_height" ] || ! [ "$sub_height" -ge 4 ] 2>/dev/null; then
+            sub_height=12
         fi
     fi
     [ -n "$METRICS_FILE" ] && metrics_start="$(metrics_now_us)"

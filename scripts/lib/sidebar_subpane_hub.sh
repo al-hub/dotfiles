@@ -86,9 +86,20 @@ subpane_hub_get_pane() {
 }
 
 subpane_hub_relocate_pane_atomic() {
-    local sub_pane="${1:-}" target_launcher="${2:-}" height="${3:-12}"
+    local sub_pane="${1:-}" target_launcher="${2:-}" height="${3:-}"
     [ -n "$sub_pane" ] && [ -n "$target_launcher" ] || return 1
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
+
+    if [ -z "$height" ] || ! [ "$height" -ge 4 ] 2>/dev/null; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        local saved_h
+        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
+            height="$saved_h"
+        else
+            height=12
+        fi
+    fi
 
     local target_win sub_win
     target_win="$(sidebar_tmux_cmd display-message -p -t "$target_launcher" '#{window_id}' 2>/dev/null || true)"
@@ -109,6 +120,10 @@ subpane_hub_relocate_pane_atomic() {
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
+    if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$height" 2>/dev/null || true
+    fi
+
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" allow-rename off 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
@@ -117,9 +132,20 @@ subpane_hub_relocate_pane_atomic() {
 }
 
 subpane_hub_acquire_pane() {
-    local target_launcher="${1:-}" height="${2:-12}"
+    local target_launcher="${1:-}" height="${2:-}"
     [ -n "$target_launcher" ] || return 1
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
+
+    if [ -z "$height" ] || ! [ "$height" -ge 4 ] 2>/dev/null; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        local saved_h
+        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
+            height="$saved_h"
+        else
+            height=12
+        fi
+    fi
 
     subpane_hub_ensure_session
 
@@ -156,6 +182,10 @@ subpane_hub_acquire_pane() {
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
+    if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
+        sidebar_tmux_cmd resize-pane -t "$hub_pane" -y "$height" 2>/dev/null || true
+    fi
+
     sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
@@ -173,6 +203,12 @@ subpane_hub_acquire_pane() {
 subpane_hub_release_pane() {
     local sub_pane="${1:-}"
     [ -n "$sub_pane" ] || return 0
+    local sub_h
+    sub_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
+    if [ -n "$sub_h" ] && [ "$sub_h" -ge 4 ] 2>/dev/null; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        sidebar_tmux_cmd set-option -gq "$opt" "$sub_h" 2>/dev/null || true
+    fi
     # Keep role tags immutable
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true

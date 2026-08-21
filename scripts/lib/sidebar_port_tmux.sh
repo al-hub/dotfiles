@@ -240,6 +240,10 @@ provision_sidebar_subpane() {
     sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
+    if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$height" 2>/dev/null || true
+    fi
+
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
     sidebar_tmux_cmd select-pane -t "$launcher_pane" 2>/dev/null || true
@@ -250,6 +254,7 @@ provision_sidebar_subpane() {
 destroy_sidebar_subpane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
+    remember_sidebar_subpane_height_for_window "$window_id"
     local sub_pane
     while IFS= read -r sub_pane; do
         [ -n "$sub_pane" ] || continue
