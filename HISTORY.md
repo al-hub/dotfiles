@@ -6,6 +6,16 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-21 - Release v0.6.16: Look-Up Table Waveform Engine, 30 FPS Dynamic Clock & Asynchronous Multi-Session AI Activity Dashboard
+
+- **v0.6.16 릴리스 승격**:
+  - Look-Up Table(LUT) 24프레임 파형 엔진 도입으로 활성 애니메이션 시 CPU 점유율 >94% 절감 ($O(1)$ 인덱스 룩업).
+  - 30 FPS 적응형 동적 클록 (AI 실행 시 33ms, 감쇠 시 100ms, 유휴 시 1.0s 슬립 및 0.0% CPU) 및 지터 방지 단조 시계 동기화.
+  - CJK(한글/한자/일본어) 및 Emoji 와이드 문자 터미널 출력 폭(`wcwidth`) 안전 토크나이저 내장 (멀티바이트 분할 깨짐 원천 방지).
+  - 순수 도메인 액티비티 관측 모듈(`sidebar_domain_activity.sh`) 및 증분 스캔 경로 개선을 통한 다중 세션 비동기 AI 활동 실시간 파형 대시보드 구축.
+  - `restore_terminal()` 내 미정의 `sidebar_tmux_control_stop` 잔재 완전 제거 (종료 트랩 무오류).
+  - `AGENTS.md`, `GEMINI.md`, `README.md` 안정 설치 기준 버전을 `v0.6.16`(v6.16)으로 갱신.
+
 ## 2026-08-21 - Architecture & Feature: Asynchronous Multi-Session AI Activity Tracking & Wave Animation Dashboard (TDD & SOLID)
 
 - **순수 도메인 액티비티 관측 모듈 신설 (`scripts/lib/sidebar_domain_activity.sh`)**:

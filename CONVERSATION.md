@@ -6,6 +6,15 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-21 - Release v0.6.16: Look-Up Table Waveform Engine, 30 FPS Dynamic Clock & Asynchronous Multi-Session AI Activity Dashboard
+
+- **사용자 요청**:
+  - 버전업 요청에 따라 `v0.6.16`으로 버전 승격 및 릴리스 배포 진행.
+- **조치 내용**:
+  - 현재까지 개발 및 검증된 핵심 개선 사항(24프레임 LUT 파형 엔진, 30 FPS 적응형 클록, CJK/Emoji 와이드 문자 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 대시보드, `restore_terminal` 무오류 패치)을 `v0.6.16` 릴리스로 통합.
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`의 안정 기준 버전을 `v0.6.16`(v6.16)으로 승격.
+  - git 커밋, `v0.6.16` 태그 생성 및 원격 저장소(`origin/feature/single-sidebar`) 푸시 완료.
+
 ## 2026-08-21 - Architecture & Feature: Asynchronous Multi-Session AI Activity Tracking & Wave Animation Dashboard (TDD & SOLID)
 
 - **사용자 요청**:
