@@ -6,6 +6,21 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-21 - Architecture & Feature: Asynchronous Multi-Session AI Activity Tracking & Wave Animation Dashboard (TDD & SOLID)
+
+- **순수 도메인 액티비티 관측 모듈 신설 (`scripts/lib/sidebar_domain_activity.sh`)**:
+  - 단일 책임 원칙(SRP) 및 인터페이스 분리 원칙(ISP)을 준수하여 순수 함수형 프로세스 관측 및 상태 머신 모듈 분리.
+  - 백그라운드 AI PID 레지스트리 관리 및 `_SIDEBAR_ACTIVITY_SIG` 델타 감지 기반 상태 머신(`active`/`waiting`/`idle`) 연산.
+- **증분 스캔 경로 및 다중 세션 비동기 애니메이션 연동 (`scripts/tmux-session-launcher`)**:
+  - `row_cache_reusable` 모드에서 미선택 세션이더라도 추적 중인 활성 AI 프로세스(`session_ai_direct_pane_id`)가 존재할 경우 개별 행 업데이트를 허용하도록 개선.
+  - 증분 pane 스캔 시 추적 대상 세션들의 pane 스냅샷 및 `cached_pane_activity`를 가볍게 동기화하여 미선택 세션의 AI 백그라운드 작업이 계속해서 사이드바에 실시간 파형 애니메이션을 표시하도록 구현.
+  - AI 작업이 멈추면 2사이클 후 자동으로 `waiting`으로 감쇠(애니메이션 정지)하고, 새로운 출력이 발생하면 즉시 비동기 파형 재개.
+- **TDD 단위 및 통합/E2E 테스트 구축**:
+  - `tests/tmux-single-sidebar/test-activity-observer-unit.sh` (12/12 PASS).
+  - `tests/tmux-single-sidebar/test-multi-session-animation-e2e.sh` (4/4 PASS).
+- **프로덕션 번들 빌더 동기화 (`scripts/build-dist.sh`, `dist/tmux-session-launcher`)**:
+  - `LIBS` 목록에 `sidebar_domain_activity.sh` 추가 및 프로덕션 번들 빌드.
+
 ## 2026-08-20 - Bugfix: Purge Dangling sidebar_tmux_control_stop in restore_terminal (TDD)
 
 - **잔존 레거시 호출 제거 (`scripts/tmux-session-launcher`)**:

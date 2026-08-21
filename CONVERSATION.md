@@ -6,6 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-21 - Architecture & Feature: Asynchronous Multi-Session AI Activity Tracking & Wave Animation Dashboard (TDD & SOLID)
+
+- **사용자 요청**:
+  - 선택되지 않은 세션이라도 소속된 pane에서 AI CLI가 동작 중이면 사이드바에서 멈추지 않고 비동기 파형 애니메이션이 계속해서 표출되어 사용자가 관제할 수 있도록 아키텍처 제안(후보 1: Global Delta Batching & Tracked PID Watcher 채택) 및 TDD/SOLID 기반 구현 요청.
+- **조치 내용**:
+  - `scripts/lib/sidebar_domain_activity.sh` 순수 도메인 모듈 신설하여 PID 레지스트리 및 시그니처 델타 상태 평가 로직 격리.
+  - `scripts/tmux-session-launcher` 내 `row_cache_reusable` 및 증분 스캔 로직에서 활성 AI 프로세스를 보유한 비선택 세션을 선별적으로 스캔/동기화하도록 개선하여 0% CPU 오버헤드와 비동기 다중 세션 실시간 애니메이션 양립 달성.
+  - `tests/tmux-single-sidebar/test-activity-observer-unit.sh` (12/12 PASS), `tests/tmux-single-sidebar/test-multi-session-animation-e2e.sh` (4/4 PASS) 등 전체 테스트 통과 확인.
+  - `scripts/build-dist.sh` 갱신 및 `dist/tmux-session-launcher` 프로덕션 번들 빌드 완료.
+
 ## 2026-08-20 - Bugfix: Purge Dangling sidebar_tmux_control_stop in restore_terminal (TDD)
 
 - **사용자 요청**:

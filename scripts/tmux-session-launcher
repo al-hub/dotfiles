@@ -49,6 +49,8 @@ SIDEBAR_ADAPTER_PATH="$LAUNCHER_DIR/tmux-sidebar-tmux-adapter"
 }
 # Sourced in dev; bundled in prod
 [ -r "$LAUNCHER_DIR/lib/sidebar_domain.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_domain.sh"
+[ -r "$LAUNCHER_DIR/lib/sidebar_domain_animation.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_domain_animation.sh"
+[ -r "$LAUNCHER_DIR/lib/sidebar_domain_activity.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_domain_activity.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_port_tmux.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_port_tmux.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_subpane_hub.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_subpane_hub.sh"
 [ -r "$LAUNCHER_DIR/lib/sidebar_topology.sh" ] && source "$LAUNCHER_DIR/lib/sidebar_topology.sh"
@@ -3568,6 +3570,15 @@ EOF
                 -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}:#{history_size}:#{cursor_y}:#{cursor_x}	#{pane_pid}' \
                 2>/dev/null || true
         )"
+        local tracked_ai_sess
+        for tracked_ai_sess in "${!session_ai_direct_pane_id[@]}"; do
+            [ "$tracked_ai_sess" != "$requested_scan_session" ] || continue
+            cached_session_panes_snapshot["$tracked_ai_sess"]="$(
+                sidebar_tmux_cmd list-panes -t "=$tracked_ai_sess:" \
+                    -F '#{session_name}	#{pane_id}	#{pane_title}	#{pane_current_command}	#{pane_activity}:#{history_size}:#{cursor_y}:#{cursor_x}	#{pane_pid}' \
+                    2>/dev/null || true
+            )"
+        done
         if [ -n "$metrics_phase_start" ]; then
             metrics_list_panes_us=$(( $(metrics_now_us) - metrics_phase_start ))
         fi
@@ -3584,6 +3595,11 @@ EOF
     panes_to_parse="$panes_snapshot"
     if [ "$incremental_pane_scan" = true ]; then
         panes_to_parse="${cached_session_panes_snapshot[$requested_scan_session]:-}"
+        for tracked_ai_sess in "${!session_ai_direct_pane_id[@]}"; do
+            [ "$tracked_ai_sess" != "$requested_scan_session" ] || continue
+            [ -n "${cached_session_panes_snapshot[$tracked_ai_sess]:-}" ] || continue
+            panes_to_parse+=$'\n'"${cached_session_panes_snapshot[$tracked_ai_sess]}"
+        done
     fi
     if [ "$timing_enabled" = "1" ]; then
         timing_end="$(debug_now_us)"
@@ -3645,8 +3661,10 @@ EOF
             continue
         fi
         if [ "$row_cache_reusable" = true ]; then
-            [ "$name" = "$requested_scan_session" ] || continue
-            index="$target_row_index"
+            if [ "$name" != "$requested_scan_session" ] && [ -z "${session_ai_direct_pane_id[$name]:-}" ]; then
+                continue
+            fi
+            index="${cached_session_row_index[$name]:-$target_row_index}"
         fi
         trace_event "collect.session.begin session=$name"
         case "$activity" in ''|*[!0-9]*) activity=0 ;; esac
@@ -3750,8 +3768,39 @@ EOF
             trace_event "collect.ai-probe.end session=$name"
             cached_session_cli_state["$name"]="$session_cli_state_result"
             cached_session_ai_fingerprint["$name"]="$session_ai_fingerprint_result"
-        elif [ -n "$metrics_start" ]; then
-            metrics_ai_cache_hits=$((metrics_ai_cache_hits + 1))
+        else
+            # Non-selected session: lightweight activity delta check for tracked AI panes.
+            # If the session has a known AI pane whose activity signature changed,
+            # refresh its fingerprint and keep it active without an expensive probe.
+            direct_probe_pane="${session_ai_direct_pane_id[$name]:-}"
+            if [ -n "$direct_probe_pane" ] &&
+                [ "${cached_session_cli_state[$name]:-}" = "active" -o "${cached_session_cli_state[$name]:-}" = "waiting" ] &&
+                [ -n "${cached_pane_activity[$direct_probe_pane]:-}" ]; then
+                local tracked_pid="${cached_pane_pid[$direct_probe_pane]:-}"
+                local prev_activity="${previous_pane_activity[$direct_probe_pane]:-}"
+                local curr_activity="${cached_pane_activity[$direct_probe_pane]:-}"
+                if [ "$curr_activity" != "$prev_activity" ] &&
+                    [ -n "$tracked_pid" ] &&
+                    kill -0 "$tracked_pid" 2>/dev/null; then
+                    # Activity changed and PID alive: refresh fingerprint, keep active
+                    cached_session_cli_state["$name"]="active"
+                    cached_session_ai_fingerprint["$name"]="act:$curr_activity"
+                    session_ai_fingerprint["$name"]="act:$curr_activity"
+                    session_ai_stable_count["$name"]=0
+                    trace_event "collect.ai-delta.hit session=$name pane=$direct_probe_pane"
+                elif [ -n "$tracked_pid" ] && ! kill -0 "$tracked_pid" 2>/dev/null; then
+                    # PID died: transition to idle immediately
+                    cached_session_cli_state["$name"]="idle"
+                    cached_session_ai_fingerprint["$name"]=""
+                    unset 'session_ai_direct_pane_id[$name]'
+                    session_ai_fingerprint["$name"]=""
+                    session_ai_stable_count["$name"]=0
+                    trace_event "collect.ai-delta.evict session=$name pane=$direct_probe_pane pid=$tracked_pid"
+                fi
+            fi
+            if [ -n "$metrics_start" ]; then
+                metrics_ai_cache_hits=$((metrics_ai_cache_hits + 1))
+            fi
         fi
 
         if [ -z "${cached_session_cli_state[$name]:-}" ]; then
@@ -3796,6 +3845,7 @@ EOF
                 animate_value="true"
             fi
         fi
+        cached_session_cli_state["$name"]="$cli_state_value"
         if [ "${TMUX_SESSION_LAUNCHER_DEBUG:-0}" = "1" ]; then
             debug_log "state session=$name prev_fp=$previous_ai_fingerprint_value fp=$ai_fingerprint_value state=$cli_state_value animate=$animate_value"
         fi
