@@ -116,6 +116,87 @@ sidebar_port_is_subpane() {
     [ "$opt" = "1" ]
 }
 
+persist_sidebar_subpane_height() {
+    local height="$1" state_dir tmp_file
+    case "$height" in ''|*[!0-9]*) return 1 ;; esac
+    local state_file="${SIDEBAR_SUBPANE_HEIGHT_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-height}"
+    state_dir="$(dirname "$state_file")"
+    mkdir -p "$state_dir" 2>/dev/null || return 1
+    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-subpane-height.XXXXXX" 2>/dev/null || true)"
+    [ -n "$tmp_file" ] || return 1
+    if ! printf '%s\n' "$height" > "$tmp_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+    if ! mv -f -- "$tmp_file" "$state_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+}
+
+read_persisted_sidebar_subpane_height() {
+    local state_file="${SIDEBAR_SUBPANE_HEIGHT_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-height}"
+    local height
+    [ -r "$state_file" ] || return 1
+    IFS= read -r height < "$state_file" || true
+    case "$height" in
+        ''|*[!0-9]*) return 1 ;;
+        *)
+            if [ "$height" -ge 4 ] 2>/dev/null; then
+                printf '%s\n' "$height"
+                return 0
+            fi
+            return 1
+            ;;
+    esac
+}
+
+sidebar_subpane_get_height() {
+    local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+    local height
+    height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+    if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
+        printf '%s\n' "$height"
+        return 0
+    fi
+    height="$(read_persisted_sidebar_subpane_height || true)"
+    if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
+        sidebar_tmux_cmd set-option -gq "$opt" "$height" 2>/dev/null || true
+        printf '%s\n' "$height"
+        return 0
+    fi
+    return 1
+}
+
+persist_sidebar_subpane_position() {
+    local pos="$1" state_dir tmp_file
+    case "$pos" in top|bottom) ;; *) return 1 ;; esac
+    local state_file="${SIDEBAR_SUBPANE_POSITION_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-position}"
+    state_dir="$(dirname "$state_file")"
+    mkdir -p "$state_dir" 2>/dev/null || return 1
+    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-subpane-position.XXXXXX" 2>/dev/null || true)"
+    [ -n "$tmp_file" ] || return 1
+    if ! printf '%s\n' "$pos" > "$tmp_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+    if ! mv -f -- "$tmp_file" "$state_file"; then
+        rm -f -- "$tmp_file"
+        return 1
+    fi
+}
+
+read_persisted_sidebar_subpane_position() {
+    local state_file="${SIDEBAR_SUBPANE_POSITION_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-position}"
+    local pos
+    [ -r "$state_file" ] || return 1
+    IFS= read -r pos < "$state_file" || true
+    case "$pos" in
+        top|bottom) printf '%s\n' "$pos"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 remember_sidebar_subpane_height_for_window() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
@@ -135,6 +216,7 @@ remember_sidebar_subpane_height_for_window() {
             if [ "$height" -ge 4 ] 2>/dev/null; then
                 local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
                 sidebar_tmux_cmd set-option -gq "$opt" "$height" 2>/dev/null || true
+                persist_sidebar_subpane_height "$height" 2>/dev/null || true
             fi
             ;;
     esac
@@ -144,6 +226,12 @@ sidebar_subpane_get_position() {
     local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
     local pos
     pos="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+    if [ -z "$pos" ]; then
+        pos="$(read_persisted_sidebar_subpane_position 2>/dev/null || true)"
+        if [ -n "$pos" ]; then
+            sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
+        fi
+    fi
     case "$pos" in
         top|TOP) printf 'top\n' ;;
         *) printf 'bottom\n' ;;
@@ -158,6 +246,7 @@ sidebar_subpane_set_position() {
         *) pos="bottom" ;;
     esac
     sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
+    persist_sidebar_subpane_position "$pos" 2>/dev/null || true
 }
 
 sidebar_subpane_swap_position() {
@@ -219,9 +308,8 @@ provision_sidebar_subpane() {
     local window_id="${1:-}" launcher_pane="${2:-}" height="${3:-}" cmd="${4:-}"
     [ -n "$launcher_pane" ] || return 1
     if [ -z "$height" ]; then
-        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         local saved_h
-        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        saved_h="$(sidebar_subpane_get_height || true)"
         if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
             height="$saved_h"
         else

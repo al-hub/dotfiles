@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Bugfix: Subpane Height & Position Disk Persistence across Tmux Server Restart
+
+- **tmux 서버 완전 종료 및 재시작 시 서브페인 높이/위치 디스크 영속성 지원 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`)**:
+  - `d > all > Enter` 등으로 tmux 서버가 완전히 종료될 때 tmux 메모리(`set-option -gq`)가 소멸하더라도 사용자의 서브페인 높이 및 상/하단 위치가 유지되도록 XDG 디스크 상태 파일(`SIDEBAR_SUBPANE_HEIGHT_STATE_FILE`, `SIDEBAR_SUBPANE_POSITION_STATE_FILE`)에 원자적 동기화 구현.
+  - `persist_sidebar_subpane_height`, `read_persisted_sidebar_subpane_height`, `sidebar_subpane_get_height`, `persist_sidebar_subpane_position`, `read_persisted_sidebar_subpane_position` 함수 도입.
+  - 신규 tmux 서버 시작 및 사이드바/서브페인 최초 프로비저닝 시 디스크 상태 파일로부터 마지막 서브페인 높이/위치를 자동 복원.
+- **TDD 계약 테스트 보강 (`tests/tmux-single-sidebar/test-subpane-height-persistence.sh` 등)**:
+  - tmux `kill-server` 후 신규 서버 기동 및 서브페인 프로비저닝 시 디스크 보존 높이 정확 복원 검증 (PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh` 실행 및 최신 번들 빌드 완료.
+
 ## 2026-08-21 - Bugfix: Subpane Height Persistence & Accurate Restoration on Mouse Resize and Toggle
 
 - **서브페인 높이 보존 및 복원 정밀도 개선 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/tmux-session-launcher`)**:

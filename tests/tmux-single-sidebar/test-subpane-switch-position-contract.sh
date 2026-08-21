@@ -3,7 +3,14 @@ set -euo pipefail
 SOCKET="test-subpane-switch-pos-$$"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-cleanup() { tmux -L "$SOCKET" kill-server 2>/dev/null || true; }
+STATE_DIR="$(mktemp -d /tmp/test-subpane-pos-state.XXXXXX)"
+export TMUX_SESSION_SIDEBAR_SUBPANE_HEIGHT_STATE_FILE="$STATE_DIR/height"
+export TMUX_SESSION_SIDEBAR_SUBPANE_POSITION_STATE_FILE="$STATE_DIR/pos"
+
+cleanup() {
+    tmux -L "$SOCKET" kill-server 2>/dev/null || true
+    rm -rf "$STATE_DIR"
+}
 trap cleanup EXIT
 
 export TMUX="$SOCKET"

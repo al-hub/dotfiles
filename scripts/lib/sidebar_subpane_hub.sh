@@ -91,9 +91,13 @@ subpane_hub_relocate_pane_atomic() {
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
 
     if [ -z "$height" ] || ! [ "$height" -ge 4 ] 2>/dev/null; then
-        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         local saved_h
-        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
+            saved_h="$(sidebar_subpane_get_height || true)"
+        else
+            local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+            saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        fi
         if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
             height="$saved_h"
         else
@@ -137,9 +141,13 @@ subpane_hub_acquire_pane() {
     local sub_title="${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}"
 
     if [ -z "$height" ] || ! [ "$height" -ge 4 ] 2>/dev/null; then
-        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         local saved_h
-        saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
+            saved_h="$(sidebar_subpane_get_height || true)"
+        else
+            local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+            saved_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        fi
         if [ -n "$saved_h" ] && [ "$saved_h" -ge 4 ] 2>/dev/null; then
             height="$saved_h"
         else

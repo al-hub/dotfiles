@@ -6,6 +6,17 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Bugfix: Subpane Height & Position Disk Persistence across Tmux Server Restart
+
+- **사용자 요청**:
+  - `d > all > Enter`로 전체 세션을 닫고 tmux를 재시작했을 때 서브페인 높이가 보존되지 않는 현상 점검 및 수정 요청.
+- **원인 분석**:
+  - 사이드바 너비(`SIDEBAR_WIDTH_STATE_FILE`)는 XDG 디스크 파일에 영속화되어 있었으나, 서브페인 높이(`@dotfiles_sidebar_subpane_height`) 및 위치는 오직 tmux 서버 메모리 옵션(`set-option -gq`)에만 저장되어 있어 tmux 프로세스 종료 시 상태가 초기화됨.
+- **조치 내용**:
+  - 서브페인 높이(`SIDEBAR_SUBPANE_HEIGHT_STATE_FILE`) 및 위치(`SIDEBAR_SUBPANE_POSITION_STATE_FILE`) 영속화 파일 경로 및 헬퍼 함수(`persist_sidebar_subpane_height`, `read_persisted_sidebar_subpane_height`, `sidebar_subpane_get_height` 등) 구현.
+  - 리사이즈 또는 토글 시 디스크에 자동 기록하고, 신규 tmux 서버 시작 시 디스크 파일로부터 최신 높이/위치를 자동 로드하도록 조치.
+  - `test-subpane-height-persistence.sh`에 `kill-server` 후 신규 서버 복원 검증 케이스 추가 및 모든 테스트 스위트 PASS 확인.
+
 ## 2026-08-21 - Bugfix: Subpane Height Persistence & Accurate Restoration on Mouse Resize and Toggle
 
 - **사용자 요청**:

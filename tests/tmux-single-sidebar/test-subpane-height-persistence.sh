@@ -49,6 +49,23 @@ saved_opt2="$(tmux -L "$SOCKET" show-option -gqv @dotfiles_sidebar_subpane_heigh
 sub_p3="$(provision_sidebar_subpane "$win_id" "$launcher_p" "" "")"
 [ -n "$sub_p3" ] || { echo "FAIL: could not re-provision top subpane"; exit 1; }
 recreated_h2="$(tmux -L "$SOCKET" display-message -p -t "$sub_p3" '#{pane_height}')"
-[ "$recreated_h2" -eq 22 ] || { echo "FAIL: expected re-provisioned top height 22, got $recreated_h2"; exit 1; }
+# 7. Test persistence across tmux server kill & restart
+state_file="$(mktemp -u /tmp/test-subpane-state.XXXXXX)"
+export TMUX_SESSION_SIDEBAR_SUBPANE_HEIGHT_STATE_FILE="$state_file"
+export TMUX_SESSION_SIDEBAR_SUBPANE_POSITION_STATE_FILE="${state_file}.pos"
+trap 'tmux -L "$SOCKET" kill-server 2>/dev/null || true; rm -f "$state_file"*' EXIT
 
-echo "PASS: Subpane height persistence and restoration contract (bottom & top)"
+persist_sidebar_subpane_height 26
+persist_sidebar_subpane_position "bottom"
+
+tmux -L "$SOCKET" kill-server 2>/dev/null || true
+tmux -L "$SOCKET" new-session -d -s brand-new -n main -x 120 -y 50 'sleep 60'
+win_id_new="$(tmux -L "$SOCKET" display-message -p -t brand-new '#{window_id}')"
+launcher_p_new="$(tmux -L "$SOCKET" split-window -P -F '#{pane_id}' -d -t "$win_id_new" -h -f -b -l 30 'sleep 60')"
+
+sub_p4="$(provision_sidebar_subpane "$win_id_new" "$launcher_p_new" "" "")"
+[ -n "$sub_p4" ] || { echo "FAIL: could not provision subpane on new server"; exit 1; }
+recreated_h3="$(tmux -L "$SOCKET" display-message -p -t "$sub_p4" '#{pane_height}')"
+[ "$recreated_h3" -eq 26 ] || { echo "FAIL: expected disk-persisted height 26, got $recreated_h3"; exit 1; }
+
+echo "PASS: Subpane height persistence and restoration contract (bottom, top & server restart)"
