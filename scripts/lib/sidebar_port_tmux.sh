@@ -119,6 +119,11 @@ sidebar_port_is_subpane() {
 remember_sidebar_subpane_height_for_window() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
+    local win_sess
+    win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
+    if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$win_sess"; then
+        return 0
+    fi
     local sub_pane
     sub_pane="$(sidebar_window_subpane "$window_id" || true)"
     [ -n "$sub_pane" ] || return 0
@@ -254,6 +259,11 @@ provision_sidebar_subpane() {
 destroy_sidebar_subpane() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
+    local win_sess
+    win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
+    if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$win_sess"; then
+        return 0
+    fi
     remember_sidebar_subpane_height_for_window "$window_id"
     local sub_pane
     while IFS= read -r sub_pane; do
@@ -308,7 +318,9 @@ toggle_sidebar_subpane_global() {
         if [ -n "$client_tty" ]; then
             active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
         fi
-        [ -n "$active_win" ] || active_win="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
+        if [ -z "$active_win" ] || (declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"); then
+            active_win="$(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null | awk -F '|' '!/dotfiles-subpane-hub/ { print $1; exit }')"
+        fi
         if [ -n "$active_win" ]; then
             ensure_sidebar_subpane_window "$active_win" ""
         fi
@@ -323,6 +335,9 @@ toggle_sidebar_subpane_global() {
         local win_id sess_name
         while IFS='|' read -r win_id sess_name; do
             [ -n "$win_id" ] || continue
+            if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$sess_name"; then
+                continue
+            fi
             destroy_sidebar_subpane "$win_id"
         done < <(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true)
     fi

@@ -10,6 +10,7 @@
 
 - **서브페인 높이 보존 및 복원 정밀도 개선 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/tmux-session-launcher`)**:
   - `destroy_sidebar_subpane` 및 `subpane_hub_release_pane` 호출 시 현재 윈도우/서브페인의 실제 높이를 먼저 `@dotfiles_sidebar_subpane_height`에 저장하도록 보강하여 마우스 조작 후 즉시 `s` 토글 시 높이 유실 방지.
+  - `destroy_sidebar_subpane`, `remember_sidebar_subpane_height_for_window`, `toggle_sidebar_subpane_global`, `subpane_hub_release_pane`에서 인프라 세션(`dotfiles-subpane-hub`)을 엄격히 제외하여 허브 세션의 임시 창 높이(11/12)로 사용자의 서브페인 높이가 덮어씌워지는 현상 원천 차단.
   - `toggle_current_sidebar` 종료 시(`existing_count > 0`) 활성 윈도우의 사이드바 폭 및 서브페인 높이 동기 저장(`remember_sidebar_width_for_window`) 추가.
   - `subpane_hub_relocate_pane_atomic`, `subpane_hub_acquire_pane`, `provision_sidebar_subpane`에서 `height` 인자 생략 시 `@dotfiles_sidebar_subpane_height` 옵션을 조회하여 복원하고, `join-pane`/`split-window` 후 `resize-pane -t "$sub_pane" -y "$height"`를 명시적으로 실행하여 상단(`-b`) 및 하단 배치 시 tmux 경계 반올림 오차 없이 정확한 높이를 복원하도록 보장.
   - `switch_session` 세션 전환 시 `sub_height`를 하드코딩 `12` 대신 저장된 `@dotfiles_sidebar_subpane_height`로부터 우선 참조하도록 개선.

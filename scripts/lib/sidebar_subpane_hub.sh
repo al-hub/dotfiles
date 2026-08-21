@@ -203,18 +203,20 @@ subpane_hub_acquire_pane() {
 subpane_hub_release_pane() {
     local sub_pane="${1:-}"
     [ -n "$sub_pane" ] || return 0
-    local sub_h
-    sub_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
-    if [ -n "$sub_h" ] && [ "$sub_h" -ge 4 ] 2>/dev/null; then
-        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
-        sidebar_tmux_cmd set-option -gq "$opt" "$sub_h" 2>/dev/null || true
+    local curr_sess hub_sess
+    curr_sess="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{session_name}' 2>/dev/null || true)"
+    hub_sess="$(subpane_hub_session_name)"
+    if [ "$curr_sess" != "$hub_sess" ]; then
+        local sub_h
+        sub_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
+        if [ -n "$sub_h" ] && [ "$sub_h" -ge 4 ] 2>/dev/null; then
+            local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+            sidebar_tmux_cmd set-option -gq "$opt" "$sub_h" 2>/dev/null || true
+        fi
     fi
     # Keep role tags immutable
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
     sidebar_tmux_cmd set-option -p -q -t "$sub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
-    local curr_sess hub_sess
-    curr_sess="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{session_name}' 2>/dev/null || true)"
-    hub_sess="$(subpane_hub_session_name)"
     if [ "$curr_sess" != "$hub_sess" ]; then
         if ! subpane_hub_is_alive; then
             sidebar_tmux_cmd new-session -d -s "$hub_sess" -n "hub" -x 30 -y 12 'sleep 3600' 2>/dev/null || true
