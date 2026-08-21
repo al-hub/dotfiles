@@ -893,6 +893,7 @@ ensure_sidebar_subpane_window() {
 }
 
 toggle_sidebar_subpane_global() {
+    local target_window="${1:-${SIDEBAR_WINDOW_ID:-}}"
     local opt="${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}"
     local current
     current="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || echo 0)"
@@ -901,12 +902,23 @@ toggle_sidebar_subpane_global() {
     sidebar_tmux_cmd set-option -gq "$opt" "$next" 2>/dev/null || true
 
     if [ "$next" = "1" ]; then
-        local active_win=""
-        local client_tty
-        client_tty="$(sidebar_tmux_cmd show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
-        [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null | head -n 1 || true)"
-        if [ -n "$client_tty" ]; then
-            active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
+        local active_win="$target_window"
+        if [ -n "$active_win" ] && declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"; then
+            active_win=""
+        fi
+        if [ -z "$active_win" ] && [ -n "${TMUX_PANE:-}" ]; then
+            active_win="$(sidebar_tmux_cmd display-message -p -t "$TMUX_PANE" '#{window_id}' 2>/dev/null || true)"
+            if [ -n "$active_win" ] && declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"; then
+                active_win=""
+            fi
+        fi
+        if [ -z "$active_win" ]; then
+            local client_tty
+            client_tty="$(sidebar_tmux_cmd show-option -gqv "@dotfiles_sidebar_owner_client" 2>/dev/null || true)"
+            [ -n "$client_tty" ] || client_tty="$(sidebar_tmux_cmd list-clients -F '#{client_tty}' 2>/dev/null | head -n 1 || true)"
+            if [ -n "$client_tty" ]; then
+                active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
+            fi
         fi
         if [ -z "$active_win" ] || (declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"); then
             active_win="$(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null | awk -F '|' '!/dotfiles-subpane-hub/ { print $1; exit }')"
@@ -8840,7 +8852,7 @@ run_tui()
                 ;;
             s|S|m|M|toggle-subpane)
                 trace_event "action.begin type=toggle-subpane"
-                toggle_sidebar_subpane_global
+                toggle_sidebar_subpane_global "${SIDEBAR_WINDOW_ID:-}"
                 request_full_render subpane-toggle
                 ;;
             p|P|swap-subpane-position)
@@ -9072,7 +9084,7 @@ main()
             return 0
             ;;
         --toggle-subpane)
-            toggle_sidebar_subpane_global
+            toggle_sidebar_subpane_global "${2:-${SIDEBAR_WINDOW_ID:-}}"
             return 0
             ;;
         --swap-subpane-position|--toggle-subpane-position)

@@ -7196,7 +7196,7 @@ run_tui()
                 ;;
             s|S|m|M|toggle-subpane)
                 trace_event "action.begin type=toggle-subpane"
-                toggle_sidebar_subpane_global
+                toggle_sidebar_subpane_global "${SIDEBAR_WINDOW_ID:-}"
                 request_full_render subpane-toggle
                 ;;
             p|P|swap-subpane-position)
@@ -7428,7 +7428,7 @@ main()
             return 0
             ;;
         --toggle-subpane)
-            toggle_sidebar_subpane_global
+            toggle_sidebar_subpane_global "${2:-${SIDEBAR_WINDOW_ID:-}}"
             return 0
             ;;
         --swap-subpane-position|--toggle-subpane-position)

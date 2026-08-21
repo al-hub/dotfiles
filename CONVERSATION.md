@@ -6,6 +6,18 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Bugfix: Active Window Routing for In-Sidebar Subpane Toggle
+
+- **사용자 요청**:
+  - 서브페인이 나왔다가 `s`로 OFF 후 다시 `s`를 눌러도 ON이 되지 않고, 다른 세션으로 Enter 이동하면 서브페인이 다시 나타나며, 거기서 다시 `s`로 OFF 후 `s`를 누르면 ON이 되지 않는 현상 원인 및 해결 요청.
+- **원인 분석**:
+  - `toggle_sidebar_subpane_global` 호출 시 호출자 윈도우 ID(`SIDEBAR_WINDOW_ID`)가 전달되지 않아, 활성 윈도우 식별 실패 시 `list-windows -a | head -n 1` (서버의 첫 번째 윈도우, 예: Session 0)로 서브페인이 조인됨.
+  - 사용자가 Session 2에 있을 때 `s`를 누르면 서브페인이 백그라운드의 Session 0 윈도우로 조인되어 현재 화면에서는 안 열린 것처럼 보이고, 다른 세션으로 `Enter` 이동 시 세션 전환 핫스위치 코드가 서브페인을 현재 세션으로 강제 인출하면서 그때서야 나타났던 것임.
+- **조치 내용**:
+  - `toggle_sidebar_subpane_global`에 `target_window_id` 인자 지원 및 `SIDEBAR_WINDOW_ID` / `TMUX_PANE` 우선 참조 추가.
+  - TUI 이벤트 루프(`scripts/tmux-session-launcher`)에서 `toggle_sidebar_subpane_global "${SIDEBAR_WINDOW_ID:-}"`로 현재 윈도우 명시적 전달.
+  - 다중 세션 환경 테스트 및 번들 재빌드/원격 푸시 완료.
+
 ## 2026-08-22 - Bugfix: Subpane Height & Position Disk Persistence across Tmux Server Restart
 
 - **사용자 요청**:

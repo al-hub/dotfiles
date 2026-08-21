@@ -6,6 +6,14 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Bugfix: Active Window Routing for In-Sidebar Subpane Toggle
+
+- **사이드바 내 `s` 서브페인 토글 시 활성 윈도우 명시적 라우팅 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:
+  - 다중 세션 환경에서 사이드바 내부 `s` 키 입력 시 대상 윈도우 인자가 전달되지 않아 서버의 첫 번째 윈도우(`list-windows -a | head -n 1`)로 서브페인이 엉뚱하게 조인되어 현재 세션 화면에서 토글 ON이 무반응처럼 보이던 현상 해결.
+  - `toggle_sidebar_subpane_global`에 `target_window_id` 파라미터를 추가하고 `SIDEBAR_WINDOW_ID` 및 `TMUX_PANE`을 1순위로 참조하도록 수정.
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - `scripts/build-dist.sh` 실행 및 최신 번들 빌드 완료.
+
 ## 2026-08-22 - Bugfix: Subpane Height & Position Disk Persistence across Tmux Server Restart
 
 - **tmux 서버 완전 종료 및 재시작 시 서브페인 높이/위치 디스크 영속성 지원 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`)**:
