@@ -30,9 +30,9 @@ sidebar_port_switch_client() {
     local client_tty="${1:-}" target_session="${2:-}"
     [ -n "$target_session" ] || return 1
     if [ -n "$client_tty" ]; then
-        sidebar_tmux_cmd switch-client -c "$client_tty" -t "=$target_session:"
+        sidebar_tmux_cmd switch-client -c "$client_tty" -t "=$target_session:" 2>/dev/null || true
     else
-        sidebar_tmux_cmd switch-client -t "=$target_session:"
+        sidebar_tmux_cmd switch-client -t "=$target_session:" 2>/dev/null || true
     fi
 }
 

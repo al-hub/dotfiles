@@ -25,10 +25,10 @@ sidebar_switch_execute_hot() {
     fi
 
     local target_spec="=$target_session:"
+    local lease_opt="${SUBPANE_LEASE_OPTION:-@dotfiles_subpane_lease_window}"
     if [ -n "$sub_pane" ] && [ -n "$sidebar_pane" ]; then
-        local sub_win target_win
+        local sub_win
         sub_win="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{window_id}' 2>/dev/null || true)"
-        target_win="$(sidebar_tmux_cmd display-message -p -t "$sidebar_pane" '#{window_id}' 2>/dev/null || true)"
         if [ -n "$sub_win" ] && [ "$sub_win" != "$target_win" ]; then
             local pos_flag=""
             if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
@@ -36,17 +36,27 @@ sidebar_switch_execute_hot() {
                     pos_flag="-b"
                 fi
             fi
+
+            local win_h target_h
+            win_h="$(sidebar_tmux_cmd display-message -p -t "$target_win" '#{window_height}' 2>/dev/null || echo 40)"
+            target_h="${sub_height:-12}"
+            [ "$target_h" -ge 4 ] 2>/dev/null || target_h=12
+            if [ "$((win_h - target_h))" -lt 6 ]; then
+                target_h="$((win_h - 6))"
+                [ "$target_h" -ge 4 ] || target_h=4
+            fi
+
             if [ -n "$client_tty" ]; then
-                if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$sub_height" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
-                    sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                    sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             else
-                if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$sub_height" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
-                    sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                    sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             fi
-            if [ -n "$sub_height" ] && [ "$sub_height" -ge 4 ] 2>/dev/null; then
-                sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$sub_height" 2>/dev/null || true
+            if [ -n "$target_h" ] && [ "$target_h" -ge 4 ] 2>/dev/null; then
+                sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
             fi
             sidebar_tmux_cmd set-option -p -q -t "$sub_pane" allow-rename off 2>/dev/null || true
             sidebar_tmux_cmd select-pane -t "$sub_pane" -T "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" 2>/dev/null || true

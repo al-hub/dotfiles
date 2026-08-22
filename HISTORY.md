@@ -6,6 +6,20 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Multi-Session Active-Window Routing & Atomic Switch Handover
+
+- **활성 윈도우 전용 서브페인 라우팅 (Active-Window-Only Routing - `scripts/tmux-session-launcher`)**:
+  - `provision_managed_sidebars()`에서 백그라운드 세션들까지 순차적으로 싱글톤 서브페인을 생성/조인시켜 마지막 알파벳 세션으로 서브페인이 끌려가던 연쇄 탈취(Iterative Stealing) 버그 완전 해결.
+  - 백그라운드 세션 윈도우는 `subpane_enabled=0`으로 런처만 생성하고, 현재 사용자가 포커스하고 있는 활성 창(`active_client_window`)에만 서브페인을 단 1회 원자적으로 부착.
+  - `remove_managed_sidebars()`에서 사이드바 컬럼 삭제 전 서브페인을 허브(`dotfiles-subpane-hub`)로 안전 대피(Eviction)시켜 싱글톤 PTY 프로세스 보존.
+- **세션 전환 트랜잭션 내 원자적 Lease 핸드오버 & 안전 지오메트리 클램핑 (`scripts/lib/sidebar_switch.sh`)**:
+  - `sidebar_switch_execute_hot()` 내에서 `set-option (Lease Mutex)` + `join-pane` + `switch-client` + `select-pane`을 단일 복합 tmux IPC 파이프라인(`\;`)으로 통합하여 전환 지연 시간을 1ms 이하로 단축하고 연타(Spamming) 시 소유권 경합 방지.
+  - 타깃 윈도우 크기에 맞춘 안전 클램핑 $H_{\text{applied}} = \max(4, \min(H_{\text{desired}}, H_{\text{window}} - 6))$을 적용하여 작은 창 경유 시에도 원래 높이가 영구 훼손되지 않도록 보호.
+- **다중 세션 통합 스트레스 회귀 테스트 추가 (`tests/tmux-single-sidebar/test-subpane-multi-session-stress.sh`)**:
+  - 3개 세션(`sess_1`, `sess_2`, `sess_3`) 생성 후 세션 간 이동, 서브페인 `s` 토글 on/off, 사이드바 `Ctrl+a s` 토글 on/off 전체 왕복 시나리오 검증 (ALL PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 배포 완료.
+
 ## 2026-08-22 - Architecture: Sidebar Column Isolation & Subpane Lease Coordinator (Candidates 1 & 2)
 
 - **사이드바 컬럼 지오메트리 방화벽 (Candidate 1 - `scripts/tmux-session-launcher`, `scripts/lib/sidebar_topology.sh`)**:

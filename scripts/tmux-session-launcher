@@ -2084,15 +2084,48 @@ ensure_target_sidebar_window()
 
 provision_managed_sidebars()
 {
-    local width="${1:-$(sidebar_width)}" session_name_value window_id
+    local width="${1:-$(sidebar_width)}" target_window_hint="${2:-}" session_name_value window_id
     local found=0
+    local active_win="$target_window_hint" sub_glob_enabled
+    if [ -z "$active_win" ]; then
+        active_win="$(active_client_window 2>/dev/null || true)"
+    fi
+    if [ -n "$active_win" ] && is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"; then
+        active_win=""
+    fi
+    if [ -z "$active_win" ]; then
+        local client_tty
+        client_tty="$(sidebar_owner_client || true)"
+        [ -n "$client_tty" ] || client_tty="$(current_client_tty || true)"
+        if [ -n "$client_tty" ]; then
+            active_win="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#{window_id}' 2>/dev/null || true)"
+        fi
+    fi
+    if [ -z "$active_win" ] || is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"; then
+        if declare -f subpane_hub_get_lease_holder >/dev/null 2>&1; then
+            local lease_holder
+            lease_holder="$(subpane_hub_get_lease_holder 2>/dev/null || true)"
+            if [ -n "$lease_holder" ] && sidebar_tmux_cmd list-windows -a -F '#{window_id}' 2>/dev/null | grep -q "^${lease_holder}$"; then
+                active_win="$lease_holder"
+            fi
+        fi
+    fi
+    if [ -z "$active_win" ] || is_infrastructure_session "$(sidebar_tmux_cmd display-message -p -t "$active_win" '#{session_name}' 2>/dev/null || true)"; then
+        active_win="$(sidebar_tmux_cmd list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null | awk -F '|' '!/dotfiles-subpane-hub/ { print $1; exit }')"
+    fi
+    sub_glob_enabled="$(sidebar_subpane_get_enabled 2>/dev/null || echo 0)"
+
     set_sidebar_enabled 1
     while IFS= read -r session_name_value; do
         [ -n "$session_name_value" ] || continue
         found=1
         while IFS= read -r window_id; do
             [ -n "$window_id" ] || continue
-            provision_sidebar_window "$window_id" "$width" || return 1
+            local sub_for_win=0
+            if [ -n "$active_win" ] && [ "$window_id" = "$active_win" ] && [ "$sub_glob_enabled" = "1" ]; then
+                sub_for_win=1
+            fi
+            provision_sidebar_window "$window_id" "$width" "" "$sub_for_win" || return 1
             wait_for_sidebar_window_ready "$window_id" || return 1
         done < <(sidebar_tmux_cmd list-windows -t "=$session_name_value:" -F '#{window_id}' 2>/dev/null || true)
     done < <(managed_session_names)
@@ -2102,7 +2135,11 @@ provision_managed_sidebars()
             mark_session_managed "$session_name_value" || true
             while IFS= read -r window_id; do
                 [ -n "$window_id" ] || continue
-                provision_sidebar_window "$window_id" "$width" || return 1
+                local sub_for_win=0
+                if [ -n "$active_win" ] && [ "$window_id" = "$active_win" ] && [ "$sub_glob_enabled" = "1" ]; then
+                    sub_for_win=1
+                fi
+                provision_sidebar_window "$window_id" "$width" "" "$sub_for_win" || return 1
                 wait_for_sidebar_window_ready "$window_id" || return 1
             done < <(sidebar_tmux_cmd list-windows -t "=$session_name_value:" -F '#{window_id}' 2>/dev/null || true)
         fi
@@ -2113,13 +2150,34 @@ provision_managed_sidebars()
 
 remove_managed_sidebars()
 {
-    local window_id
+    local window_id sub_pane
     set_sidebar_enabled 0
+    if declare -f subpane_hub_get_pane >/dev/null 2>&1; then
+        sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
+        if [ -n "$sub_pane" ] && declare -f subpane_hub_release_pane >/dev/null 2>&1; then
+            subpane_hub_release_pane "$sub_pane" 2>/dev/null || true
+        fi
+    fi
     while IFS= read -r window_id; do
         [ -n "$window_id" ] || continue
         remove_sidebar_window "$window_id" || return 1
     done < <(sidebar_window_ids)
     set_sidebar_enabled 0
+}
+
+ensure_sidebar_for_session()
+{
+    local session_name_value="$1" window_id width="${2:-$(sidebar_width)}" defer_ready="${3:-false}" existing_pane
+    [ -n "$session_name_value" ] || return 1
+    mark_session_managed "$session_name_value" || return 1
+    window_id="$(tmux list-windows -t "=$session_name_value:" -F '#{window_id}' 2>/dev/null | head -n 1)"
+    [ -n "$window_id" ] || return 1
+    provision_sidebar_window "$window_id" "$width" || return 1
+    if [ "$defer_ready" != true ]; then
+        wait_for_sidebar_window_ready "$window_id" || return 1
+    fi
+    set_sidebar_enabled 1
+    [ "$defer_ready" = true ] || signal_managed_sidebar_refresh
 }
 
 open_sidebar()
@@ -2174,43 +2232,9 @@ open_sidebar()
     return 0
 }
 
-ensure_session_sidebar()
-{
-    session_name="$1"
-    refresh="${2:-false}"
-    preserve_layout="${4:-false}"
-    ensure_session_sidebar_cache_hit=false
-    if [ "$refresh" != "true" ] && [ "${topology_cache_initialized:-false}" = "true" ]; then
-        if [ -n "$(cached_sidebar_pane_for_session "$session_name" || true)" ]; then
-            ensure_session_sidebar_cache_hit=true
-            return 0
-        fi
-    fi
-    width="${3:-$(sidebar_width)}"
-    ensure_sidebar_for_session "$session_name" "$width"
-}
-
-ensure_sidebar_for_session()
-{
-    local session_name_value="$1" window_id width="${2:-$(sidebar_width)}" defer_ready="${3:-false}" existing_pane
-    [ -n "$session_name_value" ] || return 1
-    mark_session_managed "$session_name_value" || return 1
-    window_id="$(tmux list-windows -t "=$session_name_value:" -F '#{window_id}' 2>/dev/null | head -n 1)"
-    [ -n "$window_id" ] || return 1
-    provision_sidebar_window "$window_id" "$width" || return 1
-    if [ "$defer_ready" != true ]; then
-        wait_for_sidebar_window_ready "$window_id" || return 1
-    fi
-    set_sidebar_enabled 1
-    # Other window-local sidebar processes have their own session snapshots.
-    # Refresh them after a new managed session is provisioned so a later
-    # keyboard selection sees the same list in every window. This is a
-    # creation-time model update, not part of the native switch hot path.
-    [ "$defer_ready" = true ] || signal_managed_sidebar_refresh
-}
-
 toggle_current_sidebar()
 {
+    local target_arg="${1:-}"
     local existing_count owner_client current_client
     owner_client="$(sidebar_owner_client)"
     if [ -n "$owner_client" ]; then
@@ -2248,6 +2272,13 @@ toggle_current_sidebar()
     if [ -n "$client_tty" ]; then
         current_session_name="$(sidebar_tmux_cmd display-message -p -c "$client_tty" '#S' 2>/dev/null || true)"
     fi
+    if [ -n "$target_arg" ]; then
+        if [[ "$target_arg" == @* ]]; then
+            current_session_name="$(sidebar_tmux_cmd display-message -p -t "$target_arg" '#S' 2>/dev/null || true)"
+        else
+            current_session_name="$target_arg"
+        fi
+    fi
     if [ -z "$current_session_name" ] || is_infrastructure_session "$current_session_name"; then
         current_session_name="$(sidebar_tmux_cmd display-message -p '#S' 2>/dev/null || true)"
     fi
@@ -2255,8 +2286,16 @@ toggle_current_sidebar()
         current_session_name="$(sidebar_tmux_cmd list-sessions -F '#{session_name}' 2>/dev/null | awk '!/dotfiles-subpane-hub/ { print $1; exit }')"
     fi
     [ -n "$current_session_name" ] && mark_session_managed "$current_session_name" || true
+
+    local active_target_window=""
+    if [ -n "$target_arg" ] && [[ "$target_arg" == @* ]]; then
+        active_target_window="$target_arg"
+    elif [ -n "$current_session_name" ]; then
+        active_target_window="$(sidebar_tmux_cmd list-windows -t "=$current_session_name:" -F '#{window_id}' 2>/dev/null | head -n 1 || true)"
+    fi
+
     sidebar_tmux_cmd set-option -gq "$SIDEBAR_PROVISION_OPTION" 1 2>/dev/null || true
-    if ! provision_managed_sidebars; then
+    if ! provision_managed_sidebars "$(sidebar_width)" "$active_target_window"; then
         sidebar_tmux_cmd set-option -gq "$SIDEBAR_PROVISION_OPTION" 0 2>/dev/null || true
         trace_event "sidebar.toggle.abort reason=provision-failed"
         return 1
@@ -7468,7 +7507,7 @@ main()
             return 0
             ;;
         --toggle-sidebar)
-            toggle_current_sidebar
+            toggle_current_sidebar "${2:-}"
             return 0
             ;;
         --toggle-sidebar-session)

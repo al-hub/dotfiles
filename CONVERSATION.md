@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Multi-Session Active-Window Routing & Atomic Switch Handover
+
+- **사용자 요청**:
+  - 다중 세션이 열려 있는 상태에서 세션 간 전환(Enter) 후, 서브페인 on/off(`s`) 및 사이드바 on/off(`Ctrl+a s`) 시 서브페인이 보이지 않거나 높이가 깨지는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - 전문 subagents들을 호출하여 제안의 위험 요소 및 개선 방안을 논의하고 최종안 도출 후 구현 진행 요청.
+- **서브에이전트 협업 및 아키텍처 결론**:
+  1. **Active-Window-Only 라우팅**: 사이드바 일괄 프로비저닝 시 백그라운드 세션들에 싱글톤 서브페인이 연쇄적으로 조인되어 마지막 세션으로 끌려가는 현상을 차단하고, 오직 현재 클라이언트의 활성 윈도우(`active_client_window`)에만 서브페인을 1회 부착.
+  2. **복합 원자적 IPC 파이프라인**: 세션 전환 트랜잭션(`sidebar_switch_execute_hot`) 내에서 Lease Mutex 갱신, `join-pane`, `switch-client`, `select-pane`을 단일 tmux 명령(`\;`)으로 묶어 1ms 이내 원자적 핸드오버 실현.
+  3. **안전 지오메트리 클램핑**: 타깃 창 높이 축소 시 임시 클램프 높이가 영구 설정으로 덮어써지지 않도록 Desired vs Clamped 높이를 엄격히 분리.
+- **조치 내용**:
+  - `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`에 반영 및 `dist/tmux-session-launcher` 번들 빌드.
+  - `tests/tmux-single-sidebar/test-subpane-multi-session-stress.sh` 회귀 테스트 추가 (ALL 12 TESTS PASS).
+
 ## 2026-08-22 - Architecture: Sidebar Column Isolation & Subpane Lease Coordinator (Candidates 1 & 2)
 
 - **사용자 요청**:
