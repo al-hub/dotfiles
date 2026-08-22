@@ -1,7 +1,6 @@
 # tmux sidebar 테스트 운영표
 
-이 문서는 `tests/tmux-single-sidebar` 및 `tests/tmux-sidebar-gradient`에 있는 테스트를 기능별 실행 단계로
-정리한 것이다. 변경 범위에 맞는 빠른 gate부터 순서대로 실행한다.
+이 문서는 `tests/` 디렉터리 내의 모든 테스트 스위트, 프로파일러, 과거 결함 회귀 및 공통 인프라 하네스(총 134개 스크립트)를 기능별 실행 단계로 정리한 것이다.
 
 ## 테스트 러너 및 건전성 진단 도구
 
@@ -11,22 +10,22 @@
 # 테스트 스위트 건전성(Health) 정적 분석 및 Orphan/레거시 감사
 bash tests/analyze-test-health.sh
 
-# Gate A 빠른 계약 및 단위 테스트 일괄 실행 (신규 보강 포함)
+# Gate A 빠른 계약 및 단위 테스트 일괄 실행 (20종)
 bash tests/run-tests.sh --gate a
 
-# Gate B PTY E2E 기능 회귀 테스트 일괄 실행 (신규 보강 포함)
+# Gate B PTY E2E 기능 회귀 테스트 일괄 실행 (15종)
 bash tests/run-tests.sh --gate b
 
-# Gate C 멀티 클라이언트 및 소유권 테스트
+# Gate C 멀티 클라이언트 및 소유권 테스트 (5종)
 bash tests/run-tests.sh --gate c
 
 # 서브페인(Subpane) 종합 스위트 (21종)
 bash tests/run-tests.sh --subpane
 
-# 스트레스 및 고속 연속 전환/락 회수 스위트
+# 스트레스 및 고속 연속 전환/락 회수 스위트 (5종)
 bash tests/run-tests.sh --stress
 
-# 복원 엣지케이스, 손상 복구 및 관측성 스위트
+# 복원 엣지케이스, 손상 복구 및 관측성 스위트 (6종)
 bash tests/run-tests.sh --edge
 
 # 사이드바 그래디언트 및 웨이브폼 스위트 (7종)
@@ -38,9 +37,9 @@ bash tests/run-tests.sh --all
 
 ---
 
-## 실행 단계
+## 실행 단계별 테스트 분류
 
-### Gate A: 빠른 계약 및 실패 경계
+### Gate A: 빠른 계약 및 단위 경계
 
 사용자 tmux를 변경하지 않는 기본 gate다. launcher, controller, metadata,
 ownership, rollback, 폭 영속화, cold provisioning을 변경하면 반드시 실행한다.
@@ -55,6 +54,12 @@ bash tests/tmux-single-sidebar/test-presenter-unit.sh
 bash tests/tmux-single-sidebar/test-coordinator-unit.sh
 bash tests/tmux-single-sidebar/test-archive-unit.sh
 bash tests/tmux-single-sidebar/test-topology-unit.sh
+bash tests/tmux-single-sidebar/test-port-tmux-unit.sh
+bash tests/tmux-single-sidebar/test-infra-registry-unit.sh
+bash tests/tmux-single-sidebar/test-activity-observer-unit.sh
+bash tests/tmux-single-sidebar/test-restore-terminal-unit.sh
+bash tests/tmux-single-sidebar/test-selection-alignment-unit.sh
+bash tests/tmux-single-sidebar/test-switch-unit.sh
 
 # 코어 사이드바 계약 테스트
 bash tests/tmux-single-sidebar/test-contract.sh
@@ -66,6 +71,18 @@ bash tests/tmux-single-sidebar/test-session-name-zero.sh
 bash tests/tmux-single-sidebar/test-raw-layout-snapshot.sh
 bash tests/tmux-single-sidebar/test-layout-metadata-failure.sh
 bash tests/tmux-single-sidebar/test-failure-injection.sh
+bash tests/tmux-single-sidebar/test-topology-contract.sh
+bash tests/tmux-single-sidebar/test-marker-handover-contract.sh
+bash tests/tmux-single-sidebar/test-marker-sync.sh
+bash tests/tmux-single-sidebar/test-middle-footer.sh
+bash tests/tmux-single-sidebar/test-navigation-in-memory.sh
+bash tests/tmux-single-sidebar/test-sync-option-clear.sh
+bash tests/tmux-single-sidebar/test-transition-coalescing.sh
+bash tests/tmux-single-sidebar/test-window-ready-options.sh
+bash tests/tmux-single-sidebar/test-client-source-resolution.sh
+bash tests/tmux-single-sidebar/test-fast-self-switch.sh
+bash tests/tmux-single-sidebar/test-bulk-restore-lazy.sh
+bash tests/tmux-single-sidebar/test-archive-deterministic-naming-contract.sh
 
 # 서브페인 기본 계약 및 레이아웃 격리
 bash tests/tmux-single-sidebar/test-subpane-unit.sh
@@ -77,11 +94,6 @@ bash tests/tmux-single-sidebar/test-width-persistence-contract.sh
 bash tests/tmux-single-sidebar/test-cold-provisioning-contract.sh
 bash tests/tmux-single-sidebar/test-batch-restore-observability.sh
 ```
-
-현재 `test-contract.sh` 및 `test-width-persistence-contract.sh`는 전역 sidebar 폭 저장, 새 session 폭 재사용, state 손상 시 fallback, stale
-metadata 복구, provisioning 중 중복 toggle 억제를 함께 검증한다. 전역 폭과
-session별 work layout을 서로 덮어쓰지 않는지 확인하는 assertion도 이 계약
-테스트에 유지한다.
 
 ### Gate B: isolated attached-PTY 기능 회귀
 
@@ -103,20 +115,14 @@ bash tests/tmux-single-sidebar/test-delete-zero-stale-row.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-window-local-switch.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-window-local-toggle.sh
 bash tests/tmux-single-sidebar/test-batch-restore-layout-integrity.sh
+bash tests/tmux-single-sidebar/test-keyboard-e2e-mouse-selection.sh
+bash tests/tmux-single-sidebar/test-keyboard-e2e-sidebar-fixed-work-switch.sh
+bash tests/tmux-single-sidebar/test-presenter-handover-e2e.sh
+bash tests/tmux-single-sidebar/test-multi-session-animation-e2e.sh
 
 # [신규 보강] Split 복원 엣지케이스 (서브페인 공존, 수평 높이 정량, 해상도 변경 적응)
 bash tests/tmux-single-sidebar/test-split-restore-edge-cases.sh
 ```
-
-필수 invariant는 다음과 같다.
-
-- session 생성·이동·Enter 선택이 반복해서 성공한다.
-- work pane 수, title, path, geometry(폭 및 높이)와 active pane이 보존된다.
-- archive 선택 수와 restore 완료 수가 일치한다. 다중 복원은 6/6이어야 한다.
-- restore 중 빠른 입력은 중복 operation을 만들지 않는다.
-- session `0`과 stale sidebar row가 정상 처리된다.
-- known error, `session switch failed`, `longjmp causes uninitialized stack frame`
-  이 없어야 한다.
 
 ### Gate C: multi-client와 lifecycle 경계
 
@@ -130,9 +136,6 @@ bash tests/tmux-single-sidebar/test-window-local-multi-client.sh
 bash tests/tmux-single-sidebar/test-window-local-lifecycle-contract.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-window-local-lifecycle.sh
 ```
-
-외부 session은 보존하고 managed session만 변경해야 하며, conflict나 injected
-failure에서는 원본 session과 sidebar ownership이 보존되어야 한다.
 
 ### 서브페인(Subpane) 특화 스위트
 
@@ -203,15 +206,17 @@ bash tests/tmux-sidebar-gradient/test-state.sh
 bash tests/tmux-sidebar-gradient/test-session-isolation.sh
 bash tests/tmux-sidebar-gradient/test-lifecycle-e2e.sh
 bash tests/tmux-sidebar-gradient/test-regressions.sh
+bash tests/tmux-sidebar-gradient/test-hot-path.sh
+bash tests/tmux-sidebar-gradient/test-launcher-lifecycle.sh
 bash tests/tmux-single-sidebar/test-animation-lut-unit.sh
 ```
 
-### Gate D: 전환 관측 및 성능
+### Gate D: 전환 관측 및 성능 프로파일링
 
-기능 gate가 통과한 뒤 phase별 latency와 redraw 원인을 측정한다. 이 테스트는
-기능 성공과 성능 목표 미달을 별도로 보고한다.
+기능 gate가 통과한 뒤 phase별 latency와 redraw 원인을 측정한다.
 
 ```sh
+# 전환 관측 및 지연시간 측정
 bash tests/tmux-single-sidebar/test-session-switch-live-correlation.sh
 bash tests/tmux-single-sidebar/test-session-switch-live-correlation-horizontal.sh
 bash tests/tmux-single-sidebar/test-session-switch-live-correlation-vertical.sh
@@ -221,8 +226,45 @@ bash tests/tmux-single-sidebar/test-keyboard-e2e-switch-render-cause.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-switch-pty-render-measurement.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-switch-visual-layer-measurement.sh
 bash tests/tmux-single-sidebar/test-keyboard-e2e-switch-flicker-measurement.sh
+bash tests/tmux-single-sidebar/test-keyboard-e2e-session-create-latency.sh
 bash tests/compare-profiles.sh
+
+# 정밀 프로파일링 및 정착 측정 스위트
+bash tests/profile-active-sidebar.sh
+bash tests/profile-isolated-sidebar.sh
+bash tests/profile-isolated-sidebar-auto.sh
+bash tests/profile-isolated-sidebar-reproduction.sh
+bash tests/profile-observer-settlement.sh
+bash tests/profile-separated-run.sh
+bash tests/profile-sidebar-navigation.sh
+bash tests/profile-tmux-settlement.sh
 ```
+
+### 과거 회귀 및 결함 재현 스위트 (Historical Regression & Defect Reproductions)
+
+과거 릴리스 및 개발 과정에서 발생했던 특수 결함 패턴을 방지하는 회귀 검증 스위트다.
+
+```sh
+bash tests/tmux-single-sidebar/test-debug-user-exact.sh
+bash tests/tmux-single-sidebar/test-debug-user-scenario.sh
+bash tests/tmux-single-sidebar/test-basic-defects.sh
+bash tests/tmux-single-sidebar/test-new-defects.sh
+bash tests/tmux-single-sidebar/test-option-a-geometry.sh
+bash tests/tmux-single-sidebar/test-tui-delete-action-regression.sh
+bash tests/tmux-single-sidebar/test-keyboard-e2e-sidebar-fixed-work-failure.sh
+```
+
+### 테스트 인프라 및 공통 하네스
+
+독립 실행 스크립트가 아닌 공통 런타임/모듈 하네스다.
+
+- `tests/lib/test_artifact_helper.sh`: 테스트 실패 시 진단 덤프(pane, layout, capture) 보존 헬퍼.
+- `tests/tmux-sidebar-gradient/lib.sh`: 그래디언트 테스트용 assertion 및 snapshot stub 공통 라이브러리.
+- `tests/tmux-sidebar-gradient/fake-ai.sh`: 백그라운드 AI 출력 시뮬레이터.
+- `tests/tmux-sidebar-gradient/run.sh`: 그래디언트 러너 래퍼.
+- `tests/tmux-single-sidebar/test-interactive-common.sh`: 격리 socket 및 PTY interactor 공통 설정.
+- `tests/tmux-single-sidebar/run_gate_e_test.sh` / `tests/tmux-single-sidebar/run_gate_e_scenarios.sh`: Gate E 라이브 러너 하네스.
+- `tests/tmux-single-sidebar/test-keyboard-e2e.sh`: PTY 브릿지 E2E 코어 드라이버.
 
 ### Gate E: 사용자-visible tmux 최종 검증
 
