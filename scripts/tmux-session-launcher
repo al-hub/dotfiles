@@ -1094,6 +1094,9 @@ sync_sidebar_layout()
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
     fi
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$window_id" 2>/dev/null || true
+    fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
         return 1
@@ -1484,14 +1487,20 @@ snapshot_work_layout_transaction()
     fi
 
     if [ -n "$sub_pane" ] && [ -n "$sidebar_pane" ]; then
-        local pos_flag=""
+        local sub_pos="bottom" pos_flag=""
         if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-            if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-                pos_flag="-b"
-            fi
+            sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
         fi
+        if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+            pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+        elif [ "$sub_pos" = "top" ]; then
+            pos_flag="-b"
+        fi
+
         local join_l="$sub_height"
-        if [ "$pos_flag" = "-b" ]; then
+        if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+            join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$sub_height")"
+        elif [ "$pos_flag" = "-b" ]; then
             join_l="$((sub_height + 1))"
         fi
         if ! tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" 2>/dev/null; then

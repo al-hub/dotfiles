@@ -103,6 +103,23 @@ is_infrastructure_session() {
         *) return 1 ;;
     esac
 }
+
+sidebar_subpane_calc_pos_flag() {
+    local pos="${1:-bottom}"
+    case "$pos" in
+        top|TOP) printf '%s\n' "-b" ;;
+        *) printf '%s\n' "" ;;
+    esac
+}
+
+sidebar_subpane_calc_join_length() {
+    local pos="${1:-bottom}" height="${2:-12}"
+    case "$height" in ''|*[!0-9]*) height=12 ;; esac
+    case "$pos" in
+        top|TOP) printf '%s\n' "$((height + 1))" ;;
+        *) printf '%s\n' "$height" ;;
+    esac
+}
 # --- END sidebar_domain.sh ---
 # --- BEGIN sidebar_domain_animation.sh ---
 # Pure domain animation and Look-Up Table (LUT) waveform engine for tmux-session-launcher
@@ -807,6 +824,10 @@ sync_attached_subpane_user_intent() {
     sub_pane="$(sidebar_window_subpane "$source_win" || true)"
     [ -n "$sub_pane" ] || return 0
 
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$source_win" 2>/dev/null || true
+    fi
+
     local live_h
     live_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || echo 0)"
     case "$live_h" in ''|*[!0-9]*) return 0 ;; esac
@@ -1258,15 +1279,20 @@ subpane_hub_relocate_pane_atomic() {
         fi
     fi
 
-    local pos_flag=""
+    local sub_pos="bottom" pos_flag=""
     if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-            pos_flag="-b"
-        fi
+        sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+    fi
+    if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+        pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+    elif [ "$sub_pos" = "top" ]; then
+        pos_flag="-b"
     fi
 
     local join_l="$height"
-    if [ "$pos_flag" = "-b" ]; then
+    if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+        join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$height")"
+    elif [ "$pos_flag" = "-b" ]; then
         join_l="$((height + 1))"
     fi
 
@@ -1324,15 +1350,20 @@ subpane_hub_acquire_pane() {
         return 0
     fi
 
-    local pos_flag=""
+    local sub_pos="bottom" pos_flag=""
     if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-            pos_flag="-b"
-        fi
+        sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+    fi
+    if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+        pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+    elif [ "$sub_pos" = "top" ]; then
+        pos_flag="-b"
     fi
 
     local join_l="$height"
-    if [ "$pos_flag" = "-b" ]; then
+    if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+        join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$height")"
+    elif [ "$pos_flag" = "-b" ]; then
         join_l="$((height + 1))"
     fi
 
@@ -1507,11 +1538,14 @@ sidebar_switch_execute_hot() {
         local sub_win
         sub_win="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{window_id}' 2>/dev/null || true)"
         if [ -n "$sub_win" ] && [ "$sub_win" != "$target_win" ]; then
-            local pos_flag=""
+            local sub_pos="bottom" pos_flag=""
             if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-                if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-                    pos_flag="-b"
-                fi
+                sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+            fi
+            if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+                pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+            elif [ "$sub_pos" = "top" ]; then
+                pos_flag="-b"
             fi
 
             local win_h target_h
@@ -1524,7 +1558,9 @@ sidebar_switch_execute_hot() {
             fi
 
             local join_l="$target_h"
-            if [ "$pos_flag" = "-b" ]; then
+            if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+                join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$target_h")"
+            elif [ "$pos_flag" = "-b" ]; then
                 join_l="$((target_h + 1))"
             fi
 
@@ -2937,6 +2973,9 @@ sync_sidebar_layout()
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
     fi
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$window_id" 2>/dev/null || true
+    fi
     if ! save_sidebar_layout "$window_id"; then
         trace_event "sidebar.layout.sync.abort window=$window_id reason=full-snapshot"
         return 1
@@ -3327,14 +3366,20 @@ snapshot_work_layout_transaction()
     fi
 
     if [ -n "$sub_pane" ] && [ -n "$sidebar_pane" ]; then
-        local pos_flag=""
+        local sub_pos="bottom" pos_flag=""
         if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-            if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-                pos_flag="-b"
-            fi
+            sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
         fi
+        if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+            pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+        elif [ "$sub_pos" = "top" ]; then
+            pos_flag="-b"
+        fi
+
         local join_l="$sub_height"
-        if [ "$pos_flag" = "-b" ]; then
+        if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+            join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$sub_height")"
+        elif [ "$pos_flag" = "-b" ]; then
             join_l="$((sub_height + 1))"
         fi
         if ! tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" 2>/dev/null; then

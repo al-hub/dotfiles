@@ -6,6 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
+
+- **사용자 요청**:
+  - 서브페인이 아래가 아닌 위에 배치되어 있을 때, 세션 간 이동(Enter) 시 높이 폭이 유지되지 못하는 현상에 대해 아키텍처적 충돌 분석 및 개선 요청.
+  - Candidate 1(도메인 지오메트리 계산 함수 일원화) + Candidate 2(물리적 위치 자동 감지 및 실시간 동기화) 승인.
+- **조치 내용**:
+  1. `sidebar_domain.sh`에 순수 도메인 함수 `sidebar_subpane_calc_pos_flag`와 `sidebar_subpane_calc_join_length` 구현 및 전환/조인 모듈에 통합 적용.
+  2. `sync_sidebar_layout` 및 `sync_attached_subpane_user_intent`에서 물리적 좌표(`pane_top`)를 기반으로 상/하 상태를 실시간 자동 감지 및 갱신.
+  3. 전체 17개 서브페인 및 코어 계약 테스트 100% GREEN 검증 완료.
+
 ## 2026-08-22 - Architecture: Attached Pre-Flight Intent Sync & Viewport Clamping Separation (Candidate A + B)
 
 - **사용자 요청**:

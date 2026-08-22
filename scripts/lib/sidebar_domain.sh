@@ -100,3 +100,20 @@ is_infrastructure_session() {
         *) return 1 ;;
     esac
 }
+
+sidebar_subpane_calc_pos_flag() {
+    local pos="${1:-bottom}"
+    case "$pos" in
+        top|TOP) printf '%s\n' "-b" ;;
+        *) printf '%s\n' "" ;;
+    esac
+}
+
+sidebar_subpane_calc_join_length() {
+    local pos="${1:-bottom}" height="${2:-12}"
+    case "$height" in ''|*[!0-9]*) height=12 ;; esac
+    case "$pos" in
+        top|TOP) printf '%s\n' "$((height + 1))" ;;
+        *) printf '%s\n' "$height" ;;
+    esac
+}

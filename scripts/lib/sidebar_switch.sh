@@ -30,11 +30,14 @@ sidebar_switch_execute_hot() {
         local sub_win
         sub_win="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{window_id}' 2>/dev/null || true)"
         if [ -n "$sub_win" ] && [ "$sub_win" != "$target_win" ]; then
-            local pos_flag=""
+            local sub_pos="bottom" pos_flag=""
             if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-                if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-                    pos_flag="-b"
-                fi
+                sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+            fi
+            if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+                pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+            elif [ "$sub_pos" = "top" ]; then
+                pos_flag="-b"
             fi
 
             local win_h target_h
@@ -47,7 +50,9 @@ sidebar_switch_execute_hot() {
             fi
 
             local join_l="$target_h"
-            if [ "$pos_flag" = "-b" ]; then
+            if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+                join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$target_h")"
+            elif [ "$pos_flag" = "-b" ]; then
                 join_l="$((target_h + 1))"
             fi
 

@@ -140,15 +140,20 @@ subpane_hub_relocate_pane_atomic() {
         fi
     fi
 
-    local pos_flag=""
+    local sub_pos="bottom" pos_flag=""
     if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-            pos_flag="-b"
-        fi
+        sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+    fi
+    if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+        pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+    elif [ "$sub_pos" = "top" ]; then
+        pos_flag="-b"
     fi
 
     local join_l="$height"
-    if [ "$pos_flag" = "-b" ]; then
+    if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+        join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$height")"
+    elif [ "$pos_flag" = "-b" ]; then
         join_l="$((height + 1))"
     fi
 
@@ -206,15 +211,20 @@ subpane_hub_acquire_pane() {
         return 0
     fi
 
-    local pos_flag=""
+    local sub_pos="bottom" pos_flag=""
     if declare -f sidebar_subpane_get_position >/dev/null 2>&1; then
-        if [ "$(sidebar_subpane_get_position)" = "top" ]; then
-            pos_flag="-b"
-        fi
+        sub_pos="$(sidebar_subpane_get_position 2>/dev/null || echo bottom)"
+    fi
+    if declare -f sidebar_subpane_calc_pos_flag >/dev/null 2>&1; then
+        pos_flag="$(sidebar_subpane_calc_pos_flag "$sub_pos")"
+    elif [ "$sub_pos" = "top" ]; then
+        pos_flag="-b"
     fi
 
     local join_l="$height"
-    if [ "$pos_flag" = "-b" ]; then
+    if declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+        join_l="$(sidebar_subpane_calc_join_length "$sub_pos" "$height")"
+    elif [ "$pos_flag" = "-b" ]; then
         join_l="$((height + 1))"
     fi
 

@@ -6,6 +6,16 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
+
+- **순수 도메인 지오메트리 계산 함수 일원화 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/tmux-session-launcher`)**:
+  - `sidebar_subpane_calc_pos_flag` 및 `sidebar_subpane_calc_join_length` 도메인 함수를 구축하여 4개 모듈에 산재되어 있던 `$pos_flag == "-b"` 및 `join_l=$((height + 1))` 지오메트리 보상 계산식을 단일 진실 공급원(Single Source of Truth)으로 일원화.
+  - 상단 배치 시의 경계선 보정(+1 row compensation) 및 원자적 파이프라인 무결성 확보.
+- **물리적 상/하 배치 위치 자동 감지 및 실시간 동기화 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:
+  - `sync_sidebar_subpane_position_for_window`를 `sync_sidebar_layout` 및 `sync_attached_subpane_user_intent` 진입부에 연결하여, 사용자가 물리적으로 페인 순서를 바꾸더라도 `pane_top` 좌표 기반으로 전역 옵션(`@dotfiles_sidebar_subpane_position`)을 실시간 100% 자동 동기화.
+- **전체 17개 서브페인 및 코어 테스트 스위트 100% 통과 (17/17 PASS)**:
+  - 상단/하단 스왑, 마우스 리사이즈, 세션 왕복, 클램핑 복원 등 전체 스위트 정상 통과 확인.
+
 ## 2026-08-22 - Architecture: Attached Pre-Flight Intent Sync & Viewport Clamping Separation (Candidate A + B)
 
 - **활성 클라이언트 창의 동기적 Pre-Flight 의도 승격 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:

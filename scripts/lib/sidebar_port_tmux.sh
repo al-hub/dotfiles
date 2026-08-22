@@ -305,6 +305,10 @@ sync_attached_subpane_user_intent() {
     sub_pane="$(sidebar_window_subpane "$source_win" || true)"
     [ -n "$sub_pane" ] || return 0
 
+    if declare -f sync_sidebar_subpane_position_for_window >/dev/null 2>&1; then
+        sync_sidebar_subpane_position_for_window "$source_win" 2>/dev/null || true
+    fi
+
     local live_h
     live_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || echo 0)"
     case "$live_h" in ''|*[!0-9]*) return 0 ;; esac
