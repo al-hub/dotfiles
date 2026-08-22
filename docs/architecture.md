@@ -11,9 +11,9 @@
 
 ## Version Model
 
-- 현재 안정 설치 버전은 `v0.1`이다.
+- 현재 안정 설치 버전은 `v0.6.17` (v6.17)이다.
 - 인자를 주지 않은 `install.sh`는 GitHub raw URL을 `refs/heads/master` 기준으로 계산한다.
-- `install.sh --v v0.1` 또는 `install.sh --version v0.1`은 GitHub raw URL을 `refs/tags/v0.1` 기준으로 계산한다.
+- `install.sh --v v0.6.17` 또는 `install.sh --version v0.6.17`은 GitHub raw URL을 `refs/tags/v0.6.17` 기준으로 계산한다.
 - `install.sh --latest`는 명시적으로 `master` branch 기준으로 설치한다.
 - `REPO_RAW_URL`이나 `INSTALL_TOML_URL`을 직접 지정하면 테스트용 raw URL을 강제로 사용할 수 있다.
 - 새 버전을 배포할 때는 버전 문자열만 바꾸는 것으로 끝내지 말고, 해당 커밋에 같은 이름의 git tag를 만들어야 한다.
@@ -29,11 +29,16 @@
 
 ## Current Modules
 
-### tmux
+### tmux & Session Sidebar Ecosystem
 
-- visible top-level module
-- config file, hidden dependencies, runtime hook을 모두 가진다.
-- tmux server 재시작, executable bit 조정, Xresources 로딩 같은 후처리가 있다.
+- **Visible Top-Level Module**: `dotfiles/tmux.conf` 및 런타임 훅 설치.
+- **Window-Local Presenter Model**: 각 관리 대상 윈도우마다 고정 Presenter Pane(`dotfiles-session-sidebar`) 상주.
+- **Global Singleton Subpane Hub**: `dotfiles-subpane-hub`를 통한 단일 물리 서브페인 프로세스 원자적 임대(`@dotfiles_subpane_lease_window`).
+- **10 Core Modular Architecture (`scripts/lib/*.sh`)**:
+  - `sidebar_domain*.sh`: 순수 도메인 헬퍼, 24프레임 LUT 웨이브폼 엔진(30 FPS), AI 활동 상태 머신.
+  - `sidebar_coordinator.sh` / `sidebar_presenter.sh`: 선택 정렬 리듀서, 마커 델타 계산, 뷰 템플릿.
+  - `sidebar_port_tmux.sh` / `sidebar_subpane_hub.sh`: 소켓 격리 Tmux 어댑터, 싱글톤 허브 수명주기, tmux 3.2a 보정.
+  - `sidebar_switch.sh` / `sidebar_archive.sh` / `sidebar_topology.sh`: Native 전환 파이프라인(0.75ms Fast-Path), Version 3 아카이브 직렬화, 토폴로지 분석기.
 
 ### opencode
 
