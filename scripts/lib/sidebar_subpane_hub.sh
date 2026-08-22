@@ -162,7 +162,7 @@ subpane_hub_relocate_pane_atomic() {
     fi
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
-        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$height" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$join_l" 2>/dev/null || true
     fi
 
     # Keep role tags immutable
@@ -234,7 +234,7 @@ subpane_hub_acquire_pane() {
     fi
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
-        sidebar_tmux_cmd resize-pane -t "$hub_pane" -y "$height" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$hub_pane" -y "$join_l" 2>/dev/null || true
     fi
 
     sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true

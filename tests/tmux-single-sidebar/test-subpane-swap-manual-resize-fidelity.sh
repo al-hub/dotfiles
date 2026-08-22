@@ -60,7 +60,7 @@ l_top_s2="$(tmux -L "$SOCKET" display-message -p -t "$sb_2" "#{pane_top}")"
 [ "$h_s2" -eq 24 ] || { echo "FAIL: height decayed from 24 to $h_s2 in sess_2"; exit 1; }
 
 # Step 5: In sess_2, user manually resizes subpane to 19
-tmux -L "$SOCKET" resize-pane -t "$sub_p" -y 19
+tmux -L "$SOCKET" resize-pane -t "$sub_p" -y "$(sidebar_subpane_calc_resize_length "top" 19)"
 
 # Step 6: User swaps position to bottom via P
 sidebar_subpane_swap_position "$win_2"

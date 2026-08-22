@@ -88,7 +88,7 @@ echo "✅ Step 2 Passed: Height 26 preserved after swap to TOP."
 # -------------------------------------------------------------------------
 echo "--- Step 3: User resizes top subpane to 22 and presses 'p' back to BOTTOM ---"
 sleep 0.6
-tmux -L "$SOCKET" resize-pane -t "$sub_p" -y 22
+tmux -L "$SOCKET" resize-pane -t "$sub_p" -y "$(sidebar_subpane_calc_resize_length "top" 22)"
 bash "$SCRIPT_DIR/dist/tmux-session-launcher" --sync-sidebar-layout "$win_id" "manual-resize"
 
 sidebar_subpane_swap_position "$win_id"

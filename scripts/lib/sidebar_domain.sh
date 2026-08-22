@@ -117,3 +117,8 @@ sidebar_subpane_calc_join_length() {
         *) printf '%s\n' "$height" ;;
     esac
 }
+
+sidebar_subpane_calc_resize_length() {
+    local pos="${1:-bottom}" height="${2:-12}"
+    sidebar_subpane_calc_join_length "$pos" "$height"
+}

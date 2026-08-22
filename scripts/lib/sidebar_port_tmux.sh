@@ -378,17 +378,28 @@ sidebar_subpane_swap_position() {
         target_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         [ -n "$target_h" ] && [ "$target_h" -ge 4 ] 2>/dev/null || target_h=12
 
+        local resize_h
+        if declare -f sidebar_subpane_calc_resize_length >/dev/null 2>&1; then
+            resize_h="$(sidebar_subpane_calc_resize_length "$new_pos" "$target_h")"
+        elif declare -f sidebar_subpane_calc_join_length >/dev/null 2>&1; then
+            resize_h="$(sidebar_subpane_calc_join_length "$new_pos" "$target_h")"
+        elif [ "$new_pos" = "top" ]; then
+            resize_h="$((target_h + 1))"
+        else
+            resize_h="$target_h"
+        fi
+
         local orig_focus
         orig_focus="$(sidebar_tmux_cmd display-message -p '#{pane_id}' 2>/dev/null || true)"
 
         if [ "$orig_focus" = "$sub_pane" ]; then
-            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sub_pane" 2>/dev/null || true
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$resize_h" \; select-pane -t "$sub_pane" 2>/dev/null || true
         elif [ "$orig_focus" = "$launcher_pane" ]; then
-            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$launcher_pane" 2>/dev/null || true
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$resize_h" \; select-pane -t "$launcher_pane" 2>/dev/null || true
         elif [ -n "$orig_focus" ]; then
-            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$orig_focus" 2>/dev/null || true
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$resize_h" \; select-pane -t "$orig_focus" 2>/dev/null || true
         else
-            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$resize_h" 2>/dev/null || true
         fi
 
         sidebar_tmux_cmd set-option -gq "$opt" "$target_h" 2>/dev/null || true
@@ -461,7 +472,7 @@ provision_sidebar_subpane() {
     [ -n "$sub_pane" ] || return 1
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
-        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$height" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$join_l" 2>/dev/null || true
     fi
 
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true

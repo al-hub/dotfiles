@@ -6,7 +6,22 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
-## 2026-08-22 - Architecture: Position Swap (P Key) Manual Resize Sync & Hook Locality (Candidate 1 + 2)
+## 2026-08-22 - Architecture: tmux 3.2a Backward Compatibility & Top Subpane Resize Compensation
+
+- **사용자 요청**:
+  - 이전 개발 PC에서는 전체 PASS이던 테스트 스위트(`test-subpane-*.sh`, `test-atomic-subpane-lease.sh`, `test-contract.sh`)가 현재 PC(Ubuntu 22.04 LTS, tmux 3.2a)에서 실패하는 원인을 분석하고 해결 방안 모색.
+  - `curl | bash` 설치 구조에서 tmux 버전 검사 후 최신 버전 설치 여부를 질문하는 구조에 대한 의견 논의 및, 우선 1단계로 런처 코드 레벨에서 버전 호환성을 완벽하게 보정하여 전체 PASS를 달성하도록 요청.
+- **원인 분석**:
+  - `tmux 3.2a`에서 상단(top) pane에 대한 `resize-pane -y N` 실행 시, border 계산으로 인해 실제 pane 높이가 `N - 1`로 설정되는 현상 확인.
+  - `swap-pane`, `switch_hot`, `provision` 등에서 raw height가 전달되어 1줄 감소 및 의도(Intent) 붕괴 루프 유발.
+  - `test-subpane-height-persistence.sh`에서 `kill-server` 직후 `new-session` 실행 시 비동기 소켓 해제 레이스로 인한 `server exited unexpectedly` 확인.
+- **조치 내용**:
+  1. `sidebar_domain.sh`에 `sidebar_subpane_calc_resize_length` 도메인 헬퍼 확립.
+  2. `sidebar_port_tmux.sh`, `sidebar_subpane_hub.sh`, `sidebar_switch.sh`, `tmux-session-launcher` 내 모든 리사이즈 파이프라인에서 상단 배치 시 `$join_l`(`height + 1`)을 일관되게 전달하도록 보정.
+  3. `test-subpane-height-persistence.sh`에 `kill-server` 후 소켓 소멸 bounded wait 및 assert 보강.
+  4. 테스트 시뮬레이션 코드(`test-subpane-swap-manual-resize-detect.sh`, `test-subpane-swap-manual-resize-fidelity.sh`)의 상단 리사이즈 지오메트리 정렬.
+  5. 프로덕션 번들 빌드 (`bash scripts/build-dist.sh`) 및 전체 19개 테스트 스위트 100% GREEN (19/19 PASS) 달성.
+
 
 - **사용자 요청**:
   - 서브페인을 `P` 키로 위/아래 전환(Swap)할 때 서브페인 높이가 보존되지 않는 문제에 대해 원인 분석, 검출 시나리오 작성 및 아키텍처 개선 요청.

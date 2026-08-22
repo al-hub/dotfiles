@@ -6,7 +6,19 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
-## 2026-08-22 - Architecture: Position Swap (P Key) Manual Resize Sync & Hook Locality (Candidate 1 + 2)
+## 2026-08-22 - Architecture: tmux 3.2a Backward Compatibility & Top Subpane Resize Compensation
+
+- **tmux 3.2a 수직 분할 상단 셀 Border 계산 오차 보정 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_switch.sh`, `scripts/tmux-session-launcher`)**:
+  - `tmux 3.2a`(Ubuntu 22.04 LTS 기본 패키지)에서 상단(top) pane 리사이즈 시 하단 border 줄이 상단 레이아웃 셀(`struct layout_cell`) 높이에 산입되어 `resize-pane -y N` 실행 시 실제 높이가 `N - 1`로 설정되던 버전 간 불일치 원인 규명.
+  - `sidebar_subpane_calc_resize_length` 도메인 헬퍼를 추가하고, `sidebar_subpane_swap_position`, `subpane_hub_relocate_pane_atomic`, `subpane_hub_acquire_pane`, `sidebar_switch_execute_hot`, `save_work_layout` 등 모든 리사이즈 파이프라인에서 상단 배치 시 `$join_l`(`height + 1`)을 일관되게 전달하도록 보정.
+  - 상단/하단 스왑 및 세션 전환 시 높이 1줄 축소(-1 decay)와 피드백 루프 결함을 완벽하게 방지하여, 최신 tmux(3.3a+)뿐만 아니라 Ubuntu 22.04 LTS의 `tmux 3.2a`에서도 100% 동일한 지오메트리 보존 달성.
+- **테스트 하네스 kill-server 소켓 해제 레이스 컨디션 해결 (`tests/tmux-single-sidebar/test-subpane-height-persistence.sh`)**:
+  - `tmux kill-server` 직후 비동기 소켓 해제 타이밍으로 인해 `new-session` 실행 시 `server exited unexpectedly`가 발생하던 문제를 해결하기 위해, 소켓이 완전히 소멸할 때까지 bounded wait(`has-session` 루프) 처리.
+- **테스트 스위트 상단 리사이즈 시뮬레이션 지오메트리 정렬 (`tests/tmux-single-sidebar/test-subpane-swap-manual-resize-detect.sh`, `test-subpane-swap-manual-resize-fidelity.sh`)**:
+  - 상단 서브페인의 마우스 리사이즈 시뮬레이션 시 위치별 보정 높이를 적용하여 실환경과 동일한 정확한 live height 설정.
+- **전체 19개 서브페인 및 코어 테스트 스위트 100% 통과 (19/19 PASS)**:
+  - `test-subpane-*.sh`, `test-atomic-subpane-lease.sh`, `test-contract.sh` 전체 통과 확인.
+
 
 - **수동 리사이즈 훅 경로에 서브페인 높이 영속화 통합 (`scripts/tmux-session-launcher`)**:
   - `sync_sidebar_layout`의 `manual-resize` 경로에서 `remember_sidebar_width_for_window`뿐만 아니라 `remember_sidebar_subpane_height_for_window`를 호출하도록 개선.
