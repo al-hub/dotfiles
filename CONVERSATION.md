@@ -6,6 +6,16 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Maintenance: Branch Consolidation & Repository Hygiene (`master` Default)
+
+- **사용자 요청**:
+  - `master` 브랜치로 통합 완료 후 불필요한 브랜치들을 삭제하고 깔끔하게 정리 요청.
+- **조치 내용**:
+  1. 로컬 작업 브랜치를 `master`로 체크아웃.
+  2. 병합 완료된 로컬 브랜치(`feature/single-sidebar`, `codex-opencode-architecture`) 삭제.
+  3. 원격 저장소(`origin`)의 병합된 브랜치(`feature/single-sidebar`, `codex-opencode-architecture`, `agent/tmux-sidebar-refresh`) 일괄 삭제.
+  4. `git fetch --prune`으로 원격 추적 캐시 정리 완료. 현재 `master` 단일 브랜치 유지.
+
 ## 2026-08-22 - Architecture: tmux 3.2a Backward Compatibility & Top Subpane Resize Compensation
 
 - **사용자 요청**:

@@ -6,6 +6,13 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Maintenance: Branch Consolidation & Repository Hygiene (`master` Default)
+
+- **피처/임시 브랜치 완전 정리 및 단일 `master` 통합**:
+  - `feature/single-sidebar`의 모든 기능, 도메인 모듈, 19개 전용 테스트를 `master` 브랜치에 완전 병합하고 `v0.6.17` 안정 릴리스 태그 발행 완료.
+  - 병합 완료된 로컬 및 원격 브랜치(`feature/single-sidebar`, `codex-opencode-architecture`, `agent/tmux-sidebar-refresh`)를 삭제하고 `git fetch --prune`으로 원격 추적 브랜치 정리 완료.
+  - 저장소 기본 브랜치를 `master` 단일 구조로 정리하여 브랜치 드리프트를 원천 방지하고 개발/배포 기준선 단일화.
+
 ## 2026-08-22 - Architecture: tmux 3.2a Backward Compatibility & Top Subpane Resize Compensation
 
 - **tmux 3.2a 수직 분할 상단 셀 Border 계산 오차 보정 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_switch.sh`, `scripts/tmux-session-launcher`)**:
