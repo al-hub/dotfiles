@@ -172,6 +172,7 @@ case "${TARGET_SUITE}" in
             "${SINGLE_DIR}/test-width-persistence-contract.sh"
             "${SINGLE_DIR}/test-width-clamping-single-line.sh"
             "${SINGLE_DIR}/test-long-session-name-switching-flicker-detect.sh"
+            "${SINGLE_DIR}/test-negative-width-substring-regression.sh"
             "${SINGLE_DIR}/test-cold-provisioning-contract.sh"
             "${SINGLE_DIR}/test-batch-restore-observability.sh"
             "${SINGLE_DIR}/test-split-restore-edge-cases.sh"

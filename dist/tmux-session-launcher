@@ -6247,10 +6247,15 @@ print_session_name()
 format_session_name()
 {
     local name="$1"
-    local width="$2"
-    local animate="$3"
+    local width="${2:-0}"
+    local animate="${3:-false}"
     local seed="${4:-0}"
-    local text="${name:0:width}"
+
+    [ "$width" -lt 0 ] && width=0
+    local text=""
+    if [ "$width" -gt 0 ]; then
+        text="${name:0:width}"
+    fi
     local text_width="${#text}"
     local padding=$((width - text_width))
     local result='' char phase color colored
@@ -6304,7 +6309,9 @@ format_row()
 
     [ "$name_width" -lt 1 ] && name_width=1
     if [ "$width" -lt 16 ]; then
-        format_session_name "${session_names[$index]}" "$((width - 3))" \
+        local short_name_w=$((width - 3))
+        [ "$short_name_w" -lt 0 ] && short_name_w=0
+        format_session_name "${session_names[$index]}" "$short_name_w" \
             "${session_animate[$index]}" "${session_animation_seed[$index]}"
         printf -v row_render_result '\033[%s;1H\033[2K%s %s' \
             "$line" "$mark" "$session_name_result"
