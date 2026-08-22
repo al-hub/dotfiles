@@ -377,7 +377,11 @@ provision_sidebar_subpane() {
     if [ "$(sidebar_subpane_get_position)" = "top" ]; then
         pos_flag="-b"
     fi
-    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$join_l" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then

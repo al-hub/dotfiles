@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Top-Position Subpane Geometric Symmetry & Intent Decoupling
+
+- **상단(Top) 분할 지오메트리 대칭 어댑터 (Candidate 1 - `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_port_tmux.sh`)**:
+  - tmux `join-pane -b -l H` 및 `split-window -b -l H` 실행 시 하단 구분선(Border 1줄)이 포함되어 실제 페인 높이가 $H - 1$로 생성되던 엔진 비대칭 결함 해결.
+  - 상단(`top`) 위치일 때 `join_l="$((target_h + 1))"`로 경계선 오프셋을 사전 보상(Pre-compensation)하고, 조인 직후 `resize-pane -t "$sub_pane" -y "$target_h"`로 목표 높이를 원자적으로 고정하여 세션 이동 및 토글 시 1줄씩 줄어들던 단조 감쇄(Monotonic Decay) 버그 완전 해결.
+- **의도 높이와 렌더링 높이 관심사 분리 (Candidate 2 - `scripts/tmux-session-launcher`)**:
+  - 세션 전환 트랜잭션(`switch_session`) 중 임시 렌더링 높이(`live_h`)가 전역 의도 높이를 덮어쓰던 오버라이드 로직을 제거하고, 전역 설정 옵션(`@dotfiles_sidebar_subpane_height`)으로부터 불변 의도 높이를 직접 참조하도록 분리.
+- **상단 서브페인 단조 감쇄 방지 회귀 테스트 추가 (`tests/tmux-single-sidebar/test-subpane-top-switch-decay.sh`)**:
+  - 서브페인 상단(`top`) 배치 후 3개 세션 왕복 전환, 서브페인 on/off 토글, 사이드바 전체 on/off 토글 전체 시나리오에서 높이 20줄 0감쇄 불변 보존 검증 완료 (ALL PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 배포 완료.
+
 ## 2026-08-22 - Architecture: Multi-Session Active-Window Routing & Atomic Switch Handover
 
 - **활성 윈도우 전용 서브페인 라우팅 (Active-Window-Only Routing - `scripts/tmux-session-launcher`)**:

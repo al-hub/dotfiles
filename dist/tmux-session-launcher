@@ -879,7 +879,11 @@ provision_sidebar_subpane() {
     if [ "$(sidebar_subpane_get_position)" = "top" ]; then
         pos_flag="-b"
     fi
-    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$height" "${cmd:-/bin/bash}" 2>/dev/null || true)"
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+    sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$join_l" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
@@ -1193,7 +1197,12 @@ subpane_hub_relocate_pane_atomic() {
         fi
     fi
 
-    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v -l "$join_l" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
@@ -1254,8 +1263,13 @@ subpane_hub_acquire_pane() {
         fi
     fi
 
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+
     # Join pane from hub or background into target launcher column
-    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$join_l" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
@@ -1441,12 +1455,17 @@ sidebar_switch_execute_hot() {
                 [ "$target_h" -ge 4 ] || target_h=4
             fi
 
+            local join_l="$target_h"
+            if [ "$pos_flag" = "-b" ]; then
+                join_l="$((target_h + 1))"
+            fi
+
             if [ -n "$client_tty" ]; then
-                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
                     sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             else
-                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
                     sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             fi
@@ -4463,13 +4482,7 @@ switch_session()
         sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
             sub_pane="$(sidebar_window_subpane "$source_window" || true)"
-            if [ -n "$sub_pane" ]; then
-                local live_h
-                live_h="$(tmux display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
-                if [ -n "$live_h" ] && [ "$live_h" -ge 4 ] 2>/dev/null; then
-                    sub_height="$live_h"
-                fi
-            else
+            if [ -z "$sub_pane" ]; then
                 sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
             fi
         fi

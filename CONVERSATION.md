@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Top-Position Subpane Geometric Symmetry & Intent Decoupling
+
+- **사용자 요청**:
+  - 서브페인이 하단에 있을 때는 높이와 세션 이동/토글이 정상 동작하나, `P`로 상단에 놓았을 때 세션 이동 및 토글 시 높이가 일정하지 않거나 줄어드는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - Candidate 1(상단 분할 지오메트리 대칭 어댑터)과 Candidate 2(의도 높이와 렌더링 높이 관심사 분리) 동시 적용 요청.
+- **원인 분석**:
+  1. tmux `join-pane -b -l H` 분할 시 하단 구분선(1줄)이 포함되어 실제 페인 높이가 $H - 1$로 생성됨.
+  2. 축소된 렌더링 높이가 훅에 의해 전역 상태로 즉시 덮어써지며 매 세션 전환 시 1줄씩 줄어드는 단조 감쇄(Monotonic Decay) 루프 발생.
+- **조치 내용**:
+  1. **Candidate 1 (지오메트리 대칭 어댑터)**: `join_l="$((target_h + 1))"` 사전 보상 및 원자적 `resize-pane -y "$target_h"` 고정 적용 (`sidebar_switch.sh`, `sidebar_subpane_hub.sh`, `sidebar_port_tmux.sh`).
+  2. **Candidate 2 (관심사 분리)**: `switch_session`에서 임시 `live_h` 오버라이드를 제거하고 불변 전역 의도 높이 참조 (`tmux-session-launcher`).
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-top-switch-decay.sh` 회귀 테스트 추가 (전체 13개 테스트 ALL PASS).
+
 ## 2026-08-22 - Architecture: Multi-Session Active-Window Routing & Atomic Switch Handover
 
 - **사용자 요청**:

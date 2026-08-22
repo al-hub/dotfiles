@@ -147,7 +147,12 @@ subpane_hub_relocate_pane_atomic() {
         fi
     fi
 
-    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v -l "$join_l" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$sub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
@@ -208,8 +213,13 @@ subpane_hub_acquire_pane() {
         fi
     fi
 
+    local join_l="$height"
+    if [ "$pos_flag" = "-b" ]; then
+        join_l="$((height + 1))"
+    fi
+
     # Join pane from hub or background into target launcher column
-    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$height" 2>/dev/null; then
+    if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$join_l" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 

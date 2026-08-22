@@ -46,12 +46,17 @@ sidebar_switch_execute_hot() {
                 [ "$target_h" -ge 4 ] || target_h=4
             fi
 
+            local join_l="$target_h"
+            if [ "$pos_flag" = "-b" ]; then
+                join_l="$((target_h + 1))"
+            fi
+
             if [ -n "$client_tty" ]; then
-                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
                     sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; switch-client -c "$client_tty" -t "$target_spec" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             else
-                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
                     sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             fi

@@ -2710,13 +2710,7 @@ switch_session()
         sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
             sub_pane="$(sidebar_window_subpane "$source_window" || true)"
-            if [ -n "$sub_pane" ]; then
-                local live_h
-                live_h="$(tmux display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || true)"
-                if [ -n "$live_h" ] && [ "$live_h" -ge 4 ] 2>/dev/null; then
-                    sub_height="$live_h"
-                fi
-            else
+            if [ -z "$sub_pane" ]; then
                 sub_pane="$(subpane_hub_get_pane 2>/dev/null || true)"
             fi
         fi
