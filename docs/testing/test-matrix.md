@@ -89,8 +89,9 @@ bash tests/tmux-single-sidebar/test-subpane-unit.sh
 bash tests/tmux-single-sidebar/test-subpane-contract.sh
 bash tests/tmux-single-sidebar/test-layout-subpane-isolation.sh
 
-# [신규 보강] 폭 영속화/Fallback, Cold Provisioning, 다중 복원 관측성
+# [신규 보강] 폭 영속화/Fallback, 단일 행 클램핑(줄넘김 방지), Cold Provisioning, 다중 복원 관측성
 bash tests/tmux-single-sidebar/test-width-persistence-contract.sh
+bash tests/tmux-single-sidebar/test-width-clamping-single-line.sh
 bash tests/tmux-single-sidebar/test-cold-provisioning-contract.sh
 bash tests/tmux-single-sidebar/test-batch-restore-observability.sh
 ```
@@ -188,6 +189,7 @@ bash tests/tmux-single-sidebar/test-keyboard-e2e-rapid-operations.sh
 
 # 엣지케이스 스위트
 bash tests/tmux-single-sidebar/test-width-persistence-contract.sh
+bash tests/tmux-single-sidebar/test-width-clamping-single-line.sh
 bash tests/tmux-single-sidebar/test-cold-provisioning-contract.sh
 bash tests/tmux-single-sidebar/test-batch-restore-observability.sh
 bash tests/tmux-single-sidebar/test-split-restore-edge-cases.sh
