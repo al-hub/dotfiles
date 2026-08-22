@@ -120,5 +120,23 @@ sidebar_subpane_calc_join_length() {
 
 sidebar_subpane_calc_resize_length() {
     local pos="${1:-bottom}" height="${2:-12}"
-    sidebar_subpane_calc_join_length "$pos" "$height"
+    case "$height" in ''|*[!0-9]*) height=12 ;; esac
+    case "$pos" in
+        top|TOP)
+            local ver_raw ver
+            if declare -f sidebar_tmux_cmd >/dev/null 2>&1; then
+                ver_raw="$(sidebar_tmux_cmd -V 2>/dev/null || true)"
+            fi
+            if [ -z "$ver_raw" ]; then
+                ver_raw="$(tmux -V 2>/dev/null || true)"
+            fi
+            ver="$(printf '%s\n' "$ver_raw" | sed -n 's/^tmux [^0-9]*\([0-9]\+\.[0-9]\+\).*/\1/p')"
+            if [ -n "$ver" ] && awk -v v="$ver" 'BEGIN { exit !(v < 3.3) }'; then
+                printf '%s\n' "$((height + 1))"
+            else
+                printf '%s\n' "$height"
+            fi
+            ;;
+        *) printf '%s\n' "$height" ;;
+    esac
 }

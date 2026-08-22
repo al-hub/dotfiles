@@ -471,8 +471,12 @@ provision_sidebar_subpane() {
     sub_pane="$(sidebar_tmux_cmd split-window -P -F '#{pane_id}' -v $pos_flag -t "$launcher_pane" -l "$join_l" "${cmd:-/bin/bash}" 2>/dev/null || true)"
     [ -n "$sub_pane" ] || return 1
 
+    local resize_l="$height"
+    if declare -f sidebar_subpane_calc_resize_length >/dev/null 2>&1; then
+        resize_l="$(sidebar_subpane_calc_resize_length "$(sidebar_subpane_get_position)" "$height")"
+    fi
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
-        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$join_l" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$resize_l" 2>/dev/null || true
     fi
 
     sidebar_tmux_cmd select-pane -t "$sub_pane" -T "$sub_title" 2>/dev/null || true

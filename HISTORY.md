@@ -26,8 +26,9 @@
   - `sync_sidebar_layout`에서 명시적 `manual-resize` 요청이 레이아웃 훅 가드(`sidebar_layout_hook_guard_active`)에 의해 무시되지 않도록 우회 조건 정립.
 - **스왑 트랜잭션 및 소켓 호환성 강화 (`scripts/lib/sidebar_port_tmux.sh`)**:
   - `sidebar_tmux_cmd`에 `TMUX_SESSION_LAUNCHER_SOCKET` 환경변수 지원을 추가하여 테스트 및 복수 소켓 환경에서의 IPC 격리 및 실행 신뢰성 향상.
-- **결함 검출 시나리오 작성 및 전체 18개 테스트 스위트 100% 통과 (`test-subpane-swap-manual-resize-detect.sh` 등 18/18 PASS)**:
+- **결함 검출 시나리오 작성 및 전체 19개 테스트 스위트 100% 통과 (`test-subpane-swap-manual-resize-detect.sh`, `test-subpane-p-key-rapid-loop.sh` 등 19/19 PASS)**:
   - 마우스 리사이즈(26줄) 후 `P` 키 상단 스왑, 22줄 재조절 후 하단 복귀 스왑 전 과정에서 높이 무결성 검증 완료.
+  - `test-subpane-p-key-rapid-loop.sh`: `P` 키 40회 연속 상/하 왕복 스왑 시 0.00% 감쇄/오차 100% 불변 검증.
 
 ## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
 

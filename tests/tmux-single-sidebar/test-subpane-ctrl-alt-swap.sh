@@ -3,10 +3,20 @@ set -euo pipefail
 SOCKET="test-subpane-ctrl-alt-$$"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-cleanup() { tmux -L "$SOCKET" kill-server 2>/dev/null || true; }
+STATE_DIR="$(mktemp -d /tmp/test-ctrl-alt.XXXXXX)"
+
+cleanup() {
+    tmux -L "$SOCKET" kill-server 2>/dev/null || true
+    rm -rf "$STATE_DIR"
+}
 trap cleanup EXIT
 
 export TMUX="$SOCKET"
+export TMUX_SESSION_LAUNCHER_SOCKET="$SOCKET"
+export TMUX_SESSION_SIDEBAR_SUBPANE_HEIGHT_STATE_FILE="$STATE_DIR/height"
+export TMUX_SESSION_SIDEBAR_SUBPANE_POSITION_STATE_FILE="$STATE_DIR/pos"
+export TMUX_SESSION_SIDEBAR_SUBPANE_ENABLED_STATE_FILE="$STATE_DIR/enabled"
+
 source "$SCRIPT_DIR/scripts/lib/sidebar_domain.sh"
 source "$SCRIPT_DIR/scripts/lib/sidebar_port_tmux.sh"
 source "$SCRIPT_DIR/scripts/lib/sidebar_subpane_hub.sh"

@@ -201,12 +201,9 @@ subpane_hub_acquire_pane() {
     target_win="$(sidebar_tmux_cmd display-message -p -t "$target_launcher" '#{window_id}' 2>/dev/null || true)"
     hub_win="$(sidebar_tmux_cmd display-message -p -t "$hub_pane" '#{window_id}' 2>/dev/null || true)"
 
+    # If already in the target window, nothing to join
     if [ -n "$target_win" ] && [ "$target_win" = "$hub_win" ]; then
-        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true
-        sidebar_tmux_cmd select-pane -t "$hub_pane" -T "$sub_title" 2>/dev/null || true
-        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_subpane_hub_pane 1 2>/dev/null || true
-        sidebar_tmux_cmd set-option -p -q -t "$hub_pane" @dotfiles_sidebar_subpane 1 2>/dev/null || true
-        [ -n "$target_win" ] && subpane_hub_acquire_lease "$target_win"
+        subpane_hub_acquire_lease "$target_win"
         printf '%s\n' "$hub_pane"
         return 0
     fi
@@ -228,13 +225,18 @@ subpane_hub_acquire_pane() {
         join_l="$((height + 1))"
     fi
 
+    local resize_l="$height"
+    if declare -f sidebar_subpane_calc_resize_length >/dev/null 2>&1; then
+        resize_l="$(sidebar_subpane_calc_resize_length "$sub_pos" "$height")"
+    fi
+
     # Join pane from hub or background into target launcher column
     if ! sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v -l "$join_l" 2>/dev/null; then
         sidebar_tmux_cmd join-pane -d $pos_flag -s "$hub_pane" -t "$target_launcher" -v 2>/dev/null || return 1
     fi
 
     if [ -n "$height" ] && [ "$height" -ge 4 ] 2>/dev/null; then
-        sidebar_tmux_cmd resize-pane -t "$hub_pane" -y "$join_l" 2>/dev/null || true
+        sidebar_tmux_cmd resize-pane -t "$hub_pane" -y "$resize_l" 2>/dev/null || true
     fi
 
     sidebar_tmux_cmd set-option -p -q -t "$hub_pane" allow-rename off 2>/dev/null || true

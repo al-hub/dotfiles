@@ -33,7 +33,7 @@
   1. `sync_sidebar_layout`의 `manual-resize` 경로에서 `remember_sidebar_subpane_height_for_window`를 호출하여 마우스 드래그 즉시 높이 영속화 (`tmux-session-launcher`).
   2. `manual-resize`가 레이아웃 훅 가드에 의해 블로킹되지 않도록 우회 조건 적용.
   3. `sidebar_tmux_cmd`에 소켓 환경변수 지원 강화 (`sidebar_port_tmux.sh`).
-  4. 결함 검출 시나리오 통과 (100% GREEN) 및 전체 18개 서브페인/코어 테스트 스위트 100% 통과 (18/18 PASS).
+  4. 결함 검출 시나리오 통과 (100% GREEN) 및 전체 19개 서브페인/코어 테스트 스위트 100% 통과 (19/19 PASS, 40회 연속 스왑 루프 검증 포함).
 
 ## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
 
