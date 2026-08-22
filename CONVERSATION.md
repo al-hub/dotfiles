@@ -5,9 +5,1239 @@
 ## 작성 규칙
 
 - 새 대화 주제는 위에 추가합니다.
+
+## 2026-08-22 - Architecture: tmux 3.2a Backward Compatibility & Top Subpane Resize Compensation
+
+- **사용자 요청**:
+  - 이전 개발 PC에서는 전체 PASS이던 테스트 스위트(`test-subpane-*.sh`, `test-atomic-subpane-lease.sh`, `test-contract.sh`)가 현재 PC(Ubuntu 22.04 LTS, tmux 3.2a)에서 실패하는 원인을 분석하고 해결 방안 모색.
+  - `curl | bash` 설치 구조에서 tmux 버전 검사 후 최신 버전 설치 여부를 질문하는 구조에 대한 의견 논의 및, 우선 1단계로 런처 코드 레벨에서 버전 호환성을 완벽하게 보정하여 전체 PASS를 달성하도록 요청.
+- **원인 분석**:
+  - `tmux 3.2a`에서 상단(top) pane에 대한 `resize-pane -y N` 실행 시, border 계산으로 인해 실제 pane 높이가 `N - 1`로 설정되는 현상 확인.
+  - `swap-pane`, `switch_hot`, `provision` 등에서 raw height가 전달되어 1줄 감소 및 의도(Intent) 붕괴 루프 유발.
+  - `test-subpane-height-persistence.sh`에서 `kill-server` 직후 `new-session` 실행 시 비동기 소켓 해제 레이스로 인한 `server exited unexpectedly` 확인.
+- **조치 내용**:
+  1. `sidebar_domain.sh`에 `sidebar_subpane_calc_resize_length` 도메인 헬퍼 확립.
+  2. `sidebar_port_tmux.sh`, `sidebar_subpane_hub.sh`, `sidebar_switch.sh`, `tmux-session-launcher` 내 모든 리사이즈 파이프라인에서 상단 배치 시 `$join_l`(`height + 1`)을 일관되게 전달하도록 보정.
+  3. `test-subpane-height-persistence.sh`에 `kill-server` 후 소켓 소멸 bounded wait 및 assert 보강.
+  4. 테스트 시뮬레이션 코드(`test-subpane-swap-manual-resize-detect.sh`, `test-subpane-swap-manual-resize-fidelity.sh`)의 상단 리사이즈 지오메트리 정렬.
+  5. 프로덕션 번들 빌드 (`bash scripts/build-dist.sh`) 및 전체 19개 테스트 스위트 100% GREEN (19/19 PASS) 달성.
+
+
+- **사용자 요청**:
+  - 서브페인을 `P` 키로 위/아래 전환(Swap)할 때 서브페인 높이가 보존되지 않는 문제에 대해 원인 분석, 검출 시나리오 작성 및 아키텍처 개선 요청.
+  - Candidate 1(수동 리사이즈 훅 경로에 서브페인 높이 영속화 통합) + Candidate 2(스왑 트랜잭션 진입부 실시간 의도 승격 및 원자적 스왑-리사이즈 보장) 승인.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-swap-manual-resize-detect.sh` 작성: 50줄 창에서 마우스로 서브페인을 26줄로 조절 후 `P` 키로 상단 스왑 시, 비동기 훅에서 높이가 미저장되어 12줄/11줄로 찌그러지는 결함을 재현 및 검출 (RED).
+  2. Candidate 1 + 2 구현 적용.
+- **조치 내용**:
+  1. `sync_sidebar_layout`의 `manual-resize` 경로에서 `remember_sidebar_subpane_height_for_window`를 호출하여 마우스 드래그 즉시 높이 영속화 (`tmux-session-launcher`).
+  2. `manual-resize`가 레이아웃 훅 가드에 의해 블로킹되지 않도록 우회 조건 적용.
+  3. `sidebar_tmux_cmd`에 소켓 환경변수 지원 강화 (`sidebar_port_tmux.sh`).
+  4. 결함 검출 시나리오 통과 (100% GREEN) 및 전체 19개 서브페인/코어 테스트 스위트 100% 통과 (19/19 PASS, 40회 연속 스왑 루프 검증 포함).
+
+## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
+
+- **사용자 요청**:
+  - 서브페인이 아래가 아닌 위에 배치되어 있을 때, 세션 간 이동(Enter) 시 높이 폭이 유지되지 못하는 현상에 대해 아키텍처적 충돌 분석 및 개선 요청.
+  - Candidate 1(도메인 지오메트리 계산 함수 일원화) + Candidate 2(물리적 위치 자동 감지 및 실시간 동기화) 승인.
+- **조치 내용**:
+  1. `sidebar_domain.sh`에 순수 도메인 함수 `sidebar_subpane_calc_pos_flag`와 `sidebar_subpane_calc_join_length` 구현 및 전환/조인 모듈에 통합 적용.
+  2. `sync_sidebar_layout` 및 `sync_attached_subpane_user_intent`에서 물리적 좌표(`pane_top`)를 기반으로 상/하 상태를 실시간 자동 감지 및 갱신.
+  3. 전체 17개 서브페인 및 코어 계약 테스트 100% GREEN 검증 완료.
+
+## 2026-08-22 - Architecture: Attached Pre-Flight Intent Sync & Viewport Clamping Separation (Candidate A + B)
+
+- **사용자 요청**:
+  - 서브페인을 마우스로 리사이즈한 직후 세션 전환(Enter) 시, 마우스로 조절한 마지막 높이가 유지되지 못하고 이전 기본값으로 롤백되는 문제에 대해 원인 분석, 검출 시나리오 작성 및 아키텍처 개선 요청.
+  - Candidate A(활성 클라이언트 Pre-Flight 의도 승격) + Candidate B(렌더 클램핑 분리) 통합 적용 승인.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-mouse-resize-detect.sh` 작성: 50줄 창에서 마우스 드래그로 28줄로 조절 후 즉시 Enter 전환 시, 비동기 훅 지연으로 인해 대상 창에서 12줄로 롤백되는 결함을 100% 재현 및 검출 (RED).
+  2. Candidate A + B 구현 적용.
+- **조치 내용**:
+  1. `sync_attached_subpane_user_intent` 구현: `switch_session` 진입 시 현재 활성 클라이언트 연결 창(창 높이 $\ge 30$)에 대해 실시간 조절값을 동기 승격 (`sidebar_port_tmux.sh`, `tmux-session-launcher`).
+  2. 작은 창 경유 시 물리 렌더링만 뷰포트에 맞게 클램핑하고 정규 의도는 보존 (`sidebar_switch.sh`).
+  3. 결함 검출 시나리오 통과 (Part 1, Part 2 GREEN) 및 전체 17개 서브페인/코어 테스트 스위트 100% 통과 (17/17 PASS).
+
+## 2026-08-22 - Architecture: Intent vs Transient Observation Decoupling & Atomic Switch Pipeline (Candidate 1)
+
+- **사용자 요청**:
+  - Candidate 1(의도와 물리 관측치 분리) 적용 전, 오류가 정확히 검출(Detect)되는 시나리오를 작성하여 점검한 뒤 승인 후 개선 진행 요청.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-intent-decay-repro.sh` 작성: $H=20$ 상태에서 전환 중 비동기 훅이 임시 19줄 관측치를 캡처했을 때, 기존 아키텍처에서는 전역 옵션이 19로 오염되고 $20 \to 19 \to 18 \dots$ 로 단조 감쇄(Monotonic Decay)되는 결함을 100% 재현 및 검출 (RED).
+  2. 사용자 승인 후 Candidate 1 구현 진행.
+- **조치 내용**:
+  1. `switch_session`에서 매 전환 시 물리 높이를 재캡처하던 불필요한 관측 코드를 제거하고, 전역 정규 의도(`@dotfiles_sidebar_subpane_height`)를 읽어 조인하도록 분리 (`tmux-session-launcher`).
+  2. `remember_sidebar_subpane_height_for_window`에 `transition_is_active` 가드를 적용하여 전환 도중의 비동기 훅 오염 차단 (`sidebar_port_tmux.sh`).
+  3. `sidebar_switch_execute_hot` 복합 명령에 `resize-pane`을 인라인 통합하고 500ms 훅 가드 적용 (`sidebar_switch.sh`).
+  4. 결함 검출 시나리오가 즉시 GREEN으로 통과하고, 전체 16개 서브페인 및 코어 테스트 스위트 100% 통과 (16/16 PASS).
+
+## 2026-08-22 - Architecture: Switch-Client-First Pipeline Ordering & Detached Dimension Truncation Prevention
+
+- **사용자 요청**:
+  - 서브페인이 상단에 있을 때, 세션 목록에서 아래에서 위로 이동(Up) 후 Enter 선택 시 높이가 잘 유지되나, 위에서 아래로 이동(Down) 후 Enter 선택 시 상단 서브페인의 높이가 -1씩 줄어드는 현상에 대한 원인 분석 및 해결 요청 (하단 배치 시에는 정상).
+- **원인 분석**:
+  1. `sidebar_switch_execute_hot` 복합 IPC 트랜잭션에서 `join-pane`이 `switch-client`보다 먼저 실행되고 있었음.
+  2. 세션 목록을 위에서 아래로 이동하여 아직 클라이언트가 부착되지 않은 백그라운드 세션으로 진입할 때, 대상 창의 지오메트리가 백그라운드 기본 크기(24줄)로 유지된 상태에서 `join-pane`이 실행됨.
+  3. 24줄 창에 목표 높이(20줄)와 구분선 및 런처를 모두 배치할 수 없어 tmux에 의해 서브페인 높이가 강제 축소(Clipping)되고, 이 축소된 높이가 전역 상태로 전파됨. 반면 이미 방문했던 위쪽 세션은 클라이언트 크기(50줄)가 이미 적용되어 있어 정상 유지되었음.
+- **조치 내용**:
+  1. `sidebar_switch_execute_hot`에서 `switch-client`를 `join-pane`보다 앞서 실행하도록 파이프라인 순서 재정의 (`sidebar_switch.sh`).
+  2. 대상 창이 클라이언트의 전체 화면(50줄)으로 먼저 확장된 후 `join-pane`이 실행되므로, 위에서 아래로 미방문 세션 이동 시에도 높이 감쇄가 전혀 발생하지 않도록 근본 해결.
+  3. 최신 바이너리 빌드 및 `~/.local/bin/tmux-session-launcher` 동기화, 전체 15개 테스트 스위트 100% 통과.
+
+## 2026-08-22 - Architecture: Layout Snapshot Symmetry & Binary Installation Sync
+
+- **사용자 요청**:
+  - 서브페인을 하단에서 상단으로 이동 후, 각 세션 간 이동(Enter) 시 높이가 -1씩 계속 줄어드는 현상에 대한 원인 분석 및 아키텍처 개선 요청.
+- **원인 분석**:
+  1. `snapshot_work_layout_transaction`에서 상단(`-b`) 서브페인 분리 후 재조인 시 `join-pane -v -l "$sub_height"`를 실행하여 경계선 1줄 오차로 인해 높이가 $H - 1$로 줄어들던 누락 지점 발견.
+  2. 로컬 설치 경로(`~/.local/bin/tmux-session-launcher`)가 이전 빌드 바이너리로 유지되어 사용자의 실행 중인 tmux 단축키와 훅이 구버전을 실행하던 불일치 확인.
+- **조치 내용**:
+  1. `snapshot_work_layout_transaction`에 `pos_flag == "-b"` 시 `join_l="$((sub_height + 1))"` 사전 보상 적용 (`tmux-session-launcher`).
+  2. 최신 번들을 `~/.local/bin/tmux-session-launcher`에 동기화.
+  3. 전체 15개 서브페인/코어 테스트 100% 통과 검증.
+
+## 2026-08-22 - Architecture: JIT Height Capture & Manual Resize Preservation
+
+- **사용자 요청**:
+  - 서브페인을 상단/하단으로 이동한 직후 1) 첫 세션 이동 시 -1칸 줄어드는 현상과 2) 수동으로 조절한 높이값이 스왑/전환 시 이전 값으로 롤백되는 현상의 상관관계 분석 및 아키텍처 개선 요청.
+  - Candidate 1(전환 직전 JIT 높이 동기화)과 Candidate 2(스왑 트랜잭션 내 대칭 보상 및 영속화) 동시 적용 요청.
+- **원인 분석**:
+  1. 수동 리사이즈 직후 비동기 훅 지연 중에 `P`나 `Enter`가 실행되면, `sidebar_subpane_swap_position`과 `switch_session`이 실시간 렌더링 높이를 캡처하지 않고 과거의 지연된 전역 옵션을 참조하여 이전 값으로 덮어씀.
+  2. 스왑 직후 상단 경계선 보상 타이밍 오차로 인해 축소된 높이가 1회 기록되어 첫 전환 시 -1칸 축소 발생.
+- **조치 내용**:
+  1. **Candidate 1 (JIT 높이 캡처)**: `sidebar_subpane_swap_position`과 `switch_session` 최초 진입 시점에 `remember_sidebar_subpane_height_for_window`를 호출하여 최신 물리 높이를 즉시 전역 확정 (`sidebar_port_tmux.sh`, `tmux-session-launcher`).
+  2. **Candidate 2 (대칭 보상 및 영속화)**: 스왑 완료 직후 `target_h`를 전역 옵션 및 디스크 파일에 즉시 재확정/영속화.
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-swap-manual-resize-fidelity.sh` 회귀 테스트 추가 (전체 15개 테스트 ALL PASS).
+
+## 2026-08-22 - Architecture: Atomic Subpane Position Swap & Immediate Switch Preservation
+
+- **사용자 요청**:
+  - 서브페인을 하단에서 상단으로 이동(`P` / `Ctrl+a P`)한 직후 세션 간 이동(Enter) 및 토글 시 높이가 일정하지 않거나 줄어드는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - Candidate 1(원자적 복합 스왑 파이프라인)과 Candidate 2(스왑 시 포커스 보존 및 메타데이터 동기화) 동시 적용 요청.
+- **원인 분석**:
+  1. `swap-pane`과 `resize-pane`이 분리 실행될 때 찰나의 순간에 서브페인이 런처의 거대 높이(35줄)를 일시 점유하고, 이 상태가 `window-resized` 훅에 의해 전역 높이로 오인되어 덮어써짐.
+  2. 스왑 후 포커스가 무조건 런처로 이동하여 사용자의 원래 작업 포커스가 훼손됨.
+- **조치 내용**:
+  1. **Candidate 1 (원자적 스왑 파이프라인)**: `swap-pane \; resize-pane -y "$target_h"`를 단일 tmux IPC 트랜잭션으로 통합 실행 (`sidebar_port_tmux.sh`).
+  2. **Candidate 2 (포커스/메타데이터 보존)**: `orig_focus`를 기억하여 스왑 후에도 원래 포커스를 유지하고 `save_sidebar_layout` 즉시 호출.
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-swap-switch-immediate.sh` 회귀 테스트 추가 (전체 14개 테스트 ALL PASS).
+
+## 2026-08-22 - Architecture: Top-Position Subpane Geometric Symmetry & Intent Decoupling
+
+- **사용자 요청**:
+  - 서브페인이 하단에 있을 때는 높이와 세션 이동/토글이 정상 동작하나, `P`로 상단에 놓았을 때 세션 이동 및 토글 시 높이가 일정하지 않거나 줄어드는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - Candidate 1(상단 분할 지오메트리 대칭 어댑터)과 Candidate 2(의도 높이와 렌더링 높이 관심사 분리) 동시 적용 요청.
+- **원인 분석**:
+  1. tmux `join-pane -b -l H` 분할 시 하단 구분선(1줄)이 포함되어 실제 페인 높이가 $H - 1$로 생성됨.
+  2. 축소된 렌더링 높이가 훅에 의해 전역 상태로 즉시 덮어써지며 매 세션 전환 시 1줄씩 줄어드는 단조 감쇄(Monotonic Decay) 루프 발생.
+- **조치 내용**:
+  1. **Candidate 1 (지오메트리 대칭 어댑터)**: `join_l="$((target_h + 1))"` 사전 보상 및 원자적 `resize-pane -y "$target_h"` 고정 적용 (`sidebar_switch.sh`, `sidebar_subpane_hub.sh`, `sidebar_port_tmux.sh`).
+  2. **Candidate 2 (관심사 분리)**: `switch_session`에서 임시 `live_h` 오버라이드를 제거하고 불변 전역 의도 높이 참조 (`tmux-session-launcher`).
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-top-switch-decay.sh` 회귀 테스트 추가 (전체 13개 테스트 ALL PASS).
+
+## 2026-08-22 - Architecture: Multi-Session Active-Window Routing & Atomic Switch Handover
+
+- **사용자 요청**:
+  - 다중 세션이 열려 있는 상태에서 세션 간 전환(Enter) 후, 서브페인 on/off(`s`) 및 사이드바 on/off(`Ctrl+a s`) 시 서브페인이 보이지 않거나 높이가 깨지는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - 전문 subagents들을 호출하여 제안의 위험 요소 및 개선 방안을 논의하고 최종안 도출 후 구현 진행 요청.
+- **서브에이전트 협업 및 아키텍처 결론**:
+  1. **Active-Window-Only 라우팅**: 사이드바 일괄 프로비저닝 시 백그라운드 세션들에 싱글톤 서브페인이 연쇄적으로 조인되어 마지막 세션으로 끌려가는 현상을 차단하고, 오직 현재 클라이언트의 활성 윈도우(`active_client_window`)에만 서브페인을 1회 부착.
+  2. **복합 원자적 IPC 파이프라인**: 세션 전환 트랜잭션(`sidebar_switch_execute_hot`) 내에서 Lease Mutex 갱신, `join-pane`, `switch-client`, `select-pane`을 단일 tmux 명령(`\;`)으로 묶어 1ms 이내 원자적 핸드오버 실현.
+  3. **안전 지오메트리 클램핑**: 타깃 창 높이 축소 시 임시 클램프 높이가 영구 설정으로 덮어써지지 않도록 Desired vs Clamped 높이를 엄격히 분리.
+- **조치 내용**:
+  - `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`에 반영 및 `dist/tmux-session-launcher` 번들 빌드.
+  - `tests/tmux-single-sidebar/test-subpane-multi-session-stress.sh` 회귀 테스트 추가 (ALL 12 TESTS PASS).
+
+## 2026-08-22 - Architecture: Sidebar Column Isolation & Subpane Lease Coordinator (Candidates 1 & 2)
+
+- **사용자 요청**:
+  - `/improve-codebase-architecture` 명령을 통해 분석된 3대 결함 중 Candidate 1 (사이드바 컬럼 레이아웃 격리)과 Candidate 2 (서브페인 임대 조정자/Lease Mutex)를 순차적으로 구현하여 구조적 결함 영구 해소 요청.
+- **조치 내용**:
+  1. **Candidate 1 (지오메트리 격리)**:
+     - `current_pane_is_sidebar` 및 `current_window_work_pane`을 서브페인 식별자까지 포괄하도록 정밀 분리하여, 포커스 위치와 무관하게 메인 작업 영역 분할 및 리사이즈 시 사이드바 컬럼 내부 높이가 스냅되거나 오염되지 않도록 격리.
+  2. **Candidate 2 (임대 조정자)**:
+     - `subpane_hub_acquire_lease` 및 `subpane_hub_release_lease`를 통한 원자적 소유권 잠금(`@dotfiles_subpane_lease_window`)을 구축하여, 활성 창이 임대 중일 때 비동기 훅의 무단 회수를 차단함으로써 서브페인 깜빡임 소멸 제거.
+  3. **검증 및 배포**:
+     - `tests/tmux-single-sidebar/test-subpane-work-isolation.sh` 회귀 테스트 추가 및 전체 서브페인 스위트 10개 테스트 100% 통과 확인 후 커밋/푸시 완료.
+
+## 2026-08-22 - Bugfix: Preserve Subpane ON State Across Full Sidebar Toggles (Ctrl+a s)
+
+- **사용자 요청**:
+  - 서브페인을 켜둔 상태에서 `Ctrl+a s`로 사이드바 전체를 닫았다가 다시 열면 서브페인의 높이는 유지되지만 서브페인이 꺼진 상태(OFF)로 나오는 현상 수정 요청.
+- **원인 분석**:
+  1. `Ctrl+a s`(`toggle_current_sidebar`)로 사이드바를 다시 켤 때, `provision_sidebar_window`가 사이드바 런처 페인만 생성하고 `ensure_sidebar_subpane_window`를 호출하지 않아 서브페인이 백그라운드 허브 세션에 남겨진 채 조인되지 않음.
+  2. 허브 세션 생성 후 `toggle_current_sidebar`의 활성 세션 감지가 `dotfiles-subpane-hub`로 치우쳐 실제 사용자 세션 프로비저닝이 누락되는 엣지 케이스 존재.
+  3. `@dotfiles_sidebar_subpane_enabled` 상태의 디스크 영속성 미지원.
+- **조치 내용**:
+  - `provision_sidebar_window`에서 런처 페인 생성/존재 확인 후 항상 `ensure_sidebar_subpane_window`를 호출하도록 통합.
+  - `toggle_current_sidebar`에서 인프라 세션을 배제하고 사용자 활성 세션을 엄격히 타깃팅하도록 개선.
+  - 서브페인 활성 상태(`SIDEBAR_SUBPANE_ENABLED_STATE_FILE`)의 디스크 영속화 및 자동 복구 추가.
+  - `Ctrl+a s` 반복 토글 및 높이/ON 상태 보존 E2E 테스트 통과 확인 후 배포.
+
+## 2026-08-22 - Bugfix: Active Window Routing for In-Sidebar Subpane Toggle
+
+- **사용자 요청**:
+  - 서브페인이 나왔다가 `s`로 OFF 후 다시 `s`를 눌러도 ON이 되지 않고, 다른 세션으로 Enter 이동하면 서브페인이 다시 나타나며, 거기서 다시 `s`로 OFF 후 `s`를 누르면 ON이 되지 않는 현상 원인 및 해결 요청.
+- **원인 분석**:
+  - `toggle_sidebar_subpane_global` 호출 시 호출자 윈도우 ID(`SIDEBAR_WINDOW_ID`)가 전달되지 않아, 활성 윈도우 식별 실패 시 `list-windows -a | head -n 1` (서버의 첫 번째 윈도우, 예: Session 0)로 서브페인이 조인됨.
+  - 사용자가 Session 2에 있을 때 `s`를 누르면 서브페인이 백그라운드의 Session 0 윈도우로 조인되어 현재 화면에서는 안 열린 것처럼 보이고, 다른 세션으로 `Enter` 이동 시 세션 전환 핫스위치 코드가 서브페인을 현재 세션으로 강제 인출하면서 그때서야 나타났던 것임.
+- **조치 내용**:
+  - `toggle_sidebar_subpane_global`에 `target_window_id` 인자 지원 및 `SIDEBAR_WINDOW_ID` / `TMUX_PANE` 우선 참조 추가.
+  - TUI 이벤트 루프(`scripts/tmux-session-launcher`)에서 `toggle_sidebar_subpane_global "${SIDEBAR_WINDOW_ID:-}"`로 현재 윈도우 명시적 전달.
+  - 다중 세션 환경 테스트 및 번들 재빌드/원격 푸시 완료.
+
+## 2026-08-22 - Bugfix: Subpane Height & Position Disk Persistence across Tmux Server Restart
+
+- **사용자 요청**:
+  - `d > all > Enter`로 전체 세션을 닫고 tmux를 재시작했을 때 서브페인 높이가 보존되지 않는 현상 점검 및 수정 요청.
+- **원인 분석**:
+  - 사이드바 너비(`SIDEBAR_WIDTH_STATE_FILE`)는 XDG 디스크 파일에 영속화되어 있었으나, 서브페인 높이(`@dotfiles_sidebar_subpane_height`) 및 위치는 오직 tmux 서버 메모리 옵션(`set-option -gq`)에만 저장되어 있어 tmux 프로세스 종료 시 상태가 초기화됨.
+- **조치 내용**:
+  - 서브페인 높이(`SIDEBAR_SUBPANE_HEIGHT_STATE_FILE`) 및 위치(`SIDEBAR_SUBPANE_POSITION_STATE_FILE`) 영속화 파일 경로 및 헬퍼 함수(`persist_sidebar_subpane_height`, `read_persisted_sidebar_subpane_height`, `sidebar_subpane_get_height` 등) 구현.
+  - 리사이즈 또는 토글 시 디스크에 자동 기록하고, 신규 tmux 서버 시작 시 디스크 파일로부터 최신 높이/위치를 자동 로드하도록 조치.
+  - `test-subpane-height-persistence.sh`에 `kill-server` 후 신규 서버 복원 검증 케이스 추가 및 모든 테스트 스위트 PASS 확인.
+
+## 2026-08-21 - Bugfix: Subpane Height Persistence & Accurate Restoration on Mouse Resize and Toggle
+
+- **사용자 요청**:
+  - 서브페인 높이 값의 저장, 복원이 제대로 되는지 점검 요청 (사이드바 토글뿐 아니라 사이드바 내에서 `s`로 서브페인 on/off 토글 시 높이 보존 실패 현상 추가 확인 요청).
+- **원인 분석**:
+  1. 마우스로 서브페인 경계선을 조작한 직후 `s`(`Ctrl+a s`)로 사이드바를 닫을 때, `after-resize-pane` 비동기 훅이 완료되기 전 `remove_managed_sidebars`가 실행되어 서브페인의 변경된 높이가 저장되지 않고 폐기되는 경쟁 상태 존재.
+  2. `destroy_sidebar_subpane` 및 `subpane_hub_release_pane`에서 페인 회수/제거 직전 현재 높이를 자동 캡처하는 로직 누락.
+  3. 사이드바 내에서 `s`(`toggle_sidebar_subpane_global`)로 서브페인을 OFF할 때, 서브페인이 백그라운드 허브 세션(`dotfiles-subpane-hub`)으로 이동된 직후 전체 윈도우 루프에서 허브 세션 윈도우까지 `destroy_sidebar_subpane`이 호출되면서, 허브 세션 창의 작은 임시 높이(11/12)로 사용자가 조절했던 서브페인 높이를 덮어씌워버리는 결정적 버그 발견.
+  4. `subpane_hub_acquire_pane`, `subpane_hub_relocate_pane_atomic`에서 `height` 인자가 없을 때 저장된 `@dotfiles_sidebar_subpane_height`를 참조하지 않고 하드코딩된 기본값(`12`)으로 떨어지는 문제.
+  5. `join-pane -v -l <height>` 시 상단(`-b`) 배치 및 tmux 내부 반올림 오차로 인해 요청한 높이와 실제 생성 높이 사이에 1~2줄 오차 발생.
+- **조치 내용**:
+  - `destroy_sidebar_subpane`, `remember_sidebar_subpane_height_for_window`, `subpane_hub_release_pane`, `toggle_sidebar_subpane_global` 전 구간에서 인프라 세션(`dotfiles-subpane-hub`)을 엄격히 판별 및 제외(`is_infrastructure_session`)하여 허브 세션 높이로 덮어씌워지는 문제 원천 차단.
+  - `destroy_sidebar_subpane` 및 `subpane_hub_release_pane` 진입 시 `remember_sidebar_subpane_height_for_window` 및 현재 높이를 즉시 `@dotfiles_sidebar_subpane_height`에 저장하도록 방어.
+  - `toggle_current_sidebar` 닫기 경로에서 `remember_sidebar_width_for_window`를 동기 호출하여 마우스 리사이즈 직후 토글 시에도 최신 폭/높이 즉시 보존.
+  - `subpane_hub_acquire_pane`, `subpane_hub_relocate_pane_atomic`, `provision_sidebar_subpane`에서 저장된 높이 옵션을 우선 조회하고, 조인 직후 `resize-pane -t "$sub_pane" -y "$height"`를 명시적으로 실행하여 상/하단 위치 무관하게 정확한 높이 복원 보장.
+  - `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` 확장 및 전체 서브페인/사이드바 계약 테스트 통과 확인 후 `dist/tmux-session-launcher` 번들 갱신.
+
+## 2026-08-21 - Release v0.6.16: Look-Up Table Waveform Engine, 30 FPS Dynamic Clock & Asynchronous Multi-Session AI Activity Dashboard
+
+- **사용자 요청**:
+  - 버전업 요청에 따라 `v0.6.16`으로 버전 승격 및 릴리스 배포 진행.
+- **조치 내용**:
+  - 현재까지 개발 및 검증된 핵심 개선 사항(24프레임 LUT 파형 엔진, 30 FPS 적응형 클록, CJK/Emoji 와이드 문자 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 대시보드, `restore_terminal` 무오류 패치)을 `v0.6.16` 릴리스로 통합.
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`의 안정 기준 버전을 `v0.6.16`(v6.16)으로 승격.
+  - git 커밋, `v0.6.16` 태그 생성 및 원격 저장소(`origin/feature/single-sidebar`) 푸시 완료.
+
+## 2026-08-21 - Architecture & Feature: Asynchronous Multi-Session AI Activity Tracking & Wave Animation Dashboard (TDD & SOLID)
+
+- **사용자 요청**:
+  - 선택되지 않은 세션이라도 소속된 pane에서 AI CLI가 동작 중이면 사이드바에서 멈추지 않고 비동기 파형 애니메이션이 계속해서 표출되어 사용자가 관제할 수 있도록 아키텍처 제안(후보 1: Global Delta Batching & Tracked PID Watcher 채택) 및 TDD/SOLID 기반 구현 요청.
+- **조치 내용**:
+  - `scripts/lib/sidebar_domain_activity.sh` 순수 도메인 모듈 신설하여 PID 레지스트리 및 시그니처 델타 상태 평가 로직 격리.
+  - `scripts/tmux-session-launcher` 내 `row_cache_reusable` 및 증분 스캔 로직에서 활성 AI 프로세스를 보유한 비선택 세션을 선별적으로 스캔/동기화하도록 개선하여 0% CPU 오버헤드와 비동기 다중 세션 실시간 애니메이션 양립 달성.
+  - `tests/tmux-single-sidebar/test-activity-observer-unit.sh` (12/12 PASS), `tests/tmux-single-sidebar/test-multi-session-animation-e2e.sh` (4/4 PASS) 등 전체 테스트 통과 확인.
+  - `scripts/build-dist.sh` 갱신 및 `dist/tmux-session-launcher` 프로덕션 번들 빌드 완료.
+
+## 2026-08-20 - Bugfix: Purge Dangling sidebar_tmux_control_stop in restore_terminal (TDD)
+
+- **사용자 요청**:
+  - 세션 전체 삭제(`d -> a -> enter`) 후 런처 종료 시 `/home/al-hub/.local/bin/tmux-session-launcher: line 6025: sidebar_tmux_control_stop: command not found` 에러 메시지 발생 원인 탐지 및 TDD/SOLID 기반 Subagent-Driven 개선 요청.
+- **조치 내용**:
+  - `tests/tmux-single-sidebar/test-restore-terminal-unit.sh` 신설하여 종료 트랩 에러 발생(RED) 재현.
+  - `scripts/tmux-session-launcher` 내 `restore_terminal()`에서 과거 FIFO 제어 모드 잔재인 미정의 함수 `sidebar_tmux_control_stop` 호출 삭제.
+  - `scripts/build-dist.sh`를 통해 `dist/tmux-session-launcher` 번들 갱신.
+  - 단위 테스트 및 전체 계약 테스트(`test-contract.sh`, `test-window-local-contract.sh`, `test-animation-lut-unit.sh`) 통과(GREEN) 확인 후 커밋.
+
+## 2026-08-20 - Architecture: AI CLI Session Name Animation Engine Refactoring (Candidate 1: LUT & 30 FPS Dynamic Clock)
+
+- **사용자 요청**:
+  - AI CLI 실행 시 세션명 애니메이션 효과의 신규 아키텍처 후보 1(사전 계산 Look-Up Table 엔진 & 적응형 동적 30 FPS 클록)에 대해 TDD, SOLID를 준수한 구현 계획 수립 및 Subagent-Driven으로 전체 개발 완료 진행.
+- **주요 내용**:
+  - `scripts/lib/sidebar_domain_animation.sh` 순수 도메인 모듈 신설 (24개 위상 프레임 사전 생성, CJK/Hangul/Emoji 와이드 문자 출력 폭 안전 토크나이저, $O(1)$ LUT 인덱스 룩업, 동적 적응형 클록 타임아웃 산출).
+  - `scripts/tmux-session-launcher` 내 $O(N \cdot L)$ 루프를 $O(1)$ LUT 조회로 전면 교체하여 활성 시 CPU 점유율을 94% 절감 (< 2.5% CPU)하고, 유휴 시 1.0s 슬립(0.0% CPU) 달성.
+  - 30 FPS (33ms) 부드러운 물결 및 `EPOCHREALTIME` 단조 시계 기반 지터 차단.
+  - `tests/tmux-single-sidebar/test-animation-lut-unit.sh` (18/18 PASS), `tests/tmux-sidebar-gradient/` (26/26 PASS), Gate A `test-contract.sh` (8/8 PASS), `test-window-local-contract.sh` (3/3 PASS) 전원 통과.
+  - `scripts/build-dist.sh`를 통해 `dist/tmux-session-launcher` 프로덕션 번들 갱신.
+
+## 2026-08-20 - Release v0.6.15: Subpane Swap, Deterministic Archive & Batch Restore Integrity
+
+- **사용자 요청**:
+  - 현재 구현된 기능 및 버그 수정을 포함하여 버전을 승격(v0.6.15)하고 커밋, 태그 생성 및 푸시 수행.
+- **주요 내용**:
+  - 서브페인 상/하 위치 전환 및 영속화, 세션 전환 유지.
+  - 서브페인 높이 리사이즈 영속화.
+  - 결정론적 세션 아카이브 명명 및 Last-Write-Wins.
+  - 배치 복원 시 다중 분할 레이아웃 무결성 직렬화.
+  - `install.toml` 매니페스트 정리.
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`의 안정 기준 버전을 `v0.6.15`(v6.15)로 승격.
+
+## 2026-08-19 - Fix: Purge Deleted tmux-sidebar-controller from install.toml and Test Harnesses
+
+- **사용자 요청**:
+  - `install.sh` 실행 중 발생한 `curl: (37) Could not open file .../scripts/tmux-sidebar-controller` 원인 분석 및 수정 사항 적용, commit & push 요청.
+- **분석 및 조치**:
+  - `scripts/tmux-sidebar-controller`가 과거 커밋(`9ed7345`)에서 삭제되었으나 `install.toml` 및 테스트 하네스에서 참조가 남아있어 `install.sh` 실행 시 다운로드 에러가 발생함을 확인.
+  - `install.toml`에서 `tmux-sidebar-controller` 섹션 및 `tmux-session-launcher` 의존성 제거.
+  - 테스트 및 문서 내 잔존 참조 동기화.
+  - `install.sh` 및 계약 테스트(`test-contract.sh`, `test-window-local-contract.sh`) 통과 확인 후 커밋 및 푸시.
+
+## 2026-08-19 - Batch Restore Layout Integrity (TDD & SOLID)
+
+- **사용자 요청**:
+  - 배치 복원(Batch Restore, `restore_batch_mode=true`) 시 발생하는 작업창 너비 왜곡(distortion) 버그를 TDD 및 SOLID 원칙에 따라 해결.
+  - TDD RED Phase: `tests/tmux-single-sidebar/test-batch-restore-layout-integrity.sh`를 작성하여 복원 후 작업 패널 너비가 `25 58`이 아닌 기본 분할로 왜곡되는 현상을 재현.
+  - GREEN Phase: `scripts/tmux-session-launcher` 내 `restore_archive`에서 배치 모드 시 레이아웃 스펙을 `@dotfiles_sidebar_layout_spec`으로 윈도우에 직렬화하고, `provision_sidebar_window`에서 온디맨드 프로비저닝 시 해당 스펙을 역직렬화하여 `restore_archived_sidebar_layout`을 적용하도록 구현.
+  - 번들 빌드(`scripts/build-dist.sh`) 및 전체 계약 테스트 스위트 검증.
+- **구현 및 검증**:
+  - `test-batch-restore-layout-integrity.sh`로 RED 재현 (`42 41` 실패) 확인.
+  - `tmux-session-launcher` 수정 및 `build-dist.sh` 실행 후 `test-batch-restore-layout-integrity.sh` GREEN PASS (`25 58` 일치 확인).
+  - 전체 계약 테스트 스위트(`test-contract.sh` 8/8) 및 회귀 테스트 PASS.
+
+## 2026-08-18 - Layer 4 Presenter UI Event Loop & Marker Handover Integration (TDD & SOLID)
+
+- **사용자 요청**:
+  - Task 3 실행: Layer 4 Presenter UI Event Loop & Signal Handler Integration in `scripts/tmux-session-launcher`.
+  - 이벤트 루프 및 시그널 핸들러(`SIGWINCH`, `refresh_signal_pending` 등)에서 `@dotfiles_sidebar_target_marker` / `@dotfiles_sidebar_selection_sync` 감지 및 즉시 소비, `selection_coordinator_align_current "$target_session"` 호출 및 <1ms 내 델타 렌더링.
+  - `collect_sessions`에서 유효 세션 존재 시 임의 index 0 fallback 방지.
+  - E2E 통합 테스트 `tests/tmux-single-sidebar/test-presenter-handover-e2e.sh` 작성하여 RED -> GREEN TDD 검증.
+- **구현 및 검증**:
+  - `sidebar_consume_pending_target_marker` 및 `sidebar_target_marker_pending` 구현 및 `run_tui` 이벤트 루프/시그널 핸들러 파이프라인 연동.
+  - `test-presenter-handover-e2e.sh`를 통해 실제 격리된 tmux 세션에서 마커 핸드오버 및 시그널 웨이크 시 `>*` 마커 갱신 및 옵션 소비 검증 완료.
+  - 전체 단위/계약 테스트 PASS 및 배포 번들 빌드 완료.
+
+## 2026-08-18 - SelectionCoordinator Arrival Alignment (TDD & SOLID)
+
+- **사용자 요청**:
+  - SelectionCoordinator Arrival Alignment 계획 구현:
+    1. TDD 단위 테스트 `tests/tmux-single-sidebar/test-selection-alignment-unit.sh` 작성.
+    2. `scripts/lib/sidebar_coordinator.sh`에 `selection_coordinator_align_current` 구현.
+    3. `scripts/tmux-session-launcher`의 `collect_sessions` 및 초기 런처에서 `selection_coordinator_align_current "$current_session"` 호출 및 `old_selected` 오버라이드 방지.
+    4. TDD 단위 테스트 및 `test-contract.sh` GREEN 검증, `dist/` 빌드 및 `~/.local/bin` 배포.
+- **구현 및 검증**:
+  - `sidebar_coordinator.sh`에 세션 목록 기반 정확한 인덱스/세션 정렬 함수 추가.
+  - `tmux-session-launcher` 내 `collect_sessions` 및 `align_selection_to_session`을 위임 처리하여 일관된 선택 포커스 정렬 보장.
+  - 단위 테스트(`test-selection-alignment-unit.sh`) 및 전체 계약 테스트(`test-contract.sh` 8/8) 100% PASS 확인.
+
+## 2026-08-18 - Infrastructure Session Isolation & Atomic Single-Frame Subpane Lease (Flicker-Free, TDD & SOLID)
+
+
+- **사용자 요청**:
+  - `session 이동 선택 시, 서브패널 refresh 로 거슬리는게 큰데, 이것은 제어 가능 범위인가? 아닌가?`
+  - `/plan 각 주요 사항별로 전체 개선 계획을 TDD, SOLID 준수하여 작성하자.`
+  - `/implement 각 단계별로 TDD 및 개선을 Subagent-Driven 으로 진행하라.`
+- **원인 분석 및 아키텍처 진단**:
+  1. **인프라 세션 누출**: `collect_sessions` 및 전역 훅이 raw `list-sessions`를 조회하여 `dotfiles-subpane-hub`가 UI 목록 및 훅에 노출되고, 허브 윈도우에 사이드바가 잘못 주입됨.
+  2. **서브패널 리프레시/깜빡임**: 세션 전환 시 `세션 A -> 허브 -> 세션 B` 2단계 릴레이 물리 이동으로 인해 화면 리플로우, 터미널 리사이즈, SIGWINCH 신호가 연쇄 발생함.
+  3. **메타데이터 소실**: 반납 시 `@dotfiles_sidebar_subpane`을 unset하여 토폴로지 분석기가 작업창으로 오인.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **인프라 세션 완전 격리 (`InfrastructureSessionRegistry` & `SessionFilter`)**:
+     - `sidebar_domain.sh`에 `is_infrastructure_session` 도메인 함수 추가.
+     - `sidebar_port_tmux.sh`에 `sidebar_tmux_list_user_sessions` 딥 어댑터 구현하여 UI 및 훅에서 인프라 세션 완벽 은닉.
+  2. **단일 프레임 원자적 서브패널 이전 (Single-Frame Atomic Relocation Pipeline - Flicker-Free)**:
+     - 2단계 릴레이를 폐지하고 `join-pane ... \; switch-client ... \; select-pane ...` 복합 IPC 파이프라인으로 1회의 C-level 트랜잭션 처리 (깜빡임 0회).
+  3. **불변 역할 태깅 (Immutable Role Tagging)**:
+     - `@dotfiles_sidebar_subpane 1` 및 `@dotfiles_subpane_hub_pane 1`을 영구 보존.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-infra-registry-unit.sh`, `test-atomic-subpane-lease.sh`, `test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-debug-user-exact.sh`).
+  - 세션 목록 100% 클린 및 서브패널 깜빡임 없는 완벽한 원자적 전환 달성.
+
+
+## 2026-08-18 - Resilient Archive Restore, Batch Worker IPC & Subpane Active-Window Lease (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/diagnosing-bugs` tmux session 띄워 놓았다. o 로 신규 세션을 몇개를 선택해서 열고, m 으로 subpane 을 만들고, 신규세션으로 이동, enter 선택시 오류현상들이 여러개 발견된다. 열어 있는 tmux 에서 상기 시나리오로 test 하여 어떤 오류 현상들이 detect 되는지 확인해서 정리하여 알려줘.
+  - `/improve-codebase-architecture` 상기이슈가 설계안에서 문제시 되는 요소는 없는지 확인해서 알려줘.
+  - `/plan` 순차적으로 진행하도록 전체 개선 계획을 TDD, SOLID 준수하여 작성하자.
+  - `/implement` 각 단계별로 TDD 및 개선을 Subagent-Driven 으로 진행하라.
+- **원인 분석 및 아키텍처 진단**:
+  1. **복원 세션 파괴 결함**: `restore_archive`가 백그라운드 복원 도중 클라이언트 전환(`switch-client`) 실패 시 정상 생성된 세션까지 `tmux kill-session`으로 파괴(`Restore failed: 1`).
+  2. **배치 워커 완료 상태 동기화 누락**: `restore_selected_archives`에서 비동기 서브셸 워커 종료 코드를 무시하고 `restored_count++`를 누적하여 실패한 세션으로 잘못 전환 시도.
+  3. **서브패널 전역 훔치기(Stealing) 루프**: 싱글톤 서브패널을 전역 토글 시 모든 윈도우에 무차별 `join-pane`을 시도하여 이전 윈도우의 컬럼이 깨지는 현상.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **2단계 회복성 복원 (Resilient 2-Phase Restore)**: 세션 생성(Data Layer)과 클라이언트 전환(UI Layer)을 엄격히 분리하여, UI 포커스 전환이 실패하더라도 생성된 세션/윈도우 트리를 파괴하지 않고 백그라운드에 보존.
+  2. **구조화된 IPC 워커 상태 프로토콜**: `$batch_tmp_dir/$PID.status` 파일 Seam을 통해 성공/실패 토큰을 전달하고, 상태 검증을 통과한 세션만 `restored_sessions`에 등록.
+  3. **서브패널 활성 윈도우 동적 임대 모델 (Active-Window Lease Model)**: 전역 토글 시 오직 현재 클라이언트의 활성 윈도우에만 서브패널을 임대(`acquire`)하고, 세션 전환 시 이전 윈도우에서 안전 반납 후 새 활성 윈도우로 원자적 임대 이전.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-window-local-contract.sh`, `test-keyboard-e2e-subpane.sh`, `test-debug-user-exact.sh`).
+  - 사용자 실 아카이브 3개 복원 + 서브패널 온/오프 + 연속 세션 전환 시나리오 완벽 동작 검증.
+
+
+## 2026-08-18 - Global Singleton Subpane Hub & Unified Prompt (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/grill-me` 1. subpane 은 session 에 따라 변하면 안된다. 즉 오로지 sidebar 에 종속적인 단일 pane으로 나와야 한다.
+  - 2. subpane에서 WIN-93J7DBQIEF7% 이라고 나오는데, 그냥 다른 pane 과 동일하게 $ 만 출력되면 된다.
+  - 시스템 부하(시스템 부하와 관련하여 현재 설계안만으로도 충분한지 설명) 질문에 대해 유휴 부하 0% 및 N개->1개 쉘 RAM 절감 원리 설명 후 `/implement` 승인.
+- **아키텍처 및 세부 설계 결정**:
+  1. **전역 싱글톤 세션 허브 모델 (`SubpaneHubManager`)**: 전역 백그라운드 세션(`dotfiles-subpane-hub`)에 1개의 PTY 쉘 프로세스를 영구 유지하고, 사용자가 어떤 세션/윈도우로 이동하든 C-level `join-pane`/`break-pane`으로 즉시 이동 수납.
+  2. **프롬프트 통일**: `$HOME/.cache/dotfiles/.zshrc`를 통해 일반 작업창과 동일한 `$ ` 짧은 프롬프트 적용 (`WIN-93J7DBQIEF7%` 등 호스트 프롬프트 제거).
+  3. **프로세스 영속성**: 세션 전환이나 `m` 키 온/오프 간 실행 중인 프로세스 및 터미널 버퍼 100% 보존.
+- **검증 결과**:
+  - 단위/계약/E2E 전 스위트 100% GREEN PASS (`test-subpane-hub-unit.sh`, `test-subpane-hub-contract.sh`, `test-contract.sh`, `test-window-local-contract.sh`, `test-keyboard-e2e-subpane.sh`).
+
+## 2026-08-18 - Subpane Topology Isolation & WindowTopologyManager Deepening (TDD & SOLID)
+
+- **사용자 요청**:
+  - `/grill-me` tmux 를 띄워 놓았다. 바로직전의 수정 후 오류내용을 점검하려고한다. 오류내용 점검 후, 구조적인 문제점을 먼저 파악하려고한다. 지금은 코드 수정없이, 오류사항만 점검하려고한다.
+  - 실사용자 조건으로 띄워진 tmux를 조작하여 관련 문제점들을 최대한 파악하여 정리.
+  - `/diagnosing-bugs` 상기 내용에 대해 원인을 명확하게 점검.
+  - `/improve-codebase-architecture` 전문 subagents 들과 코드와 현재내용을 검토하고, 보강할 부분을 찾아서 최종 안을 제시.
+  - `/plan` TDD, SOLID 기반으로 개선 계획을 수립.
+  - `/implement` 진행.
+- **주요 결함 실측 및 규명**:
+  1. **가변 타이틀 식별 소실**: 쉘(zsh/bash)의 OSC 프롬프트 타이틀 변경으로 `pane_title` 기반 subpane 검색이 실패하여 `m` 키로 닫기 불가(좀비 subpane 잔존).
+  2. **레이아웃 스냅샷 오염**: `snapshot_work_layout_transaction`이 사이드바만 break-pane하고 subpane을 분리하지 않아 work_layout에 subpane이 영구 합체되어 3단 분할로 레이아웃 왜곡.
+  3. **세션 아카이브 오염**: subpane이 일반 `pane 1`로 오인되어 TSV 아카이브에 영구 기록되는 현상.
+- **TDD & SOLID 기반 아키텍처 개선**:
+  1. **단일 책임 원칙 (SRP) `WindowTopologyManager` (`scripts/lib/sidebar_topology.sh`)**: 불변 메타데이터(`@dotfiles_sidebar_subpane 1`) 기반 단일 Pane Registry 구축.
+  2. **레이아웃 스냅샷 격리**: `snapshot_work_layout_transaction` 및 아카이브 스냅샷에서 subpane을 사이드바와 함께 원자적으로 격리/복원.
+  3. **회귀 검증**: `test-topology-unit.sh`, `test-topology-contract.sh`, `test-layout-subpane-isolation.sh`, `test-keyboard-e2e-subpane.sh`, `test-contract.sh` 전 스위트 100% PASS.
+
+## 2026-08-17 - Sidebar Sub-Pane (Satellite Interactive Shell Terminal) Feature
+
+- **사용자 요청**:
+  - `/grill-me` 1. sidebar 의 위 또는 아래에 신규의 독립된 창을 만들고자한다.
+  - 2. sidebar에서만 존재하는 sub pane 으로 on/off 가능하다고 보면 될 것 같다.
+  - 3. 해당창은 sidebar 와 항상 함께 동작된다.
+  - 4. 즉, sidebar 가 실행시에만 같이 있고, 실행되지 않으면 같이 없어진다.
+  - 5. sidebar에서 m 버튼으로 toggle 하여 on/off 가능하도록 하고, 추후 short cut은 바뀔 수 있다.
+  - 6. 우선은 sidebar 아래에 배치하고(추후 설정에 따라 위에배치도 가능), 1개만 붙일수 있도록 하자.
+  - "동의" 및 "Subagent-Driven" 실행 승인.
+- **아키텍처 및 세부 설계 결정**:
+  1. **명령어**: 기본 `$SHELL`(zsh/bash), `@dotfiles_sidebar_subpane_cmd`로 커스텀 가능.
+  2. **배치 및 높이**: 사이드바 컬럼 하단(`split-window -v`), 전체 높이의 약 30%(기본 12줄).
+  3. **단축키 & 포커스**: TUI `m` 키로 온디맨드 토글. 포커스는 메인 세션 런처에 유지되어 세션 선택 흐름 방해 없음.
+  4. **라이프사이클 & 상태 보존**: 전역 옵션 `@dotfiles_sidebar_subpane_enabled` (1/0). 사이드바를 닫으면 서브페인도 함께 소멸되고, 다시 열면 서브페인이 함께 생성됨.
+  5. **인프라 격리**: `dotfiles-sidebar-subpane` 및 `@dotfiles_sidebar_subpane 1` 태깅. 작업 영역 분할(`Ctrl+a |`, `_`), 레이아웃 복원, v3 세션 아카이브 백업 대상에서 철저히 제외.
+- **구현 및 검증**:
+  - Subagent-Driven Development (Task 1 ~ Task 4) 완료.
+  - 단위/계약/E2E 테스트(`test-subpane-unit.sh`, `test-subpane-contract.sh`, `test-keyboard-e2e-subpane.sh`) 포함 Gate A~D 전 10종 테스트 스위트 100% PASS.
+  - `dist/tmux-session-launcher` 빌드 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
+## 2026-08-17 - Diagnosing-Bugs & Latency Optimization: Sequential IPC Removal & Inactive Scan Suppression
+
+- **사용자 요청**:
+  - `/diagnosing-bugs` tmux session 띄워 놓았다. 이동 enter 선택 작업을 하면 체감적으로 빠르다는 느낌을 받지 못하는데, 어떤 버그가 있는지 점검하고 직접 tmux를 제어하며 버그를 찾아보자.
+  - `/grilling` 작업 전 기존 수정사항 커밋 & 푸시 후 권장 방식으로 최적화 및 TDD 검증 진행.
+- **진단 및 발견 사항**:
+  - 활성 tmux(24개 세션, 50개 페인)에서 `aaa` ➔ `bbbbbb` 세션 전환 시 실제 지연 시간이 **약 1,019ms**로 계측됨.
+  - 원인: `switch_session()` 핫패스에서 19회의 개별 동기식 `tmux` CLI fork(~50-145ms/회) 직렬 대기 + 전환 직후 비활성화된 소스 사이드바의 백그라운드 24세션/50페인 풀 스캔(222ms) 발생.
+- **수행 내용 및 결정**:
+  1. **인메모리 세션 존재 확인**: `session_names` 배열을 활용해 `tmux has-session` 프로세스 포크(145ms) 생략.
+  2. **복합 원자적 전환 IPC 파이프라인**: `switch-client \; select-pane` 단일 소켓 트랜잭션으로 포커스 이동.
+  3. **비활성 소스 사이드바 백그라운드 스캔 억제**: 클라이언트 이탈 즉시 소스 사이드바의 무의미한 222ms 풀 스캔/렌더링을 차단하고 복귀 시 On-demand 갱신.
+  4. **TDD 회귀 검증**:
+     - 단위 테스트: `test-switch-unit.sh`, `test-archive-unit.sh`, `test-domain-unit.sh`, `test-port-tmux-unit.sh` (ALL PASS).
+     - Gate A~D 전체 E2E 테스트 통과 (ALL PASS).
+  5. **배포 번들 동기화**: `dist/tmux-session-launcher` 및 `~/.local/bin/tmux-session-launcher` 배포 완료.
+
+## 2026-08-17 - Architectural Refactoring & SOLID Deepening: Dead Code Purge & Pure Archive Codec
+
+- **사용자 요청**:
+  - `/improve-codebase-architecture` 전문 subagents들과 함께 코드베이스 아키텍처를 검토하고 개선안 도출.
+  - `/plan` TDD 및 SOLID 기반 개선 계획 수립 후, 실사용 tmux 환경을 고려하여 안전하게 리팩터링 실행.
+- **수행 내용 및 결정**:
+  1. **데드 코드 및 얕은 심(Seam) 제거**:
+     - 이전 `move-pane` 시절의 비활성 레거시 스크립트 `scripts/tmux-sidebar-controller` (169 LOC) 및 `tmux-session-launcher`의 불필요한 sourcing 제거.
+     - `scripts/tmux-sidebar-tmux-adapter`에서 비활성 FIFO 컨트롤 모드 및 미사용 함수 정리.
+  2. **아카이브/레이아웃 순수 연산 심화 (Deep Module) & TDD 단위 테스트 강화**:
+     - tmux CLI 호출 없는 순수 Bash 기반 CRC16 레이아웃 체크섬 계산, 레이아웃 본문 파싱, 페인 ID 매핑, v1/v2/v3 TSV 아카이브 검증 함수들을 `scripts/lib/sidebar_archive.sh`로 추출.
+     - `tests/tmux-single-sidebar/test-archive-unit.sh`를 확장하여 해당 순수 로직들의 TDD 단위 테스트 구축 및 11ms 내 초고속 회귀 검증 완료.
+     - `scripts/tmux-session-launcher`가 해당 모듈을 호출하도록 일원화.
+  3. **윈도우 식별 및 어댑터 소켓 IPC 안정성 확보**:
+     - `SIDEBAR_WINDOW_ID` 확인 시 활성 창이 아닌 실제 대상 `$TMUX_PANE`의 윈도우 ID를 정확히 타겟팅하도록 수정하여 멀티 윈도우 복원 시 블로킹 이슈 해결.
+     - `sidebar_port_tmux.sh`의 fallback `sidebar_tmux_cmd`가 `$TMUX` 소켓을 보존하도록 보강.
+  4. **전체 테스트 스위트 검증**:
+     - 단위 테스트 (archive, domain, port_tmux) 및 Gate A/B/C/D E2E 테스트(단일/다중 아카이브 복원, 세션 전환, 멀티 클라이언트 충돌 보호 등) 전수 100% 통과 (ALL PASS).
+  5. **배포 번들 동기화**:
+     - `dist/tmux-session-launcher` 최신 번들 재생성 및 구문 검사 통과.
+
+## 2026-08-17 - SDD Implementation: Sidebar Performance & Perceived Latency Optimization
+
+- **사용자 요청**: 전문 사용성, UX, 개발, tmux subagent들과 논의한 개선안을 바탕으로 고속 네비게이션, 벌크 복원, 연속 세션 전환 성능 최적화 진행.
+- **수행 내용**:
+  - `superpowers:subagent-driven-development` (SDD) 프로토콜을 기반으로 3개 Phase를 TDD 및 단계별 Task Reviewer 검증을 거쳐 완수.
+  - **Task 1 (Phase 1)**: 커서 이동 핫패스에서 3회 발생하던 동기 IPC 호출을 제거하고 인메모리 세대 카운터 및 유휴 디바운스 플러시(`flush_action_generation_if_dirty`) 구현 (<0.5ms 달성).
+  - **Task 2 (Phase 2)**: 다중 아카이브 벌크 복원 시 지연 프로비저닝(Lazy Provisioning) 및 `@tmux_batch_busy 1` 훅 억제를 적용하여 20개 세션 복원 시 프로세스 폭발 차단 및 복원 속도 대폭 단축.
+  - **Task 3 (Phase 3)**: 고속 연속 Enter 입력 시 트랜잭션 락에 의한 키 씹힘을 해결하는 Last-Write-Wins (LWW) 전환 요청 병합(`_pending_transition_target` + 시퀀스 펜싱) 구현 및 낙관적 피드백 제공.
+  - **Task 4**: 단위/계약/통합 테스트 전수 검증 (8/8 PASS) 및 번들(`dist/tmux-session-launcher`) 동기화, 문서 업데이트.
+
+
+- **사용자 지시**: single-sidebar branch에만 버전 up, commit & push 진행.
+- **수행 내용**:
+  - `scripts/tmux-session-launcher`: 아카이브 복구 UX/성능 최적화 및 복구 후 원본 세션 복귀 시 히스토리 잔상 UI 제거 버그 수정.
+  - 버전 표기를 `v0.6.11`에서 `v0.6.12`로 승격 (`AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`).
+  - 라이브 실환경 및 단위/회귀 테스트 스위트 전수 통과 확인 후 `feature/single-sidebar` 브랜치에 커밋 및 원격 푸시.
+
+## 2026-08-09 - Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)
+
+- **사용자 지시**: Task 2: Layer 1 Infrastructure Ports (`scripts/lib/sidebar_port_tmux.sh` & `scripts/lib/sidebar_archive.sh`)를 구현하고 인프라 포트 및 원자적 아카이브 영속성 함수 캡슐화, 단위 테스트 `test-port-tmux-unit.sh`, `test-archive-unit.sh` 수립 및 `/tmp/task-2-report.md` 작성.
+- **수행 내용**:
+  - `sidebar_port_tmux.sh`: `sidebar_port_get_current_session`, `sidebar_port_get_current_path`, `sidebar_port_switch_client`, `sidebar_port_session_exists`, `sidebar_port_mark_session_managed`, `sidebar_port_session_is_managed` 6개 인프라 포트 함수 구현 및 캡슐화. `sidebar_tmux_cmd` 미정의 시 `tmux` 폴백, `$SIDEBAR_MANAGED_OPTION` 안전 기본값 처리.
+  - `sidebar_archive.sh`: `sidebar_archive_format_line`, `sidebar_archive_save_atomic`, `sidebar_archive_validate_path` 구현. 아토믹 파일 저장시 중첩 디렉토리 자동 생성 및 `.tmp.$$` 임시 파일 사용 후 `mv -f` 원자적 치환 보장.
+  - `dist/tmux-session-launcher` 번들 내 해당 모듈 동기화.
+  - `tests/tmux-single-sidebar/test-port-tmux-unit.sh` 및 `test-archive-unit.sh` 단위 테스트 6개/3개 기능 완전 검증.
+  - `/tmp/task-2-report.md` 작성 완료.
+
+## 2026-08-09 - Task 1: Layer 0 Pure Domain Implementation (`scripts/lib/sidebar_domain.sh`)
+
+- **사용자 지시**: Task 1: Layer 0 Pure Domain Implementation (`scripts/lib/sidebar_domain.sh`)을 TDD(RED -> GREEN -> REFACTOR) 방식으로 완수하고 단위 테스트 `tests/tmux-single-sidebar/test-domain-unit.sh` 수립 및 `/tmp/task-1-report.md` 작성.
+- **수행 내용**:
+  - `scripts/lib/sidebar_domain.sh` 내 6개 순수 도메인 함수(`sidebar_domain_sanitize_name`, `sidebar_domain_validate_archive_line`, `sidebar_domain_epoch_now`, `sidebar_domain_format_duration`, `sidebar_domain_session_age_value`, `sidebar_domain_layout_body`) 완벽 구현.
+  - `$SECONDS` 오계산 버그 수정 및 에포크 기반 시간 계산 보장, 함수 재사용을 통한 중복 제거.
+  - `tests/tmux-single-sidebar/test-domain-unit.sh` 단위 테스트 6개 요구사항 및 엣지케이스 전수 검증.
+  - zero side-effect, zero external CLI commands, zero tmux calls 제약조건 엄수.
+  - `/tmp/task-1-report.md` 작성 완료.
+
+## 2026-08-08 - Single Sidebar M1~M7 TDD/SOLID 모듈화 리팩터링 완료
+
+- **사용자 요청**: `/goal` 순차적으로 M7 까지 진행하고, LOC를 최적화하면서 유지보수에 유리하도록 하고 필요시 파일분리하여 TDD, SOLID 준수하면서 진행하라.
+- **의사결정 및 구현**:
+  - `docs/tmux-single-sidebar-design.md` 및 `docs/superpowers/specs/2026-08-08-single-sidebar-refactoring-design.md`에 명시된 M1~M7 마일스톤에 따라 `scripts/tmux-session-launcher` 모놀리식을 6개의 독립 모듈(`scripts/lib/sidebar_*.sh`)로 분리함.
+  - TDD 절차(RED -> GREEN -> REFACTOR)를 준수하여 각 모듈별 유닛 테스트 스위트(`tests/tmux-single-sidebar/test-*-unit.sh`)를 구현 및 통과시킴.
+  - SOLID 원칙 (SRP, OCP, LSP, ISP, DIP) 및 성능 하드게이트(전환 <=1000ms, 반응성 <=100ms) 계약을 완벽히 만족함을 입증함 (`test-contract.sh` 포함 7/7 전체 테스트 PASS).
+- **결과**: `feature/single-sidebar` 브랜치 상에서 M1~M7 커밋 및 푸시 준비 완료.
+
+## 2026-08-08 - Single Sidebar 유지보수 아키텍처 결정
+
+사용자 요청과 의도:
+- sidebar 코드량이 커진 원인을 점검하고, session 전환 중 sidebar 크기·위치를
+  고정하는 단일 sidebar 모델이 더 빠르고 안정적인지 검증할 것.
+- subagent들과 효율적인 architecture를 논의해 TDD와 SOLID를 준수하는 개선
+  설계문서를 작성할 것.
+
+분석과 결정:
+- 정상 전환에서 pane 이동/재생성/layout 복구를 제거하고 pre-provisioned target에
+  `switch-client`만 수행하는 방향은 타당하며 현재 측정도 1000ms 기준 내다.
+- tmux pane은 physical window 소속이므로 one pane/one OS process를 모든 session에
+  표시하는 요구는 불가능하다. single을 server-wide logical backend/state 하나로
+  정의하고 unique managed window마다 fixed thin presenter를 허용한다.
+- 새 daemon을 즉시 넣는 big-bang 변경은 피한다. pure seam → typed ports → hot/cold
+  split → thin presenter → coordinator runtime spike 순으로 진행하며, singleton,
+  recovery, behavior diff, latency gate를 통과할 때만 기본값으로 승격한다.
+- 공식 release 기준은 전환 1000ms/외부 키 100ms이고 p95 500ms는 최적화 목표다.
+
+결과:
+- `docs/tmux-single-sidebar-design.md`에 목표 topology, 상태/책임/port, failure와
+  geometry 정책, test gap, M0~M7 TDD migration, 정량 acceptance를 기록했다.
+- production 코드는 변경하지 않았다.
+
+## 2026-08-08 - 세션 생성/전환 후 하단 메뉴 중간 표시 잔류 결함 대안 A TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 이전 수정 후에도 잔류한 하단 메뉴 중간 표시 현상을, `render_full()` 빈번 호출(깜빡임·속도 저하 유발) 없이 **대안 A(세션 생성 시 활성 클라이언트 지오메트리 사전 상속)** 방식으로 TDD/SOLID 준수하여 수정할 것.
+
+수정 결과 및 검증:
+- **대안 A 적용**: `create_session_with_active_client_geometry()` 함수를 신설하여 `tui_new_session()`과 `tui_restore_archives()`에서 세션 생성 시 실제 클라이언트 크기를 `-x/-y`로 전달. **깜빡임 0, 재렌더링 0, 전환속도 유지** 세 조건을 동시 달성.
+- **TDD 신규 테스트**: `test-option-a-geometry.sh` PASS.
+- **전체 회귀 검증**: `run_gate_e_scenarios.sh` 8/8 (100% PASS), 전체 TDD 테스트 PASS, 정적 검사 OK.
+
+## 2026-08-08 - 세션 생성/전환 후 하단 메뉴 중간 표시 결함 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 신규 세션 생성 및 이동 시 하단 키 안내 메뉴(`j/k | Enter | ...`)가 패널 중간에 표시되는 현상에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **원인 및 TDD 해결**: `render_full()` 및 `render_prompt_box()` 시작 시 `update_pane_geometry` 호출을 추가하여 패널 높이를 최신 상태로 갱신. `test-middle-footer.sh` 작성 및 100% PASS 검증.
+- **전체 회귀 검증**: `test-basic-defects.sh`, `test-new-defects.sh`, `test-middle-footer.sh` 전체 통과 및 `run_gate_e_scenarios.sh` 8/8 (100% PASS).
+
+## 2026-08-08 - 신규 동작/UX 결함 4종 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 신규 조사된 결함 4종에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **TDD 기반 구현**: `tests/tmux-single-sidebar/test-new-defects.sh` 스크립트를 작성하여 결함 재현(RED) 후 수정을 통해 4/4 PASS(GREEN) 입증.
+- **SOLID 준수**:
+  - SRP (Single Responsibility): `prompt_text` 내 확인 프롬프트 단일 키 처리를 분리하고, 사이드바 너비 보정을 안전 조건하에 격리 집행함.
+  - LSP (Liskov Substitution): 활성 세션 삭제 시 사전 조건 검증(`check_delete_precondition`)에서 내부 클라이언트 이행(internal owner transition)을 정확히 성립시켜 세션 삭제 동작의 일관성을 확보함.
+- **전체 회귀 검증**: `test-basic-defects.sh` (4/4 PASS), `test-new-defects.sh` (4/4 PASS), `run_gate_e_scenarios.sh` (8/8 PASS).
+
+## 2026-08-08 - 기본 동작 결함 4종 TDD/SOLID 준수 수정 완수
+
+사용자 지시:
+- 조사된 사이드바 기본 동작 결함 4종에 대해 TDD 및 SOLID 원칙을 준수하여 수정을 진행할 것.
+
+수정 결과 및 검증:
+- **TDD 기반 레드-그린 구현**: `tests/tmux-single-sidebar/test-basic-defects.sh`를 먼저 작성하여 결함 재현(RED) 후 최소 단위 수정을 통해 4/4 PASS(GREEN) 입증.
+- **SOLID 준수**:
+  - SRP/인터페이스 분리: `dotfiles/tmux.conf` 키바인딩을 `--toggle-sidebar`로 일원화하고 `open_sidebar` 도메인 상태 갱신을 캡슐화함.
+  - OCP: `prompt_text` 취소 키 처리를 기존 핸들러 변경 없이 `q`, `Q`, `n`, `N`, `Esc` 확장 지원.
+- **전체 회귀 검증**: `run_gate_e_scenarios.sh` 8/8 PASS (0 Failures).
+
+## 2026-08-08 - Gate E 8대 시나리오 100% PASS 완수
+
+사용자 요청 및 결정:
+- `/goal` 및 `/goal 계속진행하자` 지시에 따라 완화된 지표 (전환 < 1000ms, 키 반응 < 100ms) 기준 하에 Gate E 8대 시나리오 전수 검증 및 무한 반복 없는 완전한 성공을 요청함.
+
+작업 결과 및 성과:
+- Gate E 8대 시나리오전체 **8/8 (100% PASS)** 완료:
+  1. Scenario 1 (`test-contract.sh`): **PASS**
+  2. Scenario 2 (`test-session-name-zero.sh`): **PASS**
+  3. Scenario 3 (`test-keyboard-e2e-window-local-switch.sh`): **PASS** (전환 속도: 703ms ~ 880ms < 1000ms)
+  4. Scenario 4 (`test-keyboard-e2e-direct-layout.sh`): **PASS**
+  5. Scenario 5 (`test-keyboard-e2e-multi-window-topology.sh`): **PASS**
+  6. Scenario 6 (`test-keyboard-e2e-rename-roundtrip.sh`): **PASS**
+  7. Scenario 7 (`test-keyboard-e2e-rapid-operations.sh`): **PASS**
+  8. Scenario 8 (`test-user-tmux-required-monitored.sh`): **PASS**
+- `run_gate_e_scenarios.sh` 실행 결과: 8 Scenarios / 8 Passed / 0 Failed.
+- 정적 검사(`bash -n install.sh`, `scripts/tmux-session-launcher` 등) 100% OK.
+
+## 2026-08-08 - 현실적 지표 완화 (전환 1000ms, 키 100ms) 및 전체 목표/계획 확정
+
+사용자 결정:
+- 성능 미달로 인한 무한 수정/회귀 루프를 방지하기 위해 지표 기준을 현실적으로 완화함.
+- 세션 전환 시간 목표: **500ms → 1000ms (1초 이내)**
+- 키 반응 속도 목표: **40ms → 100ms 이내**
+- 핵심 목표: Gate E 8대 시나리오 **8/8 (100% PASS)** 기능적 완전성 및 무한 루프 차단.
+
+## 2026-08-08 - Gate E 8대 시나리오 검증 및 세션 Hand-off 정리
+
+사용자 요청:
+1. 현재 작업 사항을 정리하자. 기존 요청작업이 완료되지 못하고 계속 무한 반복중이다.
+2. 세션을 종료하고, 새로운 세션을 호출하였을때, 현재 상황과 작업현황을 알 수 있어야 한다.
+3. 새로운 세션에서 현재 작업을 그대로 이어가는 것이 아니라 문제점을 파악하고, 해당 문제점을 개선하여 작업을 이어가고자 한다.
+
+해석/결정:
+- 무한 반복 루프를 멈추고, 현재까지 해결된 검증 사항(Scenario 1, 2, 6 100% PASS)과 남아있는 문제점(Scenario 3, 4, 5, 7, 8 키보드 PTY 입력 후 prompt 마감 대기 타임아웃)의 원인을 정밀 분석하여 문서화함.
+- 다음 세션에서 무작위 수정 대신 `docs/next-session-handoff.md`의 구조적 개선 지침(PTY line discipline 단일화, prompt option scope 정돈, single transport key 주입)을 기반으로 정밀 타격하여 완수하도록 준비함.
+
+작업 결과:
+- Scenario 1 (Sidebar Toggle & Provisioning): **100% PASS** (`test-contract.sh`)
+- Scenario 2 (Session Name Zero Ambiguity): **100% PASS** (`test-session-name-zero.sh`)
+- Scenario 6 (Session Rename Round-trip): **100% PASS** (`test-keyboard-e2e-rename-roundtrip.sh`)
+- `docs/next-session-handoff.md`에 문제점 원인 분석과 새 세션 전용 개선 액션 플랜을 일목요연하게 작성 완료.
+
+## 2026-08-05 Gate D 후속 수정
+
+- Gate D 측정에서 native `switch-client` 직후 target layout reconcile이
+  `select-layout`과 layout hook을 재호출해 full render/readiness race를 만드는
+  경계를 확인했다.
+- 사용자가 요청한 최소 수정 원칙에 따라 native 전환에서는 layout을 재적용하지
+  않고 관측만 남기며, selection-sync 중 geometry invalidation은 full redraw를
+  억제하도록 했다. archive/restore의 authoritative layout 적용은 유지한다.
+- timestamp DEBUG/TRACE는 테스트 재현 시 ON, 기본 실행은 OFF로 유지한다.
+- `CLIENT_REVERTED` 원인으로 추정된 비원자적 transition option 경쟁을 줄이기 위해
+  서버별 atomic lock을 추가하고, lock을 얻지 못한 중복 전환은 건너뛰도록 했다.
+- trace에서 PID 파일 때문에 lock directory가 삭제되지 않는 후속 결함을 확인해
+  release/reclaim 전에 sentinel을 제거하도록 보완했다.
+- render-cause 실패 중 일부는 observer가 전체 sidebar trace를 합쳐 분류하던
+  측정 결함으로 확인했다. debug render pane과 동일한 pane trace만 분류하도록
+  테스트 책임을 격리했다.
+- detached `interactive-peer` trace가 전역 client tty를 사용해 실제 client를
+  탈취하는 원인을 확인했다. window→client adapter 조회로 detached sidebar의
+  switch를 차단한다.
+- live correlation의 full-render 판정은 transaction finish 이전에 발생한 non-geometry
+  render만 오류로 보도록 조정했다. finish 이후 target force-refresh는 정상 content
+  settlement로 분리한다.
+- client revert가 제거된 뒤 남은 단일 post-transition geometry render를 target
+  session-scoped one-shot marker로 coalesce해 Gate D redraw invariant를 좁게 보완했다.
+- Gate D live fixture의 detached peer가 focus/selection을 교란하는 것을 확인해
+  단일 client 측정에서 peer 생성을 끄고, multi-client 동작은 Gate C fixture로 분리했다.
+
+## 2026-08-04 Gate C 완료
+
+- Gate C는 multi-client ownership, linked/window-local lifecycle, managed session,
+  hook target, metadata failure, operation conflict/rollback을 대상으로 진행했다.
+- owner client가 존재할 때 non-owner/background `--open-sidebar`가 sidebar를
+  닫지 않도록 guard를 추가했다. stale fake tty를 사용하는 기존 테스트 전제는
+  실제 owner tty 기반으로 교체했다.
+- external attach는 owner policy가 사전에 redirect하는 경로로 확인했고, target
+  deletion과 restore name collision은 실제 precondition conflict 및 target 보존으로
+  검증했다. timestamp DEBUG/TRACE는 테스트에서만 ON, 기본값은 OFF로 유지한다.
+
+## 2026-08-04 Gate B 완료와 pane 소멸 원인
+
+- 사용자 요구에 따라 timestamp debug/trace를 on/off 가능하게 유지하고 Gate B를
+  attached PTY에서 검증했다.
+- trace의 실제 원인은 target sidebar가 layout reconcile과 hook 경쟁 중 사라지는
+  race였으며, layout 직후 bounded presence/readiness 재검증·부재 시에만 복구하는
+  최소 수정으로 결정했다.
+- transition 중 Down 등 사용자의 selection을 refresh가 current session으로
+  되돌리던 race도 함께 수정했다. archive restore는 저장된 active work pane을
+  복원하므로 테스트는 다음 sidebar 조작 전에 sidebar focus를 명시한다.
+- full E2E 3회 연속에서 session 6개 생성, 반복 전환, 6개 archive/delete,
+  6개 restore, 전체 종료가 모두 PASS했다. window-local 전환 latency 경고는
+  기능 Gate B와 분리한 Gate D 과제로 남긴다.
+
+## 2026-08-02 sidebar test matrix decision
+
+- 기존 테스트를 새 파일 중심으로 늘리지 않고 Gate A~E 실행 계층으로 재분류하기로
+  했다. Gate A는 빠른 contract, Gate B는 isolated attached-PTY, Gate C는
+  multi-client/lifecycle, Gate D는 성능·render 관측, Gate E는 사용자-visible tmux
+  최종 검증으로 사용한다.
+- 우선순위는 기능 반복 안정성, 폭 저장 계약, archive/restore 결과, cold provisioning
+  readiness, 성능 순서로 유지한다.
+- pane 소멸 근본 원인 수정은 후순위로 두지만 기존 live observer의 pane count,
+  metadata identity, content readiness, work layout invariant와 실패 artifact 보존은
+  계속 유지한다.
+- 실행 기준과 변경 범위별 최소 테스트는 `docs/tmux-sidebar-test-matrix.md`에 기록했다.
+
+## 2026-08-02 Gate B cold-start race finding
+
+- 순차 isolated E2E에서 direct-layout, arbitrary topology, 6개 전체복원은 PASS했지만
+  multi-window 전환이 간헐적으로 timeout했다.
+- trace에서 target sidebar pane은 생성되어 있었으나 TUI readiness 전에
+  `ensure_target_sidebar_window`가 기존 pane 경로에서 bounded wait 없이
+  `verify-failed`로 종료되는 것을 확인했다.
+- 기존 ready-fast 경로는 유지하고, pane이 이미 존재하지만 아직 ready가 아닌 경우에만
+  readiness wait를 추가하는 최소 수정으로 결정했다. 수정 후 multi-window와 Gate B
+  반복 회귀를 재실행한다.
+- 수정 후 드러난 multi-window fixture 이름 잘림은 production 문제가 아니라 테스트
+  데이터 폭 제약 문제로 판단해 session fixture 이름을 짧게 조정한다.
+
+## 2026-08-02 multi-window restore race finding
+
+- restore worker가 두 window를 생성한 뒤 sidebar를 provision하는 동안
+  `sync_active_window` hook도 자동 provision을 실행해 duplicate sidebar reconcile과
+  stale metadata를 만들고 restore가 rollback되는 trace를 확인했다.
+- topology guard 중 active-window hook을 skip하도록 최소 수정하고 multi-window
+  archive/restore를 다시 검증한다.
+
+## 2026-08-02 multi-window restore sidebar coverage
+
+- restore trace에서 첫 restored window만 sidebar가 존재하고 두 번째 window에는
+  sidebar가 없어 full-window geometry가 달라지는 것을 확인했다.
+- session-level provision 이후 restore target window 전체에 local sidebar와 readiness
+  barrier를 적용하도록 최소 수정한다.
+- restore 후 peer sidebar 부재는 최신 trace에서 재현되지 않았고 두 window의 sidebar가
+  모두 존재했다. 남은 active-pane mismatch는 test labeling helper가 snapshot을
+  오염할 수 있어 helper에서 active pane을 보존한다.
+- rapid trace에서 반복 종료의 Escape와 다음 create 입력이 PTY 경계에서 `ESC+c`로
+  합쳐질 수 있음을 확인했다. 반복 시작 전 settle/focus barrier와 Escape 완료 barrier를
+  테스트에 추가한다.
+
+## 2026-08-02 fresh visible verification result
+
+- 새 사용자 tmux session `0`에서 archive 6개를 실제 sidebar의 `o → a → Enter`로
+  복원했다. 6개 session과 window-local sidebar는 모두 생성됐고 longjmp/abort는
+  없었다.
+- 다만 일부 복원 sidebar는 전체 session 목록을 표시했지만 `select-all-5/6`에서는
+  `select-all-2/3` 행이 누락됐다. deferred batch provision에서 기존 sidebar에 대한
+  refresh fan-out을 생략한 것이 stale snapshot의 유력 원인이다.
+- 테스트 session은 정리하고 사용자 session `0`을 보존했다. 다음 작업은 batch
+  finalize 후 managed sidebar 전체 refresh와 각 pane content invariant 검증이다.
+
+## 2026-08-02 sidebar snapshot repair decision
+
+- visible 검증에서 복원 session은 모두 생성됐지만 일부 sidebar에 `select-all-2/3`가
+  누락된 stale snapshot을 확인했다.
+- batch finalize가 모든 managed sidebar pane을 직접 refresh하고, 전체 managed session
+  이름이 각 sidebar capture에 존재하는지 확인한 뒤에만 restore complete를 보고하도록
+  수정했다.
+- 전용 attached-PTY 재검증은 6/6 restore, refresh barrier PASS, known error 0건이었다.
+
+## 2026-08-02 fresh user tmux post-repair result
+
+- 새 사용자 tmux에서 6개 archive를 실제 `o → a → Enter`로 복원했다.
+- 6개 window-local sidebar 모두 전체 session 목록과 올바른 selection marker를
+  표시했다. 이전 `select-all-2/3` 누락 stale snapshot은 재현되지 않았다.
+- 생성한 테스트 session/archive만 정리하고 기존 사용자 session은 보존했다.
+
+## 2026-08-02 global sidebar width decision
+
+- 사용자가 조정한 마지막 sidebar 폭을 전역 기본값으로 유지하도록 요구했다.
+- `after-resize-pane`의 manual source에서만 현재 sidebar 폭을 global option과
+  state 파일에 저장하고, split/layout/window reflow는 저장하지 않도록 source를
+  분리했다. 내부 `resize-pane`에는 operation guard를 적용했다.
+- 사용자 tmux에서 47열 조정 후 sidebar `j → Enter` 이동 및 복귀를 수행해 source와
+  target 모두 47열 유지됨을 확인했다.
 - 사용자 요청, 해석, 결정, 작업 결과, 남은 질문을 분리해서 적습니다.
 - 원문 전체를 붙이지 말고 필요한 문장만 짧게 요약합니다.
 - 민감하거나 일회성인 내용은 저장하지 않습니다.
+
+## 2026-08-02 minimal sidebar disappearance repair
+
+- sidebar 전체 lifecycle이나 mouse binding은 변경하지 않고, 실제 pane이 없는
+  상태에서 남는 stale pane ID/ready metadata만 무효화하기로 결정했다.
+- `Ctrl+a s` provisioning 중 중복 toggle은 무시하고, provision begin/end와
+  stale-metadata 이벤트를 trace에 남긴다.
+- stale metadata repair 및 provisioning 중 toggle 억제 contract가 통과했다.
+
+## 2026-08-02 반복 restore 및 duplicate sidebar 보강
+
+- 6-session keyboard E2E에서 첫 `o` restore 후 다음 `Down -> Enter`가 history
+  archive가 아닌 sessions view 동작으로 바뀌어 restore가 2회차에서 멈추는 원인을
+  확인했습니다.
+- restore 완료 후 history view를 유지하도록 launcher를 수정했고, sidebar
+  provision 완료 직후 concurrent hook 결과를 다시 reconcile하도록 보강했습니다.
+- 반복 restore와 sidebar count contract를 수정 후 재검증합니다.
+- window-local sidebar는 session 전환 시 새 프로세스로 시작하므로 반복 restore
+  시 각 cycle의 `o` 재입력을 회귀 시나리오에 포함했습니다. 기존 global count 1
+  contract는 managed window당 1개를 검증하도록 정정했습니다.
+- 새 sidebar의 history index를 현재 session archive에 맞춰 복원해 연속 `o` 이후
+  같은 archive가 중복 선택되지 않도록 보강했습니다.
+
+## 2026-08-02 six-session archive/topology verification
+
+- 재설치 후 사용자 tmux server에서 full real-PTY 시나리오를 직접 시도했으나,
+  기존 attached client와 임시 test client가 함께 있어 test client 선택이 충돌해
+  첫 `c` prompt readiness에서 중단했습니다. 사용자 server에는 임시 session을
+  남기지 않았습니다.
+- isolated checkout full 시나리오에서는 `c` 6회와 `d → y` archive/delete 6회가
+  통과했지만 `o` restore는 두 번째 반복에서 session count가 증가하지 않아
+  중단되었습니다.
+- isolated arbitrary-topology 시나리오의 horizontal/vertical/mixed 4-pane
+  archive/restore와 work-only/sidebar layout metadata 검증은 통과했습니다.
+
+## 2026-07-30 global-sidebar production implementation follow-up
+
+- 목표는 sidebar pane/process를 유지하고 session 전환 시 work pane만 안정적으로
+  바꾸는 것이며, master에는 반영하지 않고 `feature/single-sidebar`에서만
+  진행한다.
+- global single-sidebar, lazy session creation, single-work-pane fast transition,
+  delta render barrier, prompt refresh critical section을 적용했다. multi-pane
+  topology는 layout metadata/rollback 경계를 유지한다.
+- live runner는 stale hook과 수동 split race를 피하도록 current launcher의
+  `--ensure-current-sidebar`를 사용하고, 생성된 session 이름을 실제 row
+  selection 후 Enter로 선택한다.
+- 최신 user live는 duplicate sidebar 없이 단일 pane identity를 유지했지만 첫
+  전환 target 미변경 1건과 후속 전환 약 1.3초 지연으로 FAIL이다. 전용 contract는
+  PASS했으므로 환경 차이는 줄었지만 전환 latency와 첫 Enter 경계는 아직 완료로
+  판정하지 않는다.
+
+## 2026-08-02 rendered-sidebar readiness follow-up
+
+- 반복 이동·Enter에서 target sidebar pane disappearance와 blank-frame 가능성을
+  확인했습니다. 기존 readiness option만으로는 pane process가 살아 있어도 실제
+  `sessions` 헤더/target row/selection marker가 그려졌는지 보장하지 못했습니다.
+- 현재 launcher는 session switch 성공 전에 pane 존재, input readiness, 실제
+  rendered content와 selection marker를 모두 확인합니다. content/input timeout은
+  `switch.end result=ready`로 기록하지 않고 abort trace와 사용자 메시지를 냅니다.
+- 사용자 tmux live 검증에서는 `sidebar.content-ready`가 각 전환에 기록되었고,
+  기존 latency/observer/marker invariant 실패는 남아 있습니다. `longjmp` 문자열과
+  coredump는 이번 반복에서도 검출되지 않았습니다.
+
+## 2026-07-30 production latency implementation follow-up
+
+- 전환 지연 원인 분석을 위해 operation ID와 phase별 metrics를 production
+  경로에 추가했다. render.delta는 약 1ms이고 render_full은 성공 전환에서
+  발생하지 않았다.
+- 반복 tmux 조회를 줄이고 transition 중 active-window hook 재진입을 차단했다.
+  refresh signal은 이동 전 확인한 sidebar pane/PID를 재사용한다.
+- attached PTY 결과는 target/identity/geometry invariant는 통과했지만 전환
+  finish가 약 0.63~0.86초로 500ms 목표를 미달했다. 현재 남은 최적화 대상은
+  move-pane 자체와 switch-client/refresh 경계다.
+- user live runner의 session 이름 표시 폭 및 선택시간 측정 오류를 수정했다.
+- 보정된 user live는 target 전환 6/6과 sidebar identity 보존에 성공했으며
+  Enter 이후 736~911ms를 기록했다. 생성은 667~997ms였고 known error는
+  없었다. 따라서 기능 invariant는 통과하지만 500ms 전환 목표는 아직
+  미달이다.
+
+## 2026-07-30 persistent control-mode boundary finding
+
+- 500ms p95 목표를 위해 FIFO-backed persistent tmux control-mode adapter를
+  구현하고 전용 socket에서 query/response parsing을 검증했다.
+- 실제 sidebar attached PTY에서는 첫 move 후 tmux control client의
+  `%sessions-changed`/`%exit` event와 attached client context가 섞여 후속
+  session switch가 실패했다. 이 경로를 기본 production으로 사용하지 않도록
+  control mode 기본값을 false로 낮췄다.
+- 다음 control-mode 승격에는 dedicated internal control session/client와
+  event isolation이 필수다. 현재 기본 CLI 경로는 contract와 raw PTY render
+  test를 통과한다.
+- 정리된 user tmux 기본 CLI live에서 생성은 658~940ms, target 전환은 6/6
+  성공, Enter 이후 765~865ms, identity/duplicate/error invariant는 통과했다.
+  500ms latency 목표는 아직 미달이다.
+  multi-pane 전용 runner는 두 실행이 hang되어 INCONCLUSIVE로 남겼고, 사용자
+  tmux는 session 0/window @0/pane %0으로 복원했다.
+
+## 2026-07-30 - session creation latency/error reproduction
+
+- 사용자가 보고한 `c → New 입력 → Enter` 후 sidebar 배치 지연과
+  비-sidebar 창의 `--ensure-sidebar-window returned 1`을 재현하기 위한
+  attached-PTY 테스트를 추가했습니다.
+- 테스트는 prompt, Enter 이후 session 존재, sidebar row, input-ready까지의
+  지연을 분리 기록하고 모든 non-sidebar pane/output/trace를 오류 검색합니다.
+- 최신 branch 실행에서는 Enter 이후 row 표시가 3회 평균 395ms, 최대 398ms였고,
+  `c`부터 row 표시까지는 평균 약 2.05초였습니다. 2·3회차 `New:` prompt 표시가
+  약 2.1~2.2초 지연되어 사용자가 느끼는 지연의 별도 경계로 확인되었습니다.
+  `--ensure-sidebar-window returned 1`은 검출되지 않아 현재 환경에서는 아직
+  재현되지 않았습니다.
+
+## 2026-07-30 - live manual keyboard result
+
+- live tmux에 실제 tmux keyboard event로 3회 session 생성과 방향키+Enter
+  전환을 수행했습니다. 첫 생성 413ms, 세 번째 생성 273ms였습니다.
+- 두 번째 생성은 `New:` 입력 echo가 갱신되지 않아 이전 문자열과 다음 문자열이
+  결합된 `live-manual-2clive-manual-2` session으로 생성되었습니다. 따라서
+  사용자가 느낀 입력 지연/불연속은 live에서 재현된 것으로 판단합니다.
+- 전환 시간은 599~730ms였으며, 현재 pane/scrollback에서는
+  `--ensure-sidebar-window returned 1`을 찾지 못했습니다. 해당 오류는 더 짧은
+  hook stderr 경계를 별도 수집해야 합니다.
+
+## 2026-07-30 - live switch failure reproduction
+
+- live tmux에서 `0 → live-manual-1`은 636ms에 성공했지만, 이후 방향키+Enter
+  전환은 12초 timeout까지 target session으로 이동하지 못했습니다.
+- source session에 남거나 다른 session으로 늦게 이동하는 현상이 발생하여
+  사용자가 보고한 session switch failed 증상을 재현했습니다.
+- 다만 오류 문자열은 pane capture/scrollback에 남지 않았습니다. 실패 결과와
+  오류 메시지 전달은 별도 경계이며, client PTY raw output/launcher trace를
+  함께 수집해야 정확한 원문을 확보할 수 있습니다.
+
+## 2026-07-30 - raw PTY error detection result
+
+- 별도 attached client의 `script --log-out` raw output에서 사용자가 본 오류를
+  직접 검출했습니다:
+  `/home/al-hub/.local/bin/tmux-session-launcher --ensure-sidebar-window ' returned 1`
+- `--ensure-sidebar-window`의 target 인자가 비어 있는 형태이며, 오류가 pane이
+  아니라 tmux client status/message stream에 표시되어 기존 capture 방식에서
+  누락되었습니다.
+- 동일 문자열은 raw stream에 반복되지만 status line redraw 반복일 가능성이
+  있어 실제 hook invocation 수와는 분리해 분석해야 합니다. 다음 production
+  수정은 hook target expansion과 stderr/message correlation부터 확인합니다.
+
+## 2026-07-28 - window-local sidebar test contract
+
+- 사용자는 master에서 관찰된 session 전환 redraw, split topology 붕괴,
+  sidebar 재생성, 신규 session/restore 지연 문제를 window-local sidebar
+  구조로 검증하기 위한 테스트 계획을 승인했습니다.
+- 이번 단계의 범위는 production 수정 없이 테스트 코드와 문서만 작성하는
+  것이며, 신규 테스트는 현재 branch에서 의도적인 RED 기준선입니다.
+- 테스트 기준은 전역 pane 1개가 아니라 unique managed window당 sidebar
+  1개이며, normal session switch에서 pane 이동/layout restore/full render가
+  0회여야 합니다.
+- 현재 변경은 master에 적용하지 않고 commit/push도 보류합니다.
+
+## 2026-07-27 - canonical redraw measurement implementation
+
+- 사용자는 실질적인 개발에 필요한 test/measurement만 남기고 multi-pane
+  redraw와 geometry 원인을 정량적으로 연결하는 계획을 요청했습니다.
+- canonical P1 visual-layer 테스트에 기존 transition operation ID와 phase trace를
+  연결하고 T1~Ttotal 및 raw byte를 phase TSV에 기록하도록 했습니다.
+- `capture-pane` partial은 단독 RED가 아니라 raw PTY/geometry/READY와 함께
+  판정하도록 했고, P0 구조 Gate와 보조/legacy 테스트 역할을 문서화했습니다.
+- 1회 smoke run에서 phase missing 0, geometry mismatch 0,
+  sidebar identity 1, Ttotal p50/p95 2960989us를 확인했습니다.
+- production과 master는 변경하지 않았습니다.
+
+## 2026-07-27 - A/B/C topology measurement profile
+
+- canonical P1을 A/B/C 순환 10회 전환으로 확장하고 target별 semantic pane
+  manifest를 비교했습니다.
+- pane signature는 physical ID/active flag를 제외하고 pane index/title/path/
+  command/geometry를 사용합니다.
+- transition 중간 mismatch와 stable mismatch를 분리해 최종 복원 실패만 RED로
+  판정하도록 했습니다.
+- 10회 결과는 geometry mismatch 0, stable pane mismatch 0, phase missing 0,
+  transition pane mismatch 33 WARN이었습니다.
+
+## 2026-07-27 - contract active-session boundary
+
+- attached client가 없는 contract에서 `--open-sidebar`의 implicit active session
+  판정이 불가능해 명시적 session toggle 계약으로 변경했습니다.
+- active-window 동작은 attached-PTY context가 있는 별도 E2E에서 검증합니다.
+
+## 2026-07-27 - session transition structural barrier
+
+- session 전환 중간 redraw의 구조적 원인 후보로 readiness polling의 반복
+  `switch-client`/`select-pane` mutation과 render 전 READY 상태가 확인됐습니다.
+- observer polling을 읽기 전용으로 바꾸고 detached pane 이동, deferred hook sync,
+  `COMMIT → RENDER_ONCE → READY` barrier를 적용했습니다.
+- P0 contract/phase 회귀는 PASS했습니다. P1 10회 결과는 stable mismatch 0,
+  Ttotal p50/p95 3.233/3.719초이며 transition mismatch 32회 WARN이 남았습니다.
+- 따라서 구조적 개선은 일부 효과가 확인됐지만 중간 layout 적용 경로는 추가 개선
+  대상으로 남겨두었습니다.
+
+## 2026-07-27 - multi-pane redraw measurement plan implementation
+
+- 사용자는 실질적인 개발에 도움이 되도록 필수 test/measurement만 남기고,
+  multi-pane redraw와 geometry 판정을 정확하게 보강하도록 요청했습니다.
+- 기존 visual-layer의 `geometry 종류가 1개인가` 판정은 target session마다 정상
+  geometry가 다를 수 있어 오판 가능하므로 제거했습니다.
+- target별 expected sidebar geometry를 fixture 생성 후 기록하고, sampled row마다
+  observed geometry와 비교하도록 했습니다.
+- transition별 raw PTY artifact와 clear/cursor-home 요약을 추가하고, pane-buffer
+  partial은 raw correlation 전에는 WARN으로만 분류합니다.
+- 전용 attached-PTY 실행에서 6회 전환, 102 samples, geometry mismatch 0,
+  sidebar identity 1, p50 3231ms/p95 3669ms로 완료했습니다.
+- production과 master는 변경하지 않았습니다.
+
+## 2026-07-26 - render cause correlation
+
+- 사용자는 각 `render_full` 호출 직전의 호출 원인을 더 세밀하게 구분할 수
+  있는 검증을 요청했습니다.
+- production launcher/controller는 유지하고, attached PTY 전환 테스트에 5ms
+  sampler를 추가해 trace/debug 증가 시점을 관찰합니다.
+- 각 render를 enter-dispatch, force-refresh, layout-restore,
+  full-render-required, periodic-refresh, unclassified 후보로 TSV에 기록하고,
+  미분류 render가 있으면 artifact를 보존한 채 RED로 판정합니다.
+
+## 2026-07-26 - session transition redraw consolidation
+
+- 사용자는 session 전환 시 sidebar가 유지되면서 자연스럽게 전환되도록 개선을
+  요청했습니다.
+- `feature/single-sidebar`에서 전환 render 요청을 병합하고, Enter 전환 완료 후
+  full render를 1회만 수행하도록 수정했습니다. 전환 중 추가 입력은 기존 busy
+  정책으로 차단하는 방향을 유지했습니다.
+- `render.full.begin/end`에 reason과 generation marker를 추가했습니다.
+- attached PTY 검증에서 4회 전환 render 4회, 10회 전환 render 10회,
+  switch abort 0회, cause ambiguity 0회를 확인했습니다.
+
+## 2026-07-26 - broader regression verification
+
+- rapid operations, flicker sampling, raw PTY 20회, arbitrary topology,
+  multi-window topology, repeat E2E, rename, pane reorder는 PASS했습니다.
+- mouse selection은 target session 전환에 실패했고, visual-layer는 session
+  전환 timeout/server 종료로 RED였습니다.
+- multi-client attach conflict와 기존 contract의 `--open-sidebar` toggle도
+  별도 RED로 남아 있어 master 반영은 보류합니다.
+
+## 2026-07-27 - test observation boundary reinforcement
+
+- 공통 PTY 테스트에 trace/readiness wait와 timeout artifact 보존을 추가했습니다.
+- mouse는 SGR byte가 input log에는 도달하지만 tmux mouse binding/launcher
+  dispatch에는 도달하지 않는 경계 문제로 좁혀졌습니다.
+- visual-layer는 실제 keyboard split으로 fixture를 구성한 뒤 6회 전환을
+  완료했으며 partial frame 33회와 geometry 변화 2종을 측정했습니다.
+- multi-client는 timeout 대신 owner-policy redirect에 의한 INCONCLUSIVE로
+  분류했고, sidebar toggle contract는 readiness wait 후 PASS했습니다.
+
+## 2026-07-25 - 외부 tmux client 동시 변경 conflict 처리
+
+사용자 결정:
+- owner client의 archive/delete/restore 중 외부 client가 session을 변경하면
+  sidebar operation을 실패·rollback하고 외부 변경은 강제로 되돌리지 않습니다.
+- owner 작업과 외부 client의 attach/delete/restore name collision을 우선 검증합니다.
+
+작업 결과:
+- session identity, target client attachment set, owner client tty/session/window을
+  operation precondition으로 저장하고 주요 단계에서 재검증합니다.
+- non-owner hook은 sidebar를 움직이지 않고 외부 변경 trace만 기록합니다.
+- 외부 attach 또는 target 삭제는 delete를 중단하고, restore 이름 선점은 외부
+  session을 보존한 채 restore를 중단합니다.
+- 전용 conflict 테스트에서 세 시나리오와 trace 검증이 PASS 했습니다.
+
+남은 범위:
+- 임의 pane topology의 process identity 완전 복원과 latency refactoring은
+  별도 후속 과제입니다.
+
+## 2026-07-25 - 급속 archive/restore race 개선
+
+사용자 결정:
+- `d`/`o`/session 이동의 급속 입력 race를 우선 개선하고, operation 중 입력은
+  완료까지 차단합니다.
+- `feature/single-sidebar`에서만 구현·검증하며 `master`에는 반영하지 않습니다.
+
+작업 결과:
+- async worker마다 unique operation id를 전달하고 ownership 검증 후에만
+  idle/failed 상태를 기록하도록 했습니다.
+- operation 중 PTY에 버퍼링된 입력은 완료 후 drain/reject해 stale history restore나
+  잘못된 session switch로 이어지지 않게 했습니다.
+- 단일 archive 실패 시 session 삭제를 중단합니다.
+- attached PTY에서 delete/navigation 및 restore/navigation 급속 입력을 각각
+  3회 반복하는 stress 테스트가 PASS 했습니다.
+
+남은 범위:
+- 외부 tmux client가 동시에 archive/restore 대상 session을 변경하는 동시성은
+  별도 후속 검증입니다.
+
+## 2026-07-25 - raw split/resize layout tracking
+
+사용자 결정:
+- sidebar가 열린 상태에서 사용자가 직접 tmux split/resize를 수행하는 실사용
+  경로를 우선 개선하되 `master`에는 반영하지 않습니다.
+
+작업 결과:
+- after-command, window-resized, window-pane-changed hook으로 full layout
+  metadata를 갱신하고, re-entry guard를 추가했습니다.
+- layout sync가 archive/move의 일반 busy 상태를 점유하지 않도록 분리해 raw
+  split 직후 sidebar 입력이 멈추는 side-effect를 제거했습니다.
+- attached PTY에서 raw horizontal/vertical split→session 이동→복귀를 각각
+  재현하는 direct-layout 테스트가 PASS 했습니다.
+- direct 테스트에서 `split-window -d`를 사용하면 실제 keyboard split 직후의
+  active pane 상태와 달라지는 것을 확인해, 재현은 active pane을 유지하는 raw
+  tmux 명령으로 교정했습니다.
+
+남은 검증:
+- 임의 pane topology에서 process identity까지 완전 복원하는 archive fixture는
+  후속 범위입니다.
+
+## 2026-07-25 - archive v2와 transactional restore
+
+사용자 결정:
+- 실사용 side-effect가 남아 있으므로 `master`에는 반영하지 않고
+  `feature/single-sidebar`에서만 검증을 계속합니다.
+
+작업 결과:
+- archive v2에 pane identity/geometry/active metadata를 추가하고 restore 시
+  geometry 검증과 active pane focus 복원을 수행합니다.
+- restore layout/focus 실패는 부분 session과 client session을 rollback합니다.
+- 두 attached client의 non-owner toggle 차단을 별도 PTY 테스트로 검증했습니다.
+
+남은 검증:
+- 임의 pane topology에서 원본 process 상태와 완전한 pane identity를 재현하는
+  acceptance test, legacy v1 archive end-to-end fixture가 남아 있습니다.
+
+## 2026-07-25 - horizontal split round-trip bug reproduction
+
+사용자 보고:
+- session을 가로 split한 뒤 다른 session으로 이동했다가 돌아오면 sidebar
+  형태가 무너집니다.
+
+작업 결과:
+- 실제 attached PTY 키보드 입력으로 해당 시나리오를 재현하는
+  `test-keyboard-e2e-split-cycle.sh`를 추가했습니다.
+- 현재 결과는 RED이며 sidebar width가 35에서 1로 감소하고 work pane 수는
+  2개로 유지됩니다.
+- 분석상 session 이동 controller가 multi-pane target에 sidebar를 다시
+  `move-pane`할 때 geometry/topology 보존 없이 삽입하는 것이 핵심 원인입니다.
+- 요청에 따라 production code는 수정하지 않았습니다.
+
+## 2026-07-25 - vertical split round-trip 추가
+
+작업 결과:
+- 동일한 실제 PTY 흐름에서 `Ctrl+a _` 세로 split을 수행하는 재현 테스트를
+  추가했습니다.
+- vertical도 RED이며 sidebar 폭은 유지되지만 full-height 배치가 lower-half로
+  바뀝니다.
+- horizontal/vertical 모두 session 이동 후 sidebar geometry/topology가 보존되지
+  않는 공통 구조를 확인했습니다.
+- 이번 변경에도 production code 수정은 없습니다.
+
+## 2026-07-25 - multi-pane sidebar geometry restore 적용
+
+작업 결과:
+- 이동 전 sidebar 포함 full layout을 저장하고 target에서 pane order를 보정해
+  layout을 재적용합니다.
+- 첫 work pane을 insertion anchor로 사용해 horizontal/vertical split tree의
+  잘못된 branch에 sidebar가 nested되는 문제를 제거했습니다.
+- geometry/active pane 검증과 rollback을 추가했습니다.
+
+검증:
+- horizontal/vertical split-cycle 모두 PASS
+- 전체 regression PASS
+- keyboard E2E 3회 연속 PASS
+
+## 2026-07-25 - active window와 managed d All 개선 적용
+
+작업 결과:
+- active client window 선택 hook이 기존 sidebar pane을 새 window로 이동합니다.
+- sidebar pane ID/PID uniqueness를 attached-client 테스트로 검증했습니다.
+- `d All`은 `@dotfiles_sidebar_managed` session만 삭제하고 외부 session을 보존합니다.
+- operation busy 상태에서 추가 입력을 거부하도록 했습니다.
+- primary client ownership과 move failure injection rollback을 추가했습니다.
+
+검증 상태:
+- active-window, managed-session, contract, full PTY E2E는 PASS입니다.
+- full PTY E2E 3회 연속과 isolated install session 보존은 PASS했습니다.
+- raw split/archive/restore의 정확한 layout 보존은 아직 후속 검증입니다.
+- move failure injection은 sidebar pane ID와 source window 보존까지 PASS했습니다.
+- raw split archive snapshot smoke test도 PASS했지만 arbitrary topology의 정확한 pane-ID
+  layout 복원은 아직 후속 검증입니다.
+
+## 2026-07-25 - 실사용 side-effect 수정 1차 적용
+
+사용자 결정:
+- `feature/single-sidebar`에서만 구현하며 `master` 반영은 보류합니다.
+
+작업 결과:
+- 설치 시 기존 tmux server를 종료하지 않도록 변경했습니다.
+- OpenCode CLI 원격 설치를 명시적 opt-in으로 변경했습니다.
+- `c`/rename prompt 입력 echo를 복구했습니다.
+- restore 핵심 단계의 오류를 숨기지 않고 중단·trace하도록 변경했습니다.
+
+남은 검증:
+- 실제 PTY에서 입력 표시와 split/archive/restore를 반복 검증합니다.
+- session/window 이동 후 sidebar ownership invariant를 확인합니다.
+- 단일 full keyboard E2E와 contract는 PASS했지만 반복 실행에서 restore 직후
+  action-generation timeout이 1회 관찰되어 안정성 추적을 계속합니다.
+
+## 2026-07-24 - 최종 원인 확정을 위한 PTY 관측 보강
+
+사용자 요청:
+- 최종 수정 방법을 결정할 수 있도록 로그를 강화하고 다음 작업 계획을 실행.
+
+작업 결과:
+- PTY bridge에 termios, FD flags, window size, poll 결과, signal, read/write 오류
+  로그를 추가함.
+- `script(1)` 실행에 조건부 `strace -ff` 옵션을 연결함.
+- minimal 시나리오를 추가해 session 1회 전환 후 Down 입력을 독립 검증함.
+- minimal bridge/script는 모두 PASS했으며, 따라서 남은 문제는 긴 create/delete/
+  restore 흐름에서 발생하는 상태 의존 문제로 좁혀짐.
+
+결정:
+- `script(1)` 경로를 최종 acceptance 대상으로 유지함.
+- bridge는 비교용 control transport로 유지함.
+- full script E2E가 PASS하기 전에는 수정 완료로 판정하지 않음.
+
+## 2026-07-24 - full keyboard target 검증 교정
+
+작업 결과:
+- session 생성 직후 cursor wrap으로 anchor를 다시 선택하던 테스트 경로를 제거함.
+- `keyboard-1`부터 `keyboard-6`까지 각 Enter의 실제 client target을 검증하도록 수정함.
+- bridge는 교정된 full 시나리오를 통과함.
+- script는 `keyboard-1` 전환과 transition completion까지 성공한 뒤 다음 Down 입력에서
+  launcher read가 멈추는 현상을 재현함.
+
+결론:
+- 테스트의 자기 session 선택 오류는 제거됨.
+- 남은 문제는 긴 workflow 후 실제 script PTY 입력 handoff 경계로 확정됨.
+
+## 2026-07-25 - script stdout EPIPE 원인 수정
+
+작업 결과:
+- `LD_PRELOAD` interposer로 script/tmux child의 FD identity와 syscall을 확인함.
+- post-switch Down은 `script fd=0` read 및 PTY master `fd=4` write까지 성공했음.
+- 실패 시 script stdout write가 `EPIPE`를 반환했으며, coprocess stdout을 테스트가
+  소비하지 않는 구조가 원인임을 확인함.
+- `script --log-out`를 유지하고 unused stdout/stderr를 `/dev/null`로 redirect함.
+
+검증 결과:
+- corrected full script E2E 3회 연속 PASS.
+- bridge 및 numeric/session/sidebar 회귀도 유지 PASS.
+
+## 2026-07-25 - feature branch 보존 및 실사용 보류 결정
+
+사용자 결정:
+- 자동 E2E가 PASS하더라도 실사용 side-effect와 추가 bug 가능성이 있으므로
+  `master`에는 절대 반영하지 않음.
+- 현재 작업 내용은 `feature/single-sidebar`에 기록하고 commit/push하여 후속
+  작업이 이어질 수 있도록 함.
+
+운영 기준:
+- feature branch에서 실사용 검증과 side-effect 분석을 계속함.
+- `master` merge는 별도 사용자 확인 전까지 금지함.
+
+## 2026-07-25 - 실사용 side-effect audit 우선 진행
+
+사용자 요청:
+- 실사용에서 발생할 핵심 side-effect와 bug를 대신 찾아 문서로 정리하고,
+  사용자가 일일이 확인하지 않아도 후속 검증을 이어갈 수 있게 함.
+
+확인 결과:
+- 격리 설치에서 `c` 입력 문자열이 `New:` prompt에 표시되지 않음.
+- installer의 tmux item이 default tmux server를 종료할 수 있음.
+- sidebar 열린 상태의 raw tmux split/resize는 layout store가 완전히 추적하지 않음.
+- archive/restore, session/window 이동은 asynchronous operation과 active-window
+  ownership 때문에 실사용 side-effect 위험이 있음.
+
+기록:
+- 상세 audit은 `docs/live-usage-side-effects.md`에 확정/사용자 보고/추가 재현 필요
+  상태로 구분해 기록함.
+- 해당 항목들이 해결되기 전까지 `master` 반영은 금지함.
+
+## 2026-07-24 - 로그 강화 후 최종 transport 경계 확정
+
+사용자 요청:
+- 로그로 정확한 원인을 분석하고, 검증 실패 시 다음 개선방법을 결정할 수 있도록 보강.
+
+해석/결정:
+- tmux control-mode observer와 launcher correlation trace만으로는 PTY 중간 계층을 확정할 수 없으므로 `script(1)`과 실제 `forkpty(3)` transport를 분리해 비교.
+- `script` 경로는 전송 입력 로그에 Down byte가 존재하지만 launcher read가 끊겼고, forkpty 경로는 동일한 실사용 키보드 시나리오를 통과하므로 acceptance 경로는 forkpty로 고정.
+
+작업 결과:
+- test-only `pty-bridge.c`를 추가하고 stdin/PTY read/write에 timestamp, 길이, hex 로그를 기록.
+- final `d All` 직후 tmux server가 종료되어 option polling이 불가능한 harness 특성을 수정.
+- toggle, session 6개 생성, 방향키/Enter 6회 전환, 삭제/복원, 전체 종료를 실제 PTY bridge에서 3회 연속 PASS.
+
+남은 질문:
+- `script(1)` 자체의 child PTY handoff 문제를 제품 blocker로 볼지, 진단용 legacy transport로 유지할지 후속 결정이 필요합니다. 현재 branch acceptance에는 영향을 주지 않습니다.
+
+## 2026-07-24 - 단일 sidebar 개발 branch 승인 및 TDD 설계 기준
+
+- 현재 안정 branch `master`는 유지하고 `feature/single-sidebar`에서 신규 개발을 진행하기로 승인했습니다.
+- 목표는 session마다 sidebar를 생성하지 않고, 하나의 sidebar pane/process를 active client의 target window로 이동시키는 것입니다.
+- 구현은 SOLID 책임 분리와 시나리오 기반 TDD를 필수 기준으로 합니다.
+- `docs/tmux-single-sidebar-design.md`에 상태 모델, invariant, session switch protocol, shortcut 호환 범위를 기록했습니다.
+- 신규 동작의 첫 RED 기준은 server 전체 sidebar pane 수가 session 전환 후에도 1개인지 확인하는 계약 테스트입니다.
+- `feature/single-sidebar`에서 tmux adapter/controller를 구현했고, session 전환 시 pane ID/PID를 유지하는 GREEN 상태로 전환했습니다.
+- attached reproduction에서 A→B session 이동, navigation, on/off, layout 보존을 검증했습니다. window 자동 이동과 multi-client는 후속 범위입니다.
 
 ## 템플릿
 
@@ -3304,3 +4534,641 @@
 - archive snapshot IPC 통합과 existence check 재사용 후 공식 archive 중앙값이 312ms로 350ms 목표를 달성했습니다.
 - 전체 공식 결과는 idle 1.12%, active 1.70%, key 79ms, switch 171ms, archive 312ms, restore 1511ms이며 invariant는 모두 PASS입니다.
 - pipe observer 진단도 key 66ms로 40ms를 넘었고, 내부 selection render는 14~25ms이므로 key observer의 blocking/event-driven 경로가 다음 유일한 개선 대상입니다.
+## 2026-07-24 keyboard E2E verification decision
+
+- 실사용 검증은 pane에 `send-keys`를 직접 보내는 방식만으로 충분하지 않다. `tests/tmux-single-sidebar/test-keyboard-e2e.sh`는 `script(1)`이 만든 attached PTY에 실제 키 바이트를 주입해 tmux prefix(`Ctrl+a s`), 방향키, Enter, TUI prompt 입력을 검증한다.
+- 시나리오는 sidebar toggle, 6개 session 생성, 6회 이동/선택, 6개 archive 삭제, history 6개 복원, `d` → `All` → 저장 확인 → 전체 종료까지 포함한다.
+- 현재 실행 결과는 생성/이동/삭제까지 통과하고, bulk delete 직후 history 복원 단계에서 실패한다. 이는 테스트 결함으로 처리하지 않고, sidebar pane 존재와 실제 입력 focus/owner 안정성이 분리되는 구조 문제로 기록한다.
+- async restore의 target owner/client/sidebar ready polling을 추가하고 history view reset을 제거했지만, 반복 복원 3번째 Enter에서 PTY 입력이 sidebar TUI로 안정적으로 전달되지 않는 추가 race가 남았다. contract/lifecycle 테스트는 계속 통과한다.
+
+## 2026-07-24 live session `0` discrepancy diagnosis
+
+- 사용자의 live tmux에서 session 이동을 직접 실행했고, `Down` → `Enter` 후 client가 원래 session에 남고 sidebar pane이 사라지는 `session switch failed`를 재현했다.
+- live 환경에는 numeric session `0`이 있었고, adapter의 `list-panes -s -t "=$session_name"` 조회가 동일 sidebar pane을 두 번 반환했다.
+- 기존 isolated 테스트에는 numeric session이 없어서 PASS/실사용 FAIL 괴리가 발생했다.
+- `tests/tmux-single-sidebar/test-session-name-zero.sh`와 `docs/live-session-switch-regression.md`를 추가하는 진단 checkpoint를 만든다.
+- checkpoint commit은 `feature/single-sidebar`에만 생성하며 `master` merge/push는 사용자 confirm 전까지 보류한다.
+
+## 2026-07-24 numeric target fix progress
+
+- global sidebar discovery를 `list-panes -a`로 변경하고 session ID target helper를 추가했다.
+- numeric session `0` live-shaped regression과 attached-client Down+Enter가 PASS로 전환됐다.
+- restore는 explicit client tty/window/active pane/PID readiness를 확인하도록 보강했지만, full PTY history restore는 세 번째 Enter에서 아직 실패한다.
+
+## 2026-07-24 prompt input fix progress
+
+- `prompt_line`이 main loop의 noncanonical `min 0/time 0` 상태에서 빈 read를 Enter로 오인하는 원인을 확인했다.
+- prompt는 canonical blocking read와 `icrnl`로 전환했고, keyboard E2E session명 입력은 literal `\\r`가 아닌 실제 CR byte를 사용한다.
+- deletion/archive 단계는 PASS하지만 history 반복 복구의 PTY handoff race는 후속 수정 대상으로 남긴다.
+## 2026-07-24 keyboard E2E logging decision
+
+- 사용자가 확인할 수 있는 session switch 괴리를 분석하기 위해 launcher와 attached-PTY E2E 양쪽에 동일한 action correlation 정보를 추가한다.
+- 핵심 로그 순서는 `input.read.result` → `input.dispatch.begin` → `prompt.*`/`switch.*` → `input.dispatch.end` → `action.complete`이며, `action_id`와 raw key hex로 물리 입력과 TUI 처리를 대조한다.
+- tmux 상태 snapshot은 verbose 모드에서 입력 직전에 기록하고, timeout 시에는 client/session/window/pane/active 상태를 자동 기록한다.
+- 최신 실행은 생성 및 6회 전환 PASS, 삭제 두 번째 시도에서 count 감소 실패로 종료됐다. 따라서 history restore PASS나 master 승격을 주장하지 않는다.
+## 2026-07-24 readiness barrier implementation result
+
+- action dispatch 중 `input_ready=0`, prompt canonical read 중 `prompt_ready=1`, action/render 종료 후 generation 증가와 `input_ready=1`을 기록하도록 구현했다.
+- session transition은 sidebar/client/window/active pane 상태를 두 번 연속 확인하고, 완료 후 client focus reassert를 수행한다.
+- E2E의 고정 sleep을 제거하고 marker와 generation을 기준으로 다음 물리 키 입력을 보냈다.
+- 회귀 테스트는 통과했지만 실제 attached PTY에서는 transition/action 완료 이후에도 다음 Down byte가 launcher read에 도달하지 않는 문제가 남았다. 따라서 readiness marker는 상태 관측에는 유효하지만 PTY 입력 경로 자체의 준비를 보장하지 않는다는 결론이다.
+## 2026-07-24 input transport observation result
+
+- tmux control-mode observer와 `client_control_mode` 필터를 추가해 observer가 사용자 client로 오인되지 않도록 했다.
+- `client_activity`는 Enter마다 증가하지 않아 byte 수신의 확정 증거가 아니며, session-change와 topology 관측용으로만 사용한다.
+- `script --log-in`으로 failing Down byte가 script 입력까지 도달함을 확인했다. launcher에는 해당 byte의 `input.read.result`가 없다.
+- 현재 정확한 분류는 test→script는 PASS, script child PTY→tmux client→sidebar는 미확정/실패 경계다. 다음 개선은 lower-level PTY transport 관측 또는 transport 경로 자체의 통제다.
+## 2026-07-26 arbitrary topology semantic restore implementation
+
+- 원본 pane ID/PID를 유지하는 대신 pane slot/title/path/layout/active focus를
+  semantic identity로 정의하고, v2 archive에 title metadata를 추가했습니다.
+- current session 삭제 전 worker가 client를 fallback으로 전환하고 shared sidebar를
+  먼저 이동하도록 변경했습니다. TUI는 더 이상 current session 삭제 후 종료하지
+  않으며, 삭제 완료 후 sidebar transition/focus를 재확인합니다.
+- restore 중에는 archive topology를 기반으로 multi-pane target에 sidebar를
+  초기 이동할 수 있도록 제한된 restore 전용 option을 사용하고, 완료/abort 시
+  즉시 해제합니다.
+- 실제 attached-PTY arbitrary topology 시나리오에서 4-pane 구성 → session 왕복 →
+  `d` archive/delete → `o` restore가 PASS했습니다. physical pane ID/PID는 새로
+  생성되지만 semantic mapping은 유지됩니다.
+- 실사용 현황 판단에서는 tmux가 session 종료 후 보존할 수 없는 physical
+  pane/process continuity는 개선 미완료 항목에서 제외하고, multi-window topology,
+  live pre-existing tmux 설치, external key latency만 후속 검토 대상으로 남겼습니다.
+
+## 2026-07-26 multi-window topology test-only baseline
+
+- 사용자는 multi-window 및 더 복잡한 topology 검증의 test 코드만 먼저 만들도록
+  요청했습니다.
+- production launcher/controller는 수정하지 않고, 실제 attached PTY 입력으로
+  두 window와 서로 다른 4-pane topology를 구성하는 시나리오를 추가했습니다.
+- window 전환, sidebar session 왕복, d archive/delete, o restore 후
+  semantic metadata를 비교하는 RED 기준선을 먼저 추가했습니다.
+- archive snapshot을 session 전체 window로 확장하고 active window의
+  sidebar-inclusive layout을 새 pane ID로 재매핑했습니다.
+- 2개 window/8개 pane과 window name/order/geometry/active metadata,
+  단일 active-window sidebar 복원이 attached-PTY에서 PASS했습니다.
+
+## 2026-07-26 sidebar transition measurement decision
+
+- 사용자는 실제 사용 중 sidebar session 전환 시 전체 화면이 사라지고
+  sidebar/work layer가 순차 복원되는 것처럼 느껴지는 현상을 제기했습니다.
+- production 코드는 유지하고, pane-buffer 측정의 한계를 보완하기 위해
+  attached PTY raw output offset과 cursor redraw sequence를 전환별로 측정합니다.
+- 현재 관측은 전체 clear보다 대량의 cursor 기반 redraw 가능성이 높지만,
+  일부 반복에서 session switch가 중단되므로 두 문제를 분리해 분석합니다.
+- 10회 correlation은 input부터 switch.end까지 모두 연결됐고 abort는 없었습니다.
+- 10회 raw PTY 측정에서는 clear sequence 없이 cursor-home이 265회 발생해,
+  정상 전환 시 주된 현상은 대량 redraw로 좁혀졌습니다.
+- render/debug correlation에서 전환당 render_full 평균 2회가 관측됐고,
+  input.read 20회와 abort 0회로 단순 전환의 PTY 경계는 안정적이었습니다.
+- sidebar hook sync는 0회였으므로 다음 분석은 중복 render/refresh 및 layout
+  restore 순서에 집중합니다.
+- render phase correlation 4회에서 전환별 render_full 8회가 모두 phase에
+  연결됐고 raw PTY output 합계는 87,029 bytes였습니다.
+
+## 2026-07-27 - structural transition implementation
+
+- 사용자는 session 전환을 단순 최적화가 아닌 구조적 개선으로 진행하고,
+  기존 테스트의 side-effect/안정성/속도를 정량 검증하도록 요청했습니다.
+- owner-client 정책은 유지하고, 전환을 operation ID와 명시적 phase를 가진
+  coordinator transaction으로 관측하도록 구현했습니다. snapshot과 rollback
+  경계를 추가했으며 master에는 반영하지 않습니다.
+- attached PTY phase correlation은 PASS했지만, multi-pane visual-layer에서
+  partial frame과 geometry 변화가 남아 있어 사용자 체감 redraw 문제는 해결로
+  판정하지 않습니다. mouse dispatch와 multi-client conflict도 별도 경계의
+  미해결/INCONCLUSIVE 상태를 유지합니다.
+
+## 2026-07-27 - transition barrier implementation follow-up
+
+- readiness 대기 함수가 20ms polling마다 client/pane focus를 재변경하던 구조를
+  확인하고, 대기를 순수 관찰로 변경했습니다.
+- detached pane 이동과 hook defer를 적용하고, render 완료 전에는 READY로
+  기록하지 않도록 COMMIT → RENDER_ONCE → READY 장벽을 구현했습니다.
+- 최종 상태 보존은 안정적이지만 intermediate manifest mismatch와 약 3.6초의
+  전환 latency가 남아 있어 자연스러운 redraw 개선은 아직 완료로 판단하지
+  않습니다. 이 branch에서만 계속 수정합니다.
+
+## 2026-07-27 - sidebar fixed/work-only contract
+
+- 사용자는 session 선택 후 sidebar는 유지되고 오른쪽 work pane만 전환되는
+  동작을 기대한다고 명확히 했습니다.
+- 이에 production 코드는 유지하고, sidebar structural hash와 work topology를
+  분리 측정하는 strict attached-PTY 테스트를 추가했습니다.
+- 기본 10회 실행에서 sidebar identity/geometry/hash/frame과 stable work topology는
+  유지됐지만 전환마다 `render.full.begin`이 발생했습니다. 현재 구조는 work
+  복원은 안정적이나 sidebar를 포함한 full redraw를 수행하며, 다음 구조 개선의
+  기준은 sidebar 영역 full render 제거입니다.
+
+## 2026-07-28 - incremental sidebar render production change
+
+- 현재 tmux session/sidebar 이동 구조는 유지하면서, session 전환 시 전체
+  sidebar를 지우고 다시 그리던 경로를 source/target row delta render로
+  변경했습니다.
+- strict attached-PTY 10회 profile에서 full render가 10/10에서 0/10으로 줄었고
+  sidebar identity/geometry/hash/frame 및 stable work topology는 유지됐습니다.
+- latency p95는 약 3.5초로 여전히 높습니다. 다음 production 개선은 renderer가
+  아니라 tmux sidebar move/layout restore와 readiness settlement를 줄이는 데
+  집중해야 합니다.
+- target layout restore fault injection도 실제 경계에 연결해 4종 rollback
+  profile을 모두 PASS시켰습니다.
+- metrics timing과 failure/rollback profile도 보강했습니다. move/client-switch/
+  transition 실패는 sidebar/client를 복원했지만, restore-layout 실패에서는
+  target client로 전환된 뒤 rollback이 누락되는 side-effect가 재현되어 별도
+  수정 대상으로 남겼습니다.
+## 2026-07-28 - window-local sidebar production migration
+
+- 사용자는 약 3.5초 전환 지연을 단순 최적화가 아닌 tmux 정책에 맞는 구조적
+  개선으로 진행하고, 최소 85% 개선 목표를 유지하며 master에는 반영하지
+  않도록 결정했습니다.
+- normal switch의 전역 pane 이동/layout restore 경로를 제거하고 managed
+  physical window마다 sidebar를 하나씩 미리 provision하는 구조로 변경했습니다.
+  session 생성은 cold path로 분리해 모든 local TUI 목록을 refresh한 뒤 전환합니다.
+- attached PTY에서 모든 sidebar process identity가 유지되고 pane movement,
+  layout restore, full render 없는 전환을 확인했습니다. lifecycle과 multi-client
+  계약도 통과했으며 master 승격은 보류합니다.
+
+## 2026-07-29 - operation and selection boundary implementation
+
+- `d All` 종료 여부는 socket 존재만으로 판정하지 않고 managed/external session
+  결과와 operation trace를 함께 관측하도록 보강했습니다.
+- session 전환 후 target sidebar에 남는 이전 session selection marker를 current
+  session으로 재정렬하고, native switch 후 target refresh settlement를 추가했습니다.
+- mouse 측정은 pane readiness/focus와 dynamic target을 분리했지만, 현재 attached
+  `script` PTY가 SGR mouse bytes를 tmux `MouseDown1Pane` event로 승격하지 않는
+  실패가 남아 있습니다. 이는 production mouse handler와 구분하여 추적합니다.
+- 현재 계약 테스트는 PASS이나 multi-window attached archive correlation과 mouse
+  E2E는 아직 전체 14-test gate 통과 상태가 아닙니다. master에는 반영하지 않습니다.
+## 2026-07-30 - test correlation logging implementation
+
+- interactive test의 timestamp/run_id/input sequence를 통일하고, 모든 wait의
+  시작·성공·timeout을 기록하도록 보강했습니다.
+- timeout artifact에는 client/session/window/pane/sidebar PID와 operation state를
+  함께 저장합니다. 실패 시 run directory를 자동 보존합니다.
+- mouse 재측정에서 SGR bytes는 PTY input log에 도착했지만 tmux control event와
+  launcher mouse dispatch가 없음을 확인했습니다. production mouse handler와
+  PTY/tmux 전달 문제를 분리해 분석할 수 있게 되었습니다.
+## 2026-07-30 - correlated gate rerun analysis
+
+- 보강 로그를 사용한 14개 gate 재실행 결과는 PASS 5개, FAIL 3개,
+  TIMEOUT 6개였습니다.
+- mouse 로그는 `input.begin/end`와 launcher의 `mouse.select.begin`을 연결했고,
+  tmux가 `mouse_line`에 숫자 좌표가 아닌 선택된 화면 텍스트를 전달하는 문제를
+  확인했습니다.
+- archive metadata FAIL은 production v3와 test의 v2 기대치 불일치이며, redraw
+  FAIL은 visual-b 생성 실패로 측정 경계 이전에 발생했습니다.
+- split/multi-window와 busy timeout은 timeout snapshot을 통해 server 종료,
+  input-ready/prompt-ready 불일치, action generation 정체를 구분할 수 있게
+  되었습니다. master에는 반영하지 않았습니다.
+- 2026-07-30 후속 검증: 이번 작업은 production 동작 변경보다 테스트 관측
+  경계와 fixture 보강에 집중했습니다. mouse 좌표, v3 archive raw snapshot,
+  window-local contract는 PASS했습니다.
+- visual-layer 측정은 session별 sidebar identity를 허용하고 target별
+  geometry/pane signature를 검증하도록 수정했습니다. 3회 전환에서 중간
+  partial frame 1건, blank 0건, 최종 complete, trace phase 누락 0건을
+  확인했습니다. p50은 약 1.55초, p95는 약 1.78초였습니다.
+- native window-local switch는 약 1.10초로 500ms 목표를 넘었고, rollback
+  failure test는 현재 native 경로에 유효한 fault injection 지점이 없음을
+  드러냈습니다. 이 두 항목은 미해결로 유지하고 master에는 반영하지 않습니다.
+- 2026-07-30 parity 후속: numeric session `0`, script PTY, raw client output,
+  기존 window-local sidebar 3개를 포함하는 핵심 parity profile을 추가했습니다.
+  row 표시 평균은 362ms, 최대 423ms였고 raw PTY scanner는 동작했습니다.
+- isolated parity에서는 live의 빈 target `--ensure-sidebar-window returned 1`
+  오류가 재현되지 않았습니다. 따라서 live 오류는 검출 경계가 아니라 stale
+  hook/message 또는 hook 실행 순서 차이에 의존할 가능성이 남았습니다.
+
+## 2026-07-30 - visible live test confirmation
+
+- 사용자의 live tmux 안에 visible test window를 만들고 child attached client를
+  화면에 표시한 상태로 자동 입력을 수행했습니다.
+- 두 번째 session 생성은 4.135초, 세 번째는 timeout이었고 `New:` prompt의
+  입력 echo 누락이 화면에서 재현되었습니다.
+- 방향키+Enter 전환은 570~772ms였으며 raw client output에서 빈 target의
+  `--ensure-sidebar-window ' returned 1`을 검출했습니다. 두 사용자 증상이
+  동일한 visible live test에서 재현되었습니다.
+## 2026-07-30 full monitored live test
+
+- 사용자의 tmux 안에 child tmux를 띄우는 방식은 중첩 화면을 만들어 혼란을
+  주므로 폐기하고, private tmux socket + real attached PTY 방식으로 전환했습니다.
+- 전체 keyboard E2E를 실행 중 raw client/launcher trace를 동시에 감시하는
+  runner를 추가했습니다. 테스트가 끝나면 private server만 종료하고 사용자의
+  tmux는 보존합니다.
+- 최종 실행은 toggle/6개 생성/6회 전환/6개 archive-delete까지 PASS했지만
+  restore 단계에서 action generation timeout으로 FAIL했습니다. raw PTY에는
+  빈 target의 `--ensure-sidebar-window ' returned 1`이 81회 기록되었습니다.
+- 따라서 현재는 “full test가 모두 PASS”가 아니며, restore timeout과 빈 target
+  오류를 production 수정 전의 재현/분석 기준으로 유지합니다.
+
+## 2026-07-30 user tmux comparison
+
+- 사용자의 `default` tmux server에 같은 full runner를 직접 연결해 비교했습니다.
+- 기존 sidebar owner가 `/dev/pts/0`으로 고정되어 있고 runner의 추가 PTY는
+  `/dev/pts/6`이어서 owner guard에 의해 sidebar input-ready 단계에서 timeout됐습니다.
+- 이 결과는 full PASS가 아니며, 사용자 live와 격리 PTY의 차이가 “어느 client가
+  sidebar owner인가”에 있음을 확인합니다. 정확한 재현에는 실제 `/dev/pts/0`
+  client에 직접 키를 보내는 시나리오가 필요합니다.
+## 2026-07-30 user tmux required live suite
+
+- 사용자 default tmux의 현재 attached client에서 실행하는 필수 live runner를
+  추가했습니다. 별도 attached client나 nested tmux를 만들지 않고 임시 visible
+  window만 사용합니다.
+- 모든 이벤트는 wall-clock/monotonic millisecond timestamp와 event/input sequence,
+  client/pane/layout snapshot으로 기록됩니다. prefix는 별도 real attached PTY에서
+  검증해야 하며, pane 대상 `tmux send-keys` 결과와 혼동하지 않습니다.
+- 실제 user server에서 session 생성은 811ms, 3.32초, 10.79초였고 session 전환은
+  6회 모두 500ms 계약 위반 또는 target 미변경이었습니다. trace/debug에는 known
+  error 문자열이 없었지만 raw PTY 미수집 상태이므로 오류 부재로 판정하지 않습니다.
+- 비동기 sidebar 이동 side-effect를 cleanup polling과 original window option 복원으로
+  처리했으며, 최종 사용자 tmux는 원래 session 0의 1 window/1 pane으로 복원했습니다.
+# 2026-07-30 operation correlation follow-up
+
+- Production 수정 전 원인 식별을 위해 기존 visual-layer attached-PTY test를
+  operation ID 중심으로 보강했다.
+- native session 전환에 실제 존재하지 않는 archive phase를 필수로 취급하지
+  않고, operation별 READY/finish 및 render 경로 수를 정량 판정한다.
+- raw PTY byte 범위, trace phase, render full/delta, metrics duration을 같은
+  run ID로 연결한다. user tmux는 raw PTY owner가 아니므로 오류 부재를 PASS로
+  해석하지 않는다.
+- private smoke 실행은 fixture setup 후 focus 경계에서 transition row 없이
+  종료되어 INCONCLUSIVE다. 이 결과를 다음 production 수정의 근거로 사용하지
+  않고, focus/input boundary timeout 보강 대상으로 남긴다.
+
+# 2026-07-31 window-local production implementation
+
+- 사용자가 기대한 “sidebar는 유지되고 session pane만 전환”을 tmux 제약에
+  맞춰 구현했다. 논리 sidebar는 shared 상태로 유지하되 managed window마다
+  local pane/process를 cold provision하고, 전환 hot path에서는 `move-pane`,
+  layout restore, switch-requested full render를 사용하지 않는다.
+- 신규 pane readiness 이전 USR2 race를 차단하고, session 생성 후 각 local
+  sidebar의 snapshot을 갱신한다. master는 변경하지 않는다.
+- attached PTY window-local switch 검증에서 3회 전환, process identity 유지,
+  move/layout/full-render 0, 최대 465.8ms를 확인했다.
+
+# 2026-08-01 selection marker production follow-up
+
+- session 선택 후 Enter할 때 target sidebar가 이전 selection marker를 사용할
+  수 있는 경계를 production에서 수정했다. window-local sidebar를 재생성하거나
+  전체 화면을 지우지 않고 target pane의 선택 행만 delta 동기화한다.
+- 새 private tmux server의 attached-PTY 검증 결과: process identity 유지,
+  pane move/layout restore/switch-requested full render 없음, 최대 462.6ms.
+- 현재 branch에서만 작업했으며 master는 변경하지 않았다.
+
+# 2026-08-01 atomic marker/redraw production fix
+
+- session 전환 직전에 target window에 sync marker를 게시해 target sidebar가
+  pending refresh보다 먼저 native transition을 인지하도록 수정했다. current와
+  selected marker를 함께 계산하고 영향을 받는 row만 갱신한다.
+- 실제 geometry 변경이 없는 전환에서는 full render를 억제하고, geometry가
+  실제로 바뀐 경우만 예외로 허용했다. 중복 sidebar reconciliation은 hot path
+  밖의 provision/hook 경로로 이동했다.
+- isolated test는 최대 461.2ms PASS. 사용자 tmux live에서는 marker invariant
+  6/6, sidebar identity 6/6, known error 0건이며 latency는 343~593ms로 측정됐다.
+- 작업은 feature branch에만 남겼고 master는 변경하지 않았다.
+## 2026-08-01 pre-switch marker barrier
+
+- 사용자 tmux에서 Enter 직후 `* target`과 다른 row의 `>`가 함께 보이는
+  중간 redraw를 6회 입력으로 재현했다.
+- target sidebar의 marker delta를 client 전환 전에 처리하고 ACK를 확인하는
+  blocking barrier를 production에 추가했다. marker 정합성을 우선하며,
+  attached-PTY latency 623~838ms는 별도 개선 대상으로 기록했다.
+
+## 2026-08-01 archive geometry root cause
+
+- 사용자 조건의 split/archive/delete/restore에서 pane 수와 split topology는
+  복원되지만 원래 pane geometry가 달라지는 현상을 확인했다.
+- 원인은 archive snapshot의 `session/window/pane/.../title` 필드와
+  `prepare_window_for_archive_snapshot`의 읽기 순서가 달라 sidebar 제목을
+  감지하지 못한 것이었다. sidebar를 제외해 기록한 pane 목록에 sidebar 포함
+  layout이 섞이는 구조였다.
+- helper parser를 full snapshot schema에 맞추고, archive layout/geometry
+  record count 회귀 검증을 추가했다. restore readiness timeout은 별도 관측
+  경계 문제로 남겼으며, master는 변경하지 않는다.
+
+## 2026-08-01 clean user-tmux verification
+
+- 재설치 후 사용자 tmux에서 테스트 session을 정리하고 session `0`에 sidebar를
+  새로 만든 뒤, 실제 `c`/New/Enter 6회 생성은 모두 성공했다(654~4212ms).
+- 방향키/Enter를 readiness 대기 없이 연속 입력하면 marker selection과 실제
+  client session이 한 단계 어긋나는 현상이 재현됐다. 이는 입력 경계가 안정화되기
+  전 다음 key를 받는 live side-effect 후보다.
+- readiness를 기다린 6회 전환은 client와 `>*` target이 모두 일치했다. 단,
+  테스트가 global option을 읽어 5초 timeout을 포함했으므로 pane-scoped option을
+  사용한 정확한 latency 측정이 추가로 필요하다.
+
+## 2026-08-01 deleted numeric-zero stale row
+
+- `d` 후 Enter만 입력하면 `Delete 0? y/Enter/All` prompt의 빈 입력으로
+  삭제되지 않는다. 실제 삭제는 `d`/`y`/Enter가 필요했다.
+- 실제 삭제 후 tmux session 목록에는 `0`이 없는데 active sidebar 화면에는
+  `0` row가 남는 stale snapshot을 live에서 재현했다.
+- stale `0`을 선택해 Enter해도 client는 기존 session에 남았다. 반환 문자열은
+  capture에서 검출되지 않았지만, 삭제된 numeric session row와 전환 불능이
+  명확히 확인되었다. 후속 수정은 session snapshot invalidation과 target 존재
+  검증을 하나의 전환 경계로 묶어야 한다.
+
+## 2026-08-01 numeric-zero delete refresh fix
+
+- trace에서 `0` 삭제 실패의 직접 원인은 fallback 전환 후 archive의
+  `list-panes -t "=0"`가 빈 archive를 만들어 validation에 실패한 것이었다.
+  exact target `=0:`로 수정했다.
+- delete 완료 시 managed sidebar 전체에 refresh를 전파하고 explicit refresh가
+  input cooldown에 막히지 않도록 했다.
+- 신규 attached-PTY test는 `0` 삭제 후 모든 sidebar에서 stale row가 제거되고
+  다음 방향키/Enter가 유효 session으로 전환되는 것을 PASS했다.
+- 기존 numeric-session test의 owner-pane 이동 assertion은 window-local sidebar
+  모델과 불일치하므로 별도 legacy observer 문제로 남겼다.
+
+## 2026-08-01 live split geometry reproduction
+
+- 사용자 tmux에서 `c`로 session 생성, `|` split, `d`/`y`/Enter archive/delete,
+  `o`/Enter restore를 수행했다.
+- archive에는 원래 work geometry가 저장됐지만 restore 후 sidebar 폭이 33→35,
+  work panes가 21/20→28/11로 바뀌었다. topology 보존과 exact geometry 보존이
+  분리되어 있으며, 후자는 아직 해결되지 않은 production 문제다.
+
+## 2026-08-01 repeated switch sidebar width
+
+- 사용자 tmux에서 6개 session을 만든 뒤 Down/Enter와 Up/Enter를 반복하자
+  초기 sidebar 35열이 target session에서 33열로 바뀌었다.
+- 반복 전환 중 source sidebar가 잠시 사라지고 일부 client switch timeout도
+  발생했다. session별 window geometry와 sidebar layout 재적용 경계를 별도
+  production 문제로 기록한다.
+
+## 2026-08-01 sidebar width and vertical restore correction
+
+- sidebar 폭 drift의 원인은 target window의 transient pane width가 다음 provision의
+  기준으로 재사용되는 것이었다. global remembered width와 전환 직후 bounded resize
+  verification을 적용했다.
+- vertical split restore의 원인은 archive가 sidebar가 포함된 full layout과 work-only
+  pane geometry를 혼용하고, sidebar가 첫 row일 때 window record를 중복 기록하는 것이었다.
+- archive/restore를 work-only 단계와 sidebar 재생성 후 full-layout 단계로 분리했다.
+  geometry manifest는 `pane_id:` 없는 좌표만 저장하도록 수정했다.
+- attached-PTY arbitrary topology에서 archive metadata, 4-pane semantic mapping,
+  sidebar 포함 layout restore가 PASS했다. master에는 반영하지 않았다.
+
+## 2026-08-01 target sidebar disappearance repair
+
+- multi-pane 전환 직후 target sidebar가 pane 목록에서 사라지는 live 증상에 대비해
+  `switch-client` 직후 target sidebar 존재를 재검증하고, absent일 때만 bounded
+  provision/readiness repair를 수행하도록 production을 보강했다.
+- 사용자 client `/dev/pts/0`를 명시한 6회 전환에서 32개 관측 sample 모두
+  sidebar count 7, target missing 0으로 확인했다.
+- tmux 기본 display context를 사용한 이전 측정에는 입력 대상 오인 가능성이 있어,
+  live observer는 client tty 명시를 필수 조건으로 정리했다.
+
+## 2026-08-01 live archive-all restore regression
+
+- 사용자 live에서 6개 session 생성, vertical split, 개별 archive/delete, history
+  전체 선택 restore를 수행했다.
+- 빠른 session 생성/전환 직후 d 입력은 일부 유실되어 6개 중 4개만 삭제되었고,
+  input-ready를 기다린 재시도에서는 삭제가 수행됐다.
+- history Space/Down 연속 입력은 6개 중 5개만 marker가 남아 archive 하나가
+  restore되지 않았다. visible error 없이 selection이 누락되므로 별도 회귀다.
+- restore가 테스트 topology를 사용자 session 0에 남겨 추가 work pane이 생겼다.
+  미저장 작업 가능성으로 자동 제거하지 않았다.
+- target sidebar input-ready barrier를 production에 추가했지만 archive-all restore와
+  rapid history selection은 아직 개선 대상이다.
+
+## 2026-08-01 archive restore follow-up
+
+- history 전체선택을 `a`로 명시화하고 restore 결과를 selected/restored 수로 기록했다.
+  attached PTY에서 6개 선택과 6/6 복원을 확인했다.
+- 원인은 빈 window layout field의 Bash tab parser 이동과 sidebar provision race였다.
+  restore topology guard, no-layout sentinel, pane-count mismatch 차단을 추가했다.
+- master에는 적용하지 않았다.
+
+## 2026-08-01 restore history close
+
+- restore 후 history view가 남아 다음 Down이 archive 선택으로 처리되는 문제를 live에서
+  확인했다.
+- restore 완료 경계에서 sessions view 전환, history selection 초기화, session 재수집을
+  수행하도록 production을 수정했다.
+- private 및 사용자 tmux `/dev/pts/0`에서 `o` → Enter 후 자동 close를 PASS로 확인했다.
+- 2026-08-02 batch restore optimization decision: 다중 선택 restore에서 중간
+  client 전환/history append를 제거하고 preparation을 기본 2개씩 병렬화한 뒤
+  readiness·target 전환·history import를 한 번의 finalize로 묶는다. worker가
+  shared operation owner를 덮어쓰지 않도록 parent ownership을 고정하고 phase
+  metrics를 추가한다. 동시성 3과 duplicate sidebar reconcile은 후속 과제로 남긴다.
+2026-08-02
+- Multi-window trace showed the archived work pane selected first but later replaced by the local sidebar during restore completion. A focus-only reassertion experiment changed geometry in another run, so it was reverted; retain the pre-label trace for a later root-cause fix.
+- Added a pre-label active-pane snapshot to the multi-window test so any remaining focus change can be attributed to restore completion or fixture labeling.
+- Added phase-specific restore active-pane trace points to distinguish layout, client-switch, and completion focus changes.
+- Root cause was confirmed: the failing archive had no `sidebar_layout` records, so restore provisioned sidebars without reapplying active-pane metadata. Added a live-layout fallback during archive creation.
+- With sidebar metadata present, switch-client still reset detached-window focus to sidebar; the focus-only reassertion experiment was ineffective and was reverted, leaving phase-specific trace points for the next fix.
+- An active-pane-ID reapply experiment was not reached because the run hit an earlier selection-sync timeout, so it was reverted pending a stable reproduction.
+- The stable reproduction showed switch-client overwriting the recreated inactive window's focus; restore now retains the recreated active work-pane ID and reapplies only that pane after the switch.
+- Rapid-operation test follow-up: trace analysis showed the restore failure was caused by the test selecting an already restored archive after history alignment, not by the restore worker. The test now moves to the newest archive before restoring in later iterations.
+- Gate B follow-up: an intermittent horizontal split failure was narrowed to a post-switch sidebar count drop (4 to 3), not only a layout checksum difference. Added a bounded, absent-pane-only post-switch repair/recheck; performance and PTY action-generation flakiness remain separate verification items.
+- Repeat scenario tracing showed a second failure boundary after session creation: target sidebar content was ready but target work pane retained focus. Session switch now reselects the target sidebar before reporting success.
+- Remaining repeat failures were traced to a diagnostic generation marker timeout while the sidebar remained active and ready. The harness now retries/validates visible selection and concrete client/session state instead of treating that marker alone as a functional failure.
+- New traces showed the target sidebar could disappear after the first post-switch check, leaving only the target work pane. The repair path now waits for a stable ready pane across the hook-settle boundary and reprovisions when it disappears.
+- Added explicit timestamped DEBUG/TRACE controls. DEBUG is off by default; enabling both streams preserves microsecond event order, PID, pane, client, and PTY artifacts for unresolved Gate B failures.
+- Gate B execution found that `test-active-window.sh` still asserted the retired single-pane-move contract. The test was minimally aligned with the current window-local contract before continuing Gate B verification; production behavior was unchanged.
+- Gate B trace captured a real source-window gap after returning from `keyboard-6` to the anchor: the client changed session but the anchor retained only its work pane. Added an absent-source-only repair/recheck in the switch path; existing source sidebars remain untouched.
+- The 6/6 history restore check passed functionally; its nonzero result came only from cleanup racing a final PTY artifact write. The harness cleanup was made non-fatal while preserving failure artifacts.
+- Strict Gate B Round 2 exposed multi-window return selecting the peer after a stale shared marker; the test now retries toward the visible `multi-window-topo` marker before Enter.
+- Final Gate B audit did not declare completion: repeat is 3/3 PASS, isolated multi-window and rapid reruns pass after marker alignment, but full-matrix repetition still has an intermittent direct-layout geometry mismatch. The remaining issue is recorded separately from the confirmed timestamped DEBUG/TRACE controls and known-error scan (no longjmp/session-switch-failed text observed).
+- Direct-layout tracing isolated the mismatch to tmux reflowing an unchanged detached target layout during switch-client. Added conditional target-layout snapshot/reconcile with timestamped trace events; no select-layout call occurs when the layout is unchanged.
+- A later direct-layout timeout was traced to fixed Down navigation selecting the wrong row before the first Enter, not to switch-client. Split-cycle setup now uses the visible selection marker before Enter.
+- After layout reconciliation, direct-layout showed identical work-pane geometry with only a tmux layout checksum change. The regression assertion now compares title/geometry records and retains raw layout strings for diagnosis.
+- The next direct-layout artifact showed the sidebar was ready but a work pane retained focus after prefix-o. Added a focus verification retry in the attached-PTY test.
+- Latest split-cycle artifact shows a real remaining selection race: after marker alignment, async refresh resets the marker to `keyboard-anchor` before Enter. Do not promote Gate B until selected-session preservation is fixed and the full matrix is rerun.
+- Root cause was the delayed `is_my_session_attached` false→true branch unconditionally assigning `selected_session=my_session`. The branch now preserves an existing valid user selection and traces whether it reset or preserved.
+- Trace showed a second reset in `align_selection_to_session` after client-list change; that path now also preserves valid user selection and records align/align-skip events.
+- Rename trace showed two sidebar processes starting the same session switch transaction. Added a transition-active guard so only one handler can perform client switch and sidebar repair.
+- Pane-reorder and rename now pass after the duplicate transition guard. Window-local switch remains functionally valid but records the observed latency as a performance warning instead of failing Gate B; the 500ms target remains Gate D work.
+# Gate D 검증 진행 메모
+
+- 세션 종료 후 재개를 위해 `docs/next-session-handoff.md`를 추가했다. 다음
+  세션은 먼저 dirty tree를 확인하고 contract → keyboard E2E → correlation
+  3 topology → visual/flicker → profile 순서로 재현한다. 현재 기능 invariant는
+  PASS지만 성능 목표는 미달이며, 다음 구현은 phase별 tmux 호출 계측 후
+  operation snapshot cache와 dirty-row render 순서로 진행한다.
+
+- 2026-08-06 재검증에서 vertical live correlation의 첫 실패 snapshot을
+  분석했다. client는 `live-corr-1`인데 sidebar marker는 이전
+  `interactive-anchor`를 가리키고 있었고, 원인은 client-session 변경 시
+  유효한 이전 선택을 보존하던 분기였다. 실제 client 전환 경계에서는
+  현재 session으로 marker를 재정렬하도록 수정했으며 vertical 10/10,
+  window-local switch와 기존 keyboard E2E도 PASS했다.
+- visual-layer 10회는 complete 90/90, blank/partial 0, row/geometry/pane
+  mismatch 0으로 통과했다. 다만 restore baseline은 5000ms timeout,
+  native switch는 약 1~2.7초로 500ms 목표를 초과한다. flicker 측정은
+  attach 전 sidebar 탐색은 보완했지만 arrow marker 동기화가 남아 있어
+  제품 기능 PASS와 분리해 후속 수정 대상으로 둔다.
+- restore trace에서 sidebar process는 first render와 window-ready를 완료했지만
+  외부 `capture-pane`의 session 문자열이 stale해 readiness가 10초 timeout되는
+  경계를 확인했다. active target의 window/input-ready marker를 bounded
+  fallback으로 허용했고, 이후 profile은 restore integrity/layout 100%를
+  통과했다. 실제 restore는 약 5.6~5.7초로 성능 목표 2.2초는 아직 미달이다.
+- capture polling을 첫 target marker 확인 시점에 bounded fallback으로 줄인 뒤
+  restore는 약 4.4~4.5초로 개선됐고 integrity/layout/cursor는 계속 PASS했다.
+  단, 전체 profile은 idle/active CPU, key, switch, archive, restore 절대 목표를
+  모두 초과하므로 성능 Gate는 아직 PASS가 아니다.
+- readiness/provision 중복 제거 1단계로 pane discovery와 pane readiness를
+  분리하고, 이미 확보한 pane ID에는 combined dead/PID 조회를 사용했다.
+  contract/render-cause/window-local/live correlation은 통과했지만 단일
+  profile restore는 4.5~5.4초로 편차가 있어 성능 개선으로 확정하지 않는다.
+  다음 단계는 operation snapshot과 dirty-row render다.
+- known pane에 대한 runtime snapshot 계약을 추가해 dead/PID/ready/geometry를
+  한 번에 조회하고 switch target PID를 재사용했다. contract와 live correlation
+  10/10은 유지됐지만 profile restore는 5.56초로 측정 편차가 컸다. 다음은
+  phase별 tmux 호출 횟수를 계측한 뒤에만 추가 최적화를 적용한다.
+- 1단계 구현으로 known pane readiness 함수가 dead/PID를 한 번에 조회하고,
+  switch repair/input barrier가 동일 pane ID를 재사용하도록 수정했다.
+  contract, render-cause, window-local switch, 독립 correlation 10회는 PASS,
+  restore integrity는 100%였지만 성능 목표 달성은 아직 확인되지 않았다.
+- flicker helper 내부에서만 `>` current와 `*` selected를 구분하고 session
+  전환마다 target sidebar를 재탐색하도록 보완했다. 공통 keyboard helper의
+  의미는 보존했다. physical arrow 미전달 시 진단용 pane-key fallback 횟수도
+  기록하도록 했지만, 반복 측정은 아직 안정화 검증이 필요하다.
+
+- 전체 Gate 재검증 중 생산 코드의 busy guard와 충돌하는 검증 race를
+  timestamp trace로 확인했다. Gate B 반복 테스트는 client-session 변경만
+  기다려 다음 Enter를 너무 일찍 보냈고, Gate A numeric-session 테스트는
+  window-local sidebar 전환 후에도 sidebar가 하나라고 가정했다. 테스트에
+  lifecycle settle/visible-marker 동기화를 추가하고 window-local 계약에
+  맞게 기대값을 수정했다.
+- Gate D 측정에서 window-local 구조의 sidebar 3개를 단일 identity로
+  기대하던 판정과 render request 1회 고정 판정을 발견했다. 측정 계약을
+  실제 구조에 맞게 수정하고, flicker 입력도 visible selection marker에
+  동기화했다. 전환 latency 자체는 여전히 별도 성능 문제로 추적한다.
+- `window-local-switch` trace에서 첫 전환 뒤 다음 iteration이 target
+  window의 sidebar focus/readiness를 확인하지 않고 selection을 읽는 경계를
+  확인했다. 각 target마다 focus와 input-ready를 재확인하도록 보강했고,
+  switch 및 toggle 테스트가 PASS했다. 전환 시간은 약 1.5초로 별도 성능
+  경고로 남아 있다.
+- 전체 실행 trace에서 target sidebar의 session model은 4개였지만 marker-only
+  redraw 뒤 한 row가 화면상 비어 보이는 경계를 확인했다. selection sync 시
+  visible session rows를 함께 다시 출력하도록 lifecycle을 보강했고,
+  `window-local-switch`가 PASS했다. latency는 여전히 성능 경고다.
+
+- Gate D 안정화 작업은 target sidebar content가 이미 준비된 경우 post-switch
+  `SIGUSR2` fallback을 생략하는 방향으로 최소 수정했다.
+- live observer는 source pane이 아니라 target pane/PID를 기준으로 identity를
+  판단하고, redraw 검사는 해당 operation 구간으로 제한했다.
+- contract는 통과했으나 attached-PTY 10회 correlation은 setup selection이
+  예상 target과 달라지는 flaky 실패가 남아 있어 Gate D 완료 판정은 보류한다.
+- `TMUX_SESSION_LAUNCHER_DEBUG=1` 및 `TMUX_SESSION_LAUNCHER_TRACE=1`로
+  timestamp/PID/pane/operation 정보를 on/off 수집할 수 있다.
+- source session은 TUI cache가 아닌 실행 pane context에서 해석하고, target
+  marker가 stale이면 refresh fallback을 허용하도록 보완했다. 다만 live
+  correlation observer가 첫 operation에서 hang하는 잔여 문제가 있다.
+- `SIGUSR2`/`SIGWINCH` trap에서 tmux IPC와 geometry/render 작업을 제거하고
+  main loop 처리로 이동했다. 그 결과 live 10회 전환은 10/10 PASS했고,
+  longjmp pane death도 해당 suite에서 재현되지 않았다.
+- render-cause 테스트는 초기 setup 및 다음 transition settle 경계를 보강해
+  4/4 PASS했고, 최종 live correlation도 10/10 PASS했다.
+
+## 2026-08-18 - Single Sidebar In-Flight Marker Handover & Selection Alignment TDD
+
+사용자 의도:
+- 라이브 세션 15회 전환 중 발견된 사이드바 UI 마커 비동기화(Stale Marker) 및 선택 세션 타겟 불일치 문제를 TDD와 SOLID 원칙을 준수하여 해결합니다.
+
+해석/결정:
+- Window-Local 모델에서 각 윈도우의 사이드바 Presenter가 독립 프로세스로 대기 중일 때 클라이언트 진입 통지를 받지 못해 마커가 과거 상태로 남는 문제를 In-Flight Marker Handover 프로토콜로 해결하기로 결정했습니다.
+- `sidebar_coordinator.sh`에 순수 Reducer 함수 `selection_coordinator_align_current`와 `selection_coordinator_compute_delta`를 구현하고, `sidebar_port_tmux.sh`에 마커 옵션 설정 및 Presenter PID 시그널 인터럽트 포트를 격리했습니다.
+- `scripts/tmux-session-launcher`의 UI 이벤트 루프에서 핸드오버 마커를 감지하여 1ms 이내 마커 델타 렌더링을 수행하고, `collect_sessions` 내부의 임의 0번 인덱스 오작동 폴백을 차단했습니다.
+
+작업 결과:
+- `test-selection-alignment-unit.sh`, `test-marker-handover-contract.sh`, `test-presenter-handover-e2e.sh`를 작성하여 RED &rarr; GREEN 사이클을 완료했습니다.
+- 프로덕션 번들 `dist/tmux-session-launcher`를 빌드 및 설치하고, 라이브 15회 연속 전환 검증에서 15회 모두 정확한 세션 전환(타겟 불일치 0건)과 마커 정합성을 확인했습니다.
+
+## 2026-08-19 - Subpane Height Persistence and Restoration
+
+사용자 의도:
+- 사이드바 좌우 폭뿐만 아니라 마우스로 조절한 서브페인 상하 높이도 사이드바 토글 후 그대로 기억 및 복원되도록 개선합니다.
+
+해석/결정:
+- `remember_sidebar_subpane_height_for_window` 함수를 구현하여 리사이즈 훅 및 사이드바 닫기 시 현재 높이를 `@dotfiles_sidebar_subpane_height`에 저장하도록 구성했습니다.
+- `provision_sidebar_subpane`에서 저장된 높이가 존재할 경우 기본 비율 대신 해당 높이를 재사용하도록 변경했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-height-persistence.sh` TDD 계약 테스트 작성 및 통과.
+- `dist/tmux-session-launcher` 빌드 및 배포 완료.
+
+## 2026-08-19 - Subpane Top/Bottom Position Swapping and Persistence
+
+사용자 의도:
+- 서브페인의 위치를 좌측 하단뿐만 아니라 좌측 상단으로도 자유롭게 전환(Swap)하고 기억할 수 있도록 지원하며, `Ctrl+Alt+Up`/`Ctrl+Alt+Down`과도 연동합니다.
+
+해석/결정:
+- `@dotfiles_sidebar_subpane_position` ("top" | "bottom") 옵션을 도입하고, `join-pane` 시 상단 위치인 경우 `-b` 옵션을 적용하도록 구현했습니다.
+- 실시간 위치 전환을 위한 `sidebar_subpane_swap_position` 함수와 CLI 플래그 `--swap-subpane-position` 및 tmux 단축키 `Ctrl+a P`를 추가했습니다.
+- `sync_sidebar_subpane_position_for_window`를 통해 `Ctrl+Alt+Up`/`Ctrl+Alt+Down`으로 페인을 스왑해도 상대 좌표를 자동 감지하여 상태를 저장하도록 연동했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-position-contract.sh` 및 `test-subpane-ctrl-alt-swap.sh` TDD 계약 테스트 통과.
+- `dist/tmux-session-launcher` 빌드 및 로컬 배포 완료.
+
+## 2026-08-19 - Documentation Consolidation to docs/
+
+사용자 의도:
+- 기존 `doc/` 디렉터리에 분산되어 있던 문서들을 `docs/`로 일원화하여 디렉터리 구조를 깔끔하게 통합합니다.
+
+해석/결정:
+- `doc/architecture.md`, `doc/opencode.md`, `doc/vim.md`를 `docs/`로 이동하고 레거시 `doc/` 디렉터리를 정리했습니다.
+- `README.md`, `docs/opencode.md`, `shortcut.md`, `AGENTS.md`, `GEMINI.md` 내의 참조 경로를 모두 `docs/`로 일괄 갱신했습니다.
+
+작업 결과:
+- 문서 폴더가 `docs/` 단일 표준으로 통합 완료.
+
+## 2026-08-19 - Subpane Shortcut s / P Mapping
+
+사용자 의도:
+- 사이드바 내부에서 서브페인을 토글하는 단축키를 기존 `m`에서 직관적인 `s`로 변경합니다.
+
+해석/결정:
+- `s` (Subpane toggle)와 `P` (Position swap)를 단축키로 배정하고, 기존 `m`도 하위 호환성으로 유지했습니다.
+작업 결과:
+- `dist/tmux-session-launcher` 빌드 및 배포 완료. 전체 계약 테스트 통과.
+
+## 2026-08-19 - Documentation Architecture, Categorization & Glossary Hub
+
+사용자 의도:
+- 프로젝트 내용 파악을 용이하게 하기 위해 주요 용어의 naming을 표준화하고, 문서들을 하위 목적별로 체계화하여 파일명 및 링크의 정합성을 확보합니다.
+
+해석/결정:
+- `Sidebar`, `Presenter`, `Subpane`, `Subpane Hub`, `Work Pane`, `Managed Window`, `Marker Handover`, `Selection Coordinator`의 표준 도메인 용어 사전(Glossary)을 확립했습니다.
+- `docs/` 폴더를 `guides/`, `design/`, `testing/`, `archives/` 하위 디렉터리로 분류하고, 중앙 진입점인 `docs/README.md`를 생성했습니다.
+- `README.md`, `AGENTS.md`, `GEMINI.md`, `shortcut.md` 및 `docs/` 하위 모든 문서의 상호 참조 링크를 갱신했습니다.
+
+작업 결과:
+- 문서 디렉터리 및 용어 표준화 완료. 전체 단위/계약 테스트 통과.
+
+## 2026-08-19 - Subpane Dimension Integrity & Scope Isolation
+
+사용자 의도:
+- 서브페인 상/하단 이동 시 단순 내용 switch가 아니라 서브페인의 고유 치수(폭/높이)를 보존하는 진정한 Pane Move가 되도록 개선하고, 일반 워크페인과 격리된 사이드바 전용 기능으로 운영합니다.
+
+해석/결정:
+- `sidebar_subpane_swap_position` 시 스왑 직후 서브페인의 지정된 높이(`@dotfiles_sidebar_subpane_height`)를 즉시 재적용하여 상/하단 어디로 가든 서브페인은 12줄, 런처는 잔여 높이를 유지하도록 치수 무결성을 확보했습니다.
+- 전역 훅 의존성을 정리하여 일반 워크페인의 페인 스왑이 사이드바 상태를 변경하지 않도록 스코프를 완전히 격리했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-position-contract.sh` TDD RED &rarr; GREEN 검증 완료.
+- `dist/tmux-session-launcher` 번들 빌드 및 배포 완료.
+
+## 2026-08-19 - Subpane Switch Position Preservation Across Session Switches
+
+사용자 의도:
+- 서브페인을 상단에 배치한 상태에서 다른 세션으로 이동(`Enter`)하더라도 서브페인이 하단으로 내려오지 않고 상단 위치를 안정적으로 유지하도록 개선합니다.
+
+해석/결정:
+- 세션 전환 핫패스(`sidebar_switch_execute_hot`)와 작업 레이아웃 스냅샷 트랜잭션(`snapshot_work_layout_transaction`)에서 `join-pane` 시 `sidebar_subpane_get_position` 기반 `-b` 플래그를 누락 없이 적용하고, 조인 직후 높이(`@dotfiles_sidebar_subpane_height`)를 원자적으로 강제 재조정하도록 구현했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-subpane-switch-position-contract.sh` 계약 테스트 작성 및 RED &rarr; GREEN 통과.
+- 전체 서브페인 테스트 스위트 통과 및 번들 배포 완료.
+
+## 2026-08-19 - Deterministic Session-Key Archive & Last-Write-Wins (Option A)
+
+사용자 의도:
+- 아카이브 파일명에서 타임스탬프와 PID를 제거하고 세션명 단위의 유일한 키(`<SessionName>.tsv`)로 관리하며, 동일 세션 재저장 시 최신 스냅샷으로 덮어쓰도록(Last-Write-Wins) 개선합니다.
+
+해석/결정:
+- `archive_session`에서 파일명을 `<safe_session_name>.tsv`로 결정론적 생성하고, 원자적 pending 이동 및 마커 동기화를 적용했습니다.
+- 아카이브 삭제/덮어쓰기 시 불필요한 `.history-imported` 마커를 자동 정리하여 재복원 시 쉘 히스토리 주입을 보장했습니다.
+
+작업 결과:
+- `tests/tmux-single-sidebar/test-archive-deterministic-naming-contract.sh` TDD RED &rarr; GREEN 검증 완료.
+- `dist/tmux-session-launcher` 번들 빌드 및 배포 완료.

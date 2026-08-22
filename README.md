@@ -6,7 +6,7 @@
 다음 에이전트가 작업 맥락을 이어받기 위한 문서는 [AGENTS.md](AGENTS.md)에 정리합니다.
 주요 작업 이력은 [HISTORY.md](HISTORY.md)에 누적합니다.
 주제별 대화 맥락은 [CONVERSATION.md](CONVERSATION.md)에 요약합니다.
-설치 구조와 모듈 추가 원칙은 [doc/architecture.md](doc/architecture.md)에 정리합니다.
+설치 구조와 모듈 추가 원칙은 [docs/architecture.md](docs/architecture.md)에 정리합니다.
 
 ## 빠른 설치
 
@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.11`이며, 사용자는 `--v v0.6.11`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.11은 `session_activity` 기반 0-subprocess gradient 최적화를 반영하였고 Archive completion 항목이 PASS로 전환되었습니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.17`이며, 사용자는 `--v v0.6.17`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.17은 Look-Up Table(LUT) 24프레임 파형 엔진 및 30 FPS 적응형 클록, CJK/Emoji 터미널 너비 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 및 백그라운드 실시간 파형 대시보드, 서브페인 상/하 위치 전환 및 세션 전환 유지, 결정론적 아카이브 명명 규칙, 배치 복원 시 다중 분할 레이아웃 무결성 직렬화, tmux 3.2a 하위 호환성 상단 서브페인 지오메트리 보정 및 원자적 파이프라인을 통합 반영하였습니다.
 
 ## 로컬 개발 및 테스트 설치
 
@@ -70,25 +70,30 @@ dotfiles/
 │           └── resize-font
 ├── scripts/
 │   ├── tmux-session-launcher
+│   ├── tmux-sidebar-tmux-adapter
 │   └── tmux-theme-picker         ← 실시간 테마 피커 스크립트
 ├── get_dotfiles.sh
 ├── install_dotfiles.sh
 ├── shortcut.md
-└── doc/
-    ├── architecture.md
-    ├── opencode.md
-    └── vim.md
+└── docs/
+    ├── README.md                 ← 문서 허브 & 용어 사전
+    ├── architecture.md           ← 설치 아키텍처
+    ├── keybindings.md            ← 주요 단축키 가이드
+    ├── guides/                   ← 설정 & 사용 가이드 (opencode, vim, theme 등)
+    ├── design/                   ← 단일 사이드바 & 런처 상세 설계
+    ├── testing/                  ← 테스트 매트릭스 & 검증 계획
+    └── archives/                 ← 과거 분석 & 벤치마크 리포트
 ```
 
 `dotfiles/` 디렉터리에는 실제 배포할 설정 파일을 둡니다. `install.toml`은 어떤 파일을 설치할지, 어디에 설치할지, 필요한 실행파일과 패키지가 무엇인지 정의합니다.
-모듈이 늘어날수록 설치 구조는 [doc/architecture.md](doc/architecture.md)에서 유지합니다.
+모듈이 늘어날수록 설치 구조는 [docs/architecture.md](docs/architecture.md)에서 유지합니다.
 
 ## opencode
 
-opencode 설정은 [doc/opencode.md](doc/opencode.md)에 별도로 정리합니다.
+opencode 설정은 [docs/guides/opencode.md](docs/guides/opencode.md)에 별도로 정리합니다.
 현재는 personal-only seed config를 기준으로 두고, `install.toml`에 있는 `opencode` 항목으로 `~/.config/opencode/opencode.jsonc`를 설치합니다.
 설치 후 CLI가 없으면 공식 설치 스크립트로 자동 설치합니다.
-work profile, 실행 래퍼, allowlist 확장 방향은 [doc/opencode.md](doc/opencode.md)와 [doc/architecture.md](doc/architecture.md)에 남겨둡니다.
+work profile, 실행 래퍼, allowlist 확장 방향은 [docs/guides/opencode.md](docs/guides/opencode.md)와 [docs/architecture.md](docs/architecture.md)에 남겨둡니다.
 
 ## 설치 방식
 
@@ -129,7 +134,7 @@ depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xre
 description = "tmux configuration"
 ```
 
-현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 `command -v opencode` 또는 기본 설치 위치(`~/.opencode/bin/opencode`, `~/.local/bin/opencode`, `~/bin/opencode`)에 없을 때만 자동 설치합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources, 그리고 tmux-theme-picker는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
+현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 이미 있으면 재설치하지 않습니다. CLI가 없을 때 원격 설치를 원하면 `DOTFILES_INSTALL_OPENCODE_CLI=true`를 명시해야 합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources, 그리고 tmux-theme-picker는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
 이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
 새 모듈을 넣을 때는 `file / dependency / post-install / external CLI` 중 어느 형태인지 먼저 분류합니다.
 
@@ -153,7 +158,9 @@ tmux 설치에는 URxvt용 font resize 설정도 hidden dependency로 포함됩�
 xrdb -merge ~/.Xresources
 ```
 
-## tmux session launcher
+## tmux session launcher & 단축키 안내
+
+> 📖 **전체 상세 단축키 및 마우스 조작 가이드**: [`docs/keybindings.md`](docs/keybindings.md)
 
 tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session launcher sidebar가 열립니다.
 `Ctrl+a s`는 toggle로 동작하므로, sidebar가 이미 열려 있으면 닫고 없으면 엽니다. tmux 시작 시 sidebar는 자동으로 열리지 않습니다.

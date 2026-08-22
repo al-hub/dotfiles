@@ -178,8 +178,20 @@ EOF
     esac
 }
 
+sidebar_tmux_cmd()
+{
+    tmux "$@"
+}
+
 load_launcher_functions()
 {
+    # Source all domain and presenter lib modules first
+    local lib_dir="$REPO_ROOT/scripts/lib"
+    local lib_file
+    for lib_file in "$lib_dir"/sidebar_*.sh; do
+        [ -r "$lib_file" ] && source "$lib_file"
+    done
+
     # The launcher has no library mode, so tests omit only its final main invocation.
     # shellcheck disable=SC1090
     source <(sed '/^main "\$@"$/d' "$LAUNCHER")
@@ -228,5 +240,5 @@ set_single_ai_session()
 
     TEST_CURRENT_SESSION="$session_name"
     TEST_SESSIONS_SNAPSHOT="$(printf '%s\t%s' "$session_name" "$created")"
-    TEST_PANES_SNAPSHOT="$(printf '%s\t%s\twork\t%s' "$session_name" "$pane_id" "$command_name")"
+    TEST_PANES_SNAPSHOT="$(printf '%s\t%s\twork\t%s\t0:0:0:0\t' "$session_name" "$pane_id" "$command_name")"
 }

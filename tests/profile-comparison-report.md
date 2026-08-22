@@ -1,23 +1,23 @@
 # TUI Sidebar Controlled Baseline
 
-Generated: 2026-07-21T22:30:42+09:00
+Generated: 2026-08-06T22:47:55+09:00
 
-Revision: `f20113d` (dirty: `true`)
+Revision: `f79575b` (dirty: `true`)
 
 Environment: `tmux 3.6`, attached urxvt client, 100x30 geometry
-Runs: 3
+Runs: 1
 
 | Metric | Median and observed range | Result |
 | :--- | :--- | :---: |
-| Idle launcher CPU | 1.14 % (range 0.85-1.98) | PASS |
-| Idle launcher peak RSS | 5728.00 KiB (range 5664.00-6492.00) | PASS |
-| Active launcher CPU | 1.11 % (range 0.58-1.13) | PASS |
-| Active launcher peak RSS | 5728.00 KiB (range 5664.00-6492.00) | PASS |
-| Key-to-render latency | 88.00 ms (range 77.00-98.00) | FAIL |
-| Enter-to-client-switch latency | 182.00 ms (range 167.00-198.00) | PASS |
-| Archive completion | 330.00 ms (range 321.00-342.00) | PASS |
-| Archive metadata size | 19011.00 bytes (range 18999.00-19025.00) | PASS |
-| Restore completion | 1553.00 ms (range 1518.00-1563.00) | PASS |
+| Idle launcher CPU | 11.68 % (range 11.68-11.68) | FAIL |
+| Idle launcher peak RSS | 7832.00 KiB (range 7832.00-7832.00) | PASS |
+| Active launcher CPU | 9.21 % (range 9.21-9.21) | FAIL |
+| Active launcher peak RSS | 7832.00 KiB (range 7832.00-7832.00) | PASS |
+| Key-to-render latency | 79.00 ms (range 79.00-79.00) | FAIL |
+| Enter-to-client-switch latency | 1883.00 ms (range 1883.00-1883.00) | FAIL |
+| Archive completion | 1878.00 ms (range 1878.00-1878.00) | FAIL |
+| Archive metadata size | 10077.00 bytes (range 10077.00-10077.00) | PASS |
+| Restore completion | 4398.00 ms (range 4398.00-4398.00) | FAIL |
 | Restore pane/window integrity | 100% required on every run | PASS |
 | Layout preserved after 3 open/close cycles | 100% required on every run | PASS |
 | Grid bounded and exactly one cursor | required on every run | PASS |
