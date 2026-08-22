@@ -6,6 +6,15 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Switch-Client-First Pipeline Ordering & Detached Dimension Truncation Prevention
+
+- **전환 파이프라인 순서 재정의 (`switch-client` 선행 실행 - `scripts/lib/sidebar_switch.sh`)**:
+  - `sidebar_switch_execute_hot`에서 `join-pane`을 `switch-client`보다 먼저 실행할 경우, 대상 세션이 백그라운드(미연결) 상태일 때 기본 지오메트리(24줄)로 인해 `join-pane` 시 목표 높이(20줄)를 수용하지 못하고 tmux에 의해 강제 축소(Clipping/Truncation)되던 근본 원인 해결.
+  - `switch-client -c "$client_tty" -t "$target_spec"`을 단일 트랜잭션의 최우선 순위로 배치하여, 대상 세션 창이 활성 클라이언트의 실제 터미널 전체 지오메트리(50줄 등)를 먼저 부여받은 후 `join-pane`이 실행되도록 순서 보장.
+  - 세션 목록에서 위에서 아래로(Down) 신규/백그라운드 세션으로 이동할 때 발생하던 높이 감쇄 버그 완전 박멸.
+- **프로덕션 번들 빌드 및 로컬 바이너리 동기화 (`dist/tmux-session-launcher`, `~/.local/bin/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 설치 완료. 전체 15개 서브페인/코어 테스트 스위트 100% 통과 (15/15 PASS).
+
 ## 2026-08-22 - Architecture: Layout Snapshot Symmetry & Binary Installation Sync
 
 - **작업 레이아웃 스냅샷 내 상단 서브페인 경계선 사전 보상 (`scripts/tmux-session-launcher`)**:

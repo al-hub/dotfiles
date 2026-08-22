@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Switch-Client-First Pipeline Ordering & Detached Dimension Truncation Prevention
+
+- **사용자 요청**:
+  - 서브페인이 상단에 있을 때, 세션 목록에서 아래에서 위로 이동(Up) 후 Enter 선택 시 높이가 잘 유지되나, 위에서 아래로 이동(Down) 후 Enter 선택 시 상단 서브페인의 높이가 -1씩 줄어드는 현상에 대한 원인 분석 및 해결 요청 (하단 배치 시에는 정상).
+- **원인 분석**:
+  1. `sidebar_switch_execute_hot` 복합 IPC 트랜잭션에서 `join-pane`이 `switch-client`보다 먼저 실행되고 있었음.
+  2. 세션 목록을 위에서 아래로 이동하여 아직 클라이언트가 부착되지 않은 백그라운드 세션으로 진입할 때, 대상 창의 지오메트리가 백그라운드 기본 크기(24줄)로 유지된 상태에서 `join-pane`이 실행됨.
+  3. 24줄 창에 목표 높이(20줄)와 구분선 및 런처를 모두 배치할 수 없어 tmux에 의해 서브페인 높이가 강제 축소(Clipping)되고, 이 축소된 높이가 전역 상태로 전파됨. 반면 이미 방문했던 위쪽 세션은 클라이언트 크기(50줄)가 이미 적용되어 있어 정상 유지되었음.
+- **조치 내용**:
+  1. `sidebar_switch_execute_hot`에서 `switch-client`를 `join-pane`보다 앞서 실행하도록 파이프라인 순서 재정의 (`sidebar_switch.sh`).
+  2. 대상 창이 클라이언트의 전체 화면(50줄)으로 먼저 확장된 후 `join-pane`이 실행되므로, 위에서 아래로 미방문 세션 이동 시에도 높이 감쇄가 전혀 발생하지 않도록 근본 해결.
+  3. 최신 바이너리 빌드 및 `~/.local/bin/tmux-session-launcher` 동기화, 전체 15개 테스트 스위트 100% 통과.
+
 ## 2026-08-22 - Architecture: Layout Snapshot Symmetry & Binary Installation Sync
 
 - **사용자 요청**:
