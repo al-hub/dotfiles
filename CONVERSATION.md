@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Attached Pre-Flight Intent Sync & Viewport Clamping Separation (Candidate A + B)
+
+- **사용자 요청**:
+  - 서브페인을 마우스로 리사이즈한 직후 세션 전환(Enter) 시, 마우스로 조절한 마지막 높이가 유지되지 못하고 이전 기본값으로 롤백되는 문제에 대해 원인 분석, 검출 시나리오 작성 및 아키텍처 개선 요청.
+  - Candidate A(활성 클라이언트 Pre-Flight 의도 승격) + Candidate B(렌더 클램핑 분리) 통합 적용 승인.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-mouse-resize-detect.sh` 작성: 50줄 창에서 마우스 드래그로 28줄로 조절 후 즉시 Enter 전환 시, 비동기 훅 지연으로 인해 대상 창에서 12줄로 롤백되는 결함을 100% 재현 및 검출 (RED).
+  2. Candidate A + B 구현 적용.
+- **조치 내용**:
+  1. `sync_attached_subpane_user_intent` 구현: `switch_session` 진입 시 현재 활성 클라이언트 연결 창(창 높이 $\ge 30$)에 대해 실시간 조절값을 동기 승격 (`sidebar_port_tmux.sh`, `tmux-session-launcher`).
+  2. 작은 창 경유 시 물리 렌더링만 뷰포트에 맞게 클램핑하고 정규 의도는 보존 (`sidebar_switch.sh`).
+  3. 결함 검출 시나리오 통과 (Part 1, Part 2 GREEN) 및 전체 17개 서브페인/코어 테스트 스위트 100% 통과 (17/17 PASS).
+
 ## 2026-08-22 - Architecture: Intent vs Transient Observation Decoupling & Atomic Switch Pipeline (Candidate 1)
 
 - **사용자 요청**:

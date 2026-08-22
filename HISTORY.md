@@ -6,6 +6,16 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Attached Pre-Flight Intent Sync & Viewport Clamping Separation (Candidate A + B)
+
+- **활성 클라이언트 창의 동기적 Pre-Flight 의도 승격 (`scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:
+  - `sync_attached_subpane_user_intent` 구현: 사용자가 마우스 드래그나 단축키로 서브페인 높이를 조절한 직후 비동기 훅이 도달하기 전에 세션을 전환하더라도, `switch_session` 진입 시 활성 클라이언트 연결 창(`Attached Client Window`, 창 높이 $\ge 30$)의 실시간 조절 높이를 동기 승격하여 즉시 전역 정규 의도로 반영.
+  - 백그라운드/헤드리스 24줄 창은 전제조건에 의해 걸러지므로, 단조 감쇄(-1 decay)를 유발하지 않으면서 마우스 조절 높이(28줄 등)를 100% 온전하게 대상 세션으로 전달.
+- **정규 의도 vs 렌더링 클램핑 분리 (`scripts/lib/sidebar_switch.sh`)**:
+  - 작은 창 경유 시 물리 렌더링만 뷰포트에 맞게 클램핑하고, 정규 사용자 의도 변수(`@dotfiles_sidebar_subpane_height`)는 절대 축소하지 않고 그대로 보존하여 큰 화면 복귀 시 원래 조절값 100% 복원.
+- **마우스 리사이즈 결함 검출 시나리오 및 전체 17개 테스트 스위트 100% 통과 (`test-subpane-mouse-resize-detect.sh` 등 17/17 PASS)**:
+  - 마우스 드래그 직후 즉시 전환 및 이종 창 크기 왕복 시나리오 검증 완료.
+
 ## 2026-08-22 - Architecture: Intent vs Transient Observation Decoupling & Atomic Switch Pipeline (Candidate 1)
 
 - **사용자 정규 의도(Canonical Intent)와 순간 관측치의 엄격한 분리 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_port_tmux.sh`)**:

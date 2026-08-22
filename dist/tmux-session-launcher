@@ -788,6 +788,39 @@ remember_sidebar_subpane_height_for_window() {
     esac
 }
 
+sync_attached_subpane_user_intent() {
+    local client_tty="${1:-}" source_win="${2:-}"
+    [ -n "$source_win" ] || return 0
+    local win_sess
+    win_sess="$(sidebar_tmux_cmd display-message -p -t "$source_win" '#{session_name}' 2>/dev/null || true)"
+    if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$win_sess"; then
+        return 0
+    fi
+    local win_h
+    win_h="$(sidebar_tmux_cmd display-message -p -t "$source_win" '#{window_height}' 2>/dev/null || echo 0)"
+    case "$win_h" in ''|*[!0-9]*) return 0 ;; esac
+    # Precondition: Window height must be adequate for interactive attached display (>= 30 rows)
+    # to avoid promoting unattached / headless 24-row default clipping as user intent.
+    [ "$win_h" -ge 30 ] || return 0
+
+    local sub_pane
+    sub_pane="$(sidebar_window_subpane "$source_win" || true)"
+    [ -n "$sub_pane" ] || return 0
+
+    local live_h
+    live_h="$(sidebar_tmux_cmd display-message -p -t "$sub_pane" '#{pane_height}' 2>/dev/null || echo 0)"
+    case "$live_h" in ''|*[!0-9]*) return 0 ;; esac
+
+    if [ "$live_h" -ge 4 ] && [ "$((win_h - live_h))" -ge 6 ]; then
+        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+        sidebar_tmux_cmd set-option -gq "$opt" "$live_h" 2>/dev/null || true
+        persist_sidebar_subpane_height "$live_h" 2>/dev/null || true
+        printf '%s\n' "$live_h"
+        return 0
+    fi
+    return 0
+}
+
 sidebar_subpane_get_position() {
     local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
     local pos
@@ -4520,10 +4553,19 @@ switch_session()
     local subpane_enabled sub_pane="" sub_height=""
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
     if [ "$subpane_enabled" = "1" ]; then
-        local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
-        sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
-        if [ -z "$sub_height" ] && declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
-            sub_height="$(sidebar_subpane_get_height 2>/dev/null || true)"
+        if [ -n "$source_window" ] && declare -f sync_attached_subpane_user_intent >/dev/null 2>&1; then
+            local synced_h
+            synced_h="$(sync_attached_subpane_user_intent "$client_tty" "$source_window" 2>/dev/null || true)"
+            if [ -n "$synced_h" ] && [ "$synced_h" -ge 4 ] 2>/dev/null; then
+                sub_height="$synced_h"
+            fi
+        fi
+        if [ -z "$sub_height" ]; then
+            local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
+            sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+            if [ -z "$sub_height" ] && declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
+                sub_height="$(sidebar_subpane_get_height 2>/dev/null || true)"
+            fi
         fi
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
             sub_pane="$(sidebar_window_subpane "$source_window" || true)"
