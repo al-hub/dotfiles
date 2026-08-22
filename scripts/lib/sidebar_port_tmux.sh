@@ -301,6 +301,8 @@ sidebar_subpane_swap_position() {
     [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
     [ -n "$window_id" ] || return 1
 
+    remember_sidebar_subpane_height_for_window "$window_id"
+
     local cur_pos
     cur_pos="$(sidebar_subpane_get_position)"
     local new_pos="top"
@@ -330,6 +332,9 @@ sidebar_subpane_swap_position() {
         else
             sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
         fi
+
+        sidebar_tmux_cmd set-option -gq "$opt" "$target_h" 2>/dev/null || true
+        persist_sidebar_subpane_height "$target_h" 2>/dev/null || true
 
         if declare -f save_sidebar_layout >/dev/null 2>&1; then
             save_sidebar_layout "$window_id" 2>/dev/null || true

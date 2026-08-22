@@ -803,6 +803,8 @@ sidebar_subpane_swap_position() {
     [ -n "$window_id" ] || window_id="$(sidebar_tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
     [ -n "$window_id" ] || return 1
 
+    remember_sidebar_subpane_height_for_window "$window_id"
+
     local cur_pos
     cur_pos="$(sidebar_subpane_get_position)"
     local new_pos="top"
@@ -832,6 +834,9 @@ sidebar_subpane_swap_position() {
         else
             sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
         fi
+
+        sidebar_tmux_cmd set-option -gq "$opt" "$target_h" 2>/dev/null || true
+        persist_sidebar_subpane_height "$target_h" 2>/dev/null || true
 
         if declare -f save_sidebar_layout >/dev/null 2>&1; then
             save_sidebar_layout "$window_id" 2>/dev/null || true
@@ -4491,6 +4496,9 @@ switch_session()
     local subpane_enabled sub_pane="" sub_height=""
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
     if [ "$subpane_enabled" = "1" ]; then
+        if [ -n "$source_window" ] && declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+            remember_sidebar_subpane_height_for_window "$source_window"
+        fi
         local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then

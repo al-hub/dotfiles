@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: JIT Height Capture & Manual Resize Preservation
+
+- **전환 직전 JIT 높이 동기화 (Candidate 1 - `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:
+  - `sidebar_subpane_swap_position` 및 `switch_session` 최초 진입 시점에 활성 창의 서브페인 실시간 렌더링 높이를 `remember_sidebar_subpane_height_for_window`로 즉시 동기화(JIT Capture)한 후 전환 트랜잭션을 시작하도록 개선.
+  - 마우스 드래그나 단축키로 서브페인 높이를 수동 조절한 직후 비동기 훅의 디바운스 지연 중에 `P`(스왑)를 누르거나 `Enter`(세션 전환)를 실행해도 이전 값으로 롤백되던 문제 완전 해결.
+- **스왑 트랜잭션 내 대칭 보상 및 영속화 보강 (Candidate 2 - `scripts/lib/sidebar_port_tmux.sh`)**:
+  - `sidebar_subpane_swap_position` 스왑 직후 확정된 `target_h`를 전역 옵션과 디스크 상태 파일에 즉시 영속화하여 스왑 직후 최초 1회 세션 전환 시 발생하던 -1칸 축소 오차 완전 차단.
+- **수동 리사이즈 및 스왑/전환 충실도 회귀 테스트 추가 (`tests/tmux-single-sidebar/test-subpane-swap-manual-resize-fidelity.sh`)**:
+  - 서브페인 수동 리사이즈(15 ➔ 24) ➔ 상단 스왑 ➔ 세션 전환 ➔ 추가 수동 리사이즈(24 ➔ 19) ➔ 하단 스왑 ➔ 왕복 복귀 시나리오에서 높이 100% 충실도 및 0감쇄 검증 완료 (ALL PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 배포 완료.
+
 ## 2026-08-22 - Architecture: Atomic Subpane Position Swap & Immediate Switch Preservation
 
 - **원자적 복합 스왑 파이프라인 (Candidate 1 - `scripts/lib/sidebar_port_tmux.sh`)**:

@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: JIT Height Capture & Manual Resize Preservation
+
+- **사용자 요청**:
+  - 서브페인을 상단/하단으로 이동한 직후 1) 첫 세션 이동 시 -1칸 줄어드는 현상과 2) 수동으로 조절한 높이값이 스왑/전환 시 이전 값으로 롤백되는 현상의 상관관계 분석 및 아키텍처 개선 요청.
+  - Candidate 1(전환 직전 JIT 높이 동기화)과 Candidate 2(스왑 트랜잭션 내 대칭 보상 및 영속화) 동시 적용 요청.
+- **원인 분석**:
+  1. 수동 리사이즈 직후 비동기 훅 지연 중에 `P`나 `Enter`가 실행되면, `sidebar_subpane_swap_position`과 `switch_session`이 실시간 렌더링 높이를 캡처하지 않고 과거의 지연된 전역 옵션을 참조하여 이전 값으로 덮어씀.
+  2. 스왑 직후 상단 경계선 보상 타이밍 오차로 인해 축소된 높이가 1회 기록되어 첫 전환 시 -1칸 축소 발생.
+- **조치 내용**:
+  1. **Candidate 1 (JIT 높이 캡처)**: `sidebar_subpane_swap_position`과 `switch_session` 최초 진입 시점에 `remember_sidebar_subpane_height_for_window`를 호출하여 최신 물리 높이를 즉시 전역 확정 (`sidebar_port_tmux.sh`, `tmux-session-launcher`).
+  2. **Candidate 2 (대칭 보상 및 영속화)**: 스왑 완료 직후 `target_h`를 전역 옵션 및 디스크 파일에 즉시 재확정/영속화.
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-swap-manual-resize-fidelity.sh` 회귀 테스트 추가 (전체 15개 테스트 ALL PASS).
+
 ## 2026-08-22 - Architecture: Atomic Subpane Position Swap & Immediate Switch Preservation
 
 - **사용자 요청**:

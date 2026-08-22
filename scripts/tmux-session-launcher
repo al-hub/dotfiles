@@ -2706,6 +2706,9 @@ switch_session()
     local subpane_enabled sub_pane="" sub_height=""
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
     if [ "$subpane_enabled" = "1" ]; then
+        if [ -n "$source_window" ] && declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+            remember_sidebar_subpane_height_for_window "$source_window"
+        fi
         local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
