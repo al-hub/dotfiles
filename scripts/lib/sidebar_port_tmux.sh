@@ -4,6 +4,10 @@ set -euo pipefail
 
 if ! declare -f sidebar_tmux_cmd >/dev/null 2>&1; then
     sidebar_tmux_cmd() {
+        if [ -n "${TMUX_SESSION_LAUNCHER_SOCKET:-}" ]; then
+            command tmux -L "$TMUX_SESSION_LAUNCHER_SOCKET" "$@"
+            return $?
+        fi
         local tmux_socket="${TMUX:-}"
         tmux_socket="${tmux_socket%%,*}"
         if [ -n "$tmux_socket" ] && [ -S "$tmux_socket" ]; then

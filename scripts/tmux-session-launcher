@@ -1070,7 +1070,7 @@ sync_sidebar_layout()
         transition_defer_hook_sync layout
         return 0
     fi
-    if sidebar_layout_hook_guard_active; then
+    if [ "$source" != manual-resize ] && sidebar_layout_hook_guard_active; then
         return 0
     fi
     sidebar_operation_busy && {
@@ -1091,6 +1091,9 @@ sync_sidebar_layout()
     sleep "${TMUX_SESSION_SIDEBAR_LAYOUT_DEBOUNCE:-0.05}"
     if [ "$source" = manual-resize ] && ! sidebar_width_apply_guard_active; then
         remember_sidebar_width_for_window "$window_id"
+        if declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+            remember_sidebar_subpane_height_for_window "$window_id" 2>/dev/null || true
+        fi
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
     fi

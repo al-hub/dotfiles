@@ -6,6 +6,20 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Position Swap (P Key) Manual Resize Sync & Hook Locality (Candidate 1 + 2)
+
+- **사용자 요청**:
+  - 서브페인을 `P` 키로 위/아래 전환(Swap)할 때 서브페인 높이가 보존되지 않는 문제에 대해 원인 분석, 검출 시나리오 작성 및 아키텍처 개선 요청.
+  - Candidate 1(수동 리사이즈 훅 경로에 서브페인 높이 영속화 통합) + Candidate 2(스왑 트랜잭션 진입부 실시간 의도 승격 및 원자적 스왑-리사이즈 보장) 승인.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-swap-manual-resize-detect.sh` 작성: 50줄 창에서 마우스로 서브페인을 26줄로 조절 후 `P` 키로 상단 스왑 시, 비동기 훅에서 높이가 미저장되어 12줄/11줄로 찌그러지는 결함을 재현 및 검출 (RED).
+  2. Candidate 1 + 2 구현 적용.
+- **조치 내용**:
+  1. `sync_sidebar_layout`의 `manual-resize` 경로에서 `remember_sidebar_subpane_height_for_window`를 호출하여 마우스 드래그 즉시 높이 영속화 (`tmux-session-launcher`).
+  2. `manual-resize`가 레이아웃 훅 가드에 의해 블로킹되지 않도록 우회 조건 적용.
+  3. `sidebar_tmux_cmd`에 소켓 환경변수 지원 강화 (`sidebar_port_tmux.sh`).
+  4. 결함 검출 시나리오 통과 (100% GREEN) 및 전체 18개 서브페인/코어 테스트 스위트 100% 통과 (18/18 PASS).
+
 ## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
 
 - **사용자 요청**:

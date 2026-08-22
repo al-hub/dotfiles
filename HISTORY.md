@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Position Swap (P Key) Manual Resize Sync & Hook Locality (Candidate 1 + 2)
+
+- **수동 리사이즈 훅 경로에 서브페인 높이 영속화 통합 (`scripts/tmux-session-launcher`)**:
+  - `sync_sidebar_layout`의 `manual-resize` 경로에서 `remember_sidebar_width_for_window`뿐만 아니라 `remember_sidebar_subpane_height_for_window`를 호출하도록 개선.
+  - 마우스 드래그로 서브페인을 조절하는 즉시 최신 높이가 전역 옵션(`@dotfiles_sidebar_subpane_height`)과 디스크 상태에 영속화되어, 이후 `P` 키나 단축키 조작 시 최신 사용자 조절값이 100% 보존되도록 보장.
+  - `sync_sidebar_layout`에서 명시적 `manual-resize` 요청이 레이아웃 훅 가드(`sidebar_layout_hook_guard_active`)에 의해 무시되지 않도록 우회 조건 정립.
+- **스왑 트랜잭션 및 소켓 호환성 강화 (`scripts/lib/sidebar_port_tmux.sh`)**:
+  - `sidebar_tmux_cmd`에 `TMUX_SESSION_LAUNCHER_SOCKET` 환경변수 지원을 추가하여 테스트 및 복수 소켓 환경에서의 IPC 격리 및 실행 신뢰성 향상.
+- **결함 검출 시나리오 작성 및 전체 18개 테스트 스위트 100% 통과 (`test-subpane-swap-manual-resize-detect.sh` 등 18/18 PASS)**:
+  - 마우스 리사이즈(26줄) 후 `P` 키 상단 스왑, 22줄 재조절 후 하단 복귀 스왑 전 과정에서 높이 무결성 검증 완료.
+
 ## 2026-08-22 - Architecture: Top Subpane Geometry Domain Unification & Auto-Sync (Candidate 1 + 2)
 
 - **순수 도메인 지오메트리 계산 함수 일원화 (`scripts/lib/sidebar_domain.sh`, `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/tmux-session-launcher`)**:
