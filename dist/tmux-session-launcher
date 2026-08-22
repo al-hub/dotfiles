@@ -4602,7 +4602,10 @@ switch_session()
         if [ -n "$session_name" ]; then
             move_cursor "${cached_pane_height:-20}" 1 2>/dev/null || true
             clear_line 2>/dev/null || true
-            printf '%s' "⚡ queued switch to $session_name (#$_transition_sequence_id)..." 2>/dev/null || true
+            local queued_msg="⚡ queued switch to $session_name (#$_transition_sequence_id)..."
+            local max_q_w=$(( ${cached_pane_width:-35} - 1 ))
+            [ "$max_q_w" -lt 1 ] && max_q_w=1
+            printf '%s' "$(truncate_text "$queued_msg" "$max_q_w")" 2>/dev/null || true
         fi
         trace_event "switch.coalesce target=$session_name seq=$_transition_sequence_id source=$source_session state=$(tmux show-option -gqv "$SIDEBAR_TRANSITION_OPTION" 2>/dev/null || true)"
         return 0
@@ -5311,13 +5314,15 @@ update_pane_geometry()
 
 truncate_text()
 {
-    text="$1"
-    max_width="$2"
+    local text="$1"
+    local max_width="${2:-35}"
 
     if [ "$max_width" -le 0 ]; then
-        printf '%s\n' ''
+        printf '%s' ''
+    elif declare -f sidebar_domain_animation_fit_cell_width >/dev/null 2>&1; then
+        sidebar_domain_animation_fit_cell_width "$text" "$max_width"
     else
-        printf '%.*s\n' "$max_width" "$text"
+        printf '%.*s' "$max_width" "$text"
     fi
 }
 
@@ -6118,9 +6123,11 @@ render_footer()
         help='j/k | Enter | c/r/d | o/a | s/P | q'
     fi
 
+    local max_w=$((width - 1))
+    [ "$max_w" -lt 1 ] && max_w=1
     move_cursor "$height" 1
     clear_line
-    printf '%s' "$(truncate_text "$help" "$width")"
+    printf '%s' "$(truncate_text "$help" "$max_w")"
 }
 
 history_title_from_file()
@@ -6907,7 +6914,12 @@ render_prompt_box()
     local prompt="$1"
     update_pane_geometry
     local height="${cached_pane_height:-20}"
-    printf '\033[%s;1H\033[2K%s' "$height" "$prompt" >/dev/tty 2>/dev/null || printf '\033[%s;1H\033[2K%s' "$height" "$prompt"
+    local width="${cached_pane_width:-35}"
+    local max_w=$((width - 1))
+    [ "$max_w" -lt 1 ] && max_w=1
+    local truncated_prompt
+    truncated_prompt="$(truncate_text "$prompt" "$max_w")"
+    printf '\033[%s;1H\033[2K%s' "$height" "$truncated_prompt" >/dev/tty 2>/dev/null || printf '\033[%s;1H\033[2K%s' "$height" "$truncated_prompt"
 }
 
 cleanup_prompt_traps()
@@ -7015,10 +7027,13 @@ message_line()
 {
     message="$1"
     height="${cached_pane_height:-20}"
+    width="${cached_pane_width:-35}"
+    local max_w=$((width - 1))
+    [ "$max_w" -lt 1 ] && max_w=1
 
     move_cursor "$height" 1
     clear_line
-    printf '%s' "$(truncate_text "$message" "${cached_pane_width:-35}")"
+    printf '%s' "$(truncate_text "$message" "$max_w")"
     sleep 1
     mark_full_render_required message-dismissed
 }
@@ -9165,7 +9180,10 @@ run_tui()
                     if [ -n "$selected_session" ]; then
                         move_cursor "${cached_pane_height:-20}" 1
                         clear_line
-                        printf '%s' "⚡ switching to $selected_session..."
+                        local switch_msg="⚡ switching to $selected_session..."
+                        local max_msg_w=$(( ${cached_pane_width:-35} - 1 ))
+                        [ "$max_msg_w" -lt 1 ] && max_msg_w=1
+                        printf '%s' "$(truncate_text "$switch_msg" "$max_msg_w")"
                     fi
                     switch_result=0
                     switch_session "$selected_session" || switch_result=$?

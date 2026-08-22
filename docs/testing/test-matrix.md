@@ -190,6 +190,7 @@ bash tests/tmux-single-sidebar/test-keyboard-e2e-rapid-operations.sh
 # 엣지케이스 스위트
 bash tests/tmux-single-sidebar/test-width-persistence-contract.sh
 bash tests/tmux-single-sidebar/test-width-clamping-single-line.sh
+bash tests/tmux-single-sidebar/test-long-session-name-switching-flicker-detect.sh
 bash tests/tmux-single-sidebar/test-cold-provisioning-contract.sh
 bash tests/tmux-single-sidebar/test-batch-restore-observability.sh
 bash tests/tmux-single-sidebar/test-split-restore-edge-cases.sh
