@@ -39,7 +39,8 @@
 
 ### 📐 핵심 컴포넌트 설계 (`design/`)
 - [**`design/tmux-single-sidebar.md`**](design/tmux-single-sidebar.md): Window-Local Thin Presenter 기반 단일 사이드바 설계
-- [**`design/tmux-session-launcher-internals.md`**](design/tmux-session-launcher-internals.md): 세션 런처 내부 동작 원리 및 IPC 파이프라인
+- [**`design/tmux-session-launcher-internals.md`**](design/tmux-session-launcher-internals.md): 세션 런처 내부 동작 원리 및 IPC 파이프라인 마스터 문서
+- [**`design/architecture-review.html`**](design/architecture-review.html): **[인터랙티브 웹 보고서]** Tailwind & Mermaid 기반 아키텍처 다이어그램 및 리팩토링 리뷰
 
 ---
 
