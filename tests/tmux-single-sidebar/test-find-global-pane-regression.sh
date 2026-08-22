@@ -17,7 +17,7 @@ trap cleanup EXIT
 sleep 1
 
 # Execute delete_session_after_archive via launcher CLI
-if ! bash "$LAUNCHER" --delete-session-after-archive test-archive-sess true >/tmp/archive-test-$$.log 2>&1; then
+if ! "${TMUX[@]}" run-shell "$LAUNCHER --delete-session-after-archive test-archive-sess true" >/tmp/archive-test-$$.log 2>&1; then
     cat /tmp/archive-test-$$.log
     echo "FAIL: --delete-session-after-archive command crashed or failed"
     exit 1

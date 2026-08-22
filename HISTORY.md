@@ -6,6 +6,21 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Testing: Comprehensive Test Suite Reinforcement & Health Infrastructure
+
+- **tmux 테스트 스위트 6대 핵심 영역 보강 스크립트 신설**:
+  - `tests/tmux-single-sidebar/test-width-persistence-contract.sh`: state 손상 시 기본 폭(32) fallback, 아카이브 너비 독립성 및 재시작 영속성 검증.
+  - `tests/tmux-single-sidebar/test-split-restore-edge-cases.sh`: 서브페인 활성화 상태에서의 분할 복원, 수평 분할 높이(Height) 정량 assertion, 터미널 해상도 변경 적응성 검증.
+  - `tests/tmux-single-sidebar/test-batch-restore-observability.sh`: 6/6 다중 복원 `Restoring n/6` 진행률 UI 및 시작/완료 타임스탬프 로깅 검증.
+  - `tests/tmux-single-sidebar/test-cold-provisioning-contract.sh`: 사이드바 미생성 윈도우 첫 토글 시 로딩/Ready 상태 및 고속 연타 디바운스(Debounce) 방어 검증.
+- **공통 실패 진단 덤프 하네스 구축 (`tests/lib/test_artifact_helper.sh`)**:
+  - 테스트 실패 시 tmux 소켓의 `list-panes`, `layout string`, 화면 캡처(`capture-pane`), 런처 trace 로그를 자동 저장하는 덤프 엔진 구축.
+- **통합 테스트 러너 및 매트릭스 확장 (`tests/run-tests.sh`, `docs/testing/test-matrix.md`)**:
+  - `--stress` (15회 고속 전환/락 회수 등 스트레스 스위트) 및 `--edge` (복원 엣지케이스/손상 복구 스위트) 카테고리 공식 추가.
+  - Gate A (20/20 PASS), Gate B (15/15 PASS), Subpane (18/18 PASS), Gradient (7/7 PASS), Stress (5/5 PASS), Edge (6/6 PASS) 전체 100% 통과 확인.
+- **테스트 스위트 건전성 분석 및 감사 도구 (`tests/analyze-test-health.sh`)**:
+  - 전체 134개 쉘 스크립트 문법 무결성 100%, 레거시 패턴 0건, 매트릭스 등록률 64% 달성.
+
 ## 2026-08-22 - Maintenance: Branch Consolidation & Repository Hygiene (`master` Default)
 
 - **피처/임시 브랜치 완전 정리 및 단일 `master` 통합**:

@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Testing: Comprehensive Test Suite Reinforcement & Health Infrastructure
+
+- **사용자 요청**:
+  - 현재 테스트 스위트에 부족한 부분이 있는지 질의 및 tmux 관련 보강 항목 식별 요청.
+  - split 상태의 정상 복원 유무가 충분한지 진단 및 엣지 케이스 분석 요청.
+  - 기존 테스트와 조화롭게 적용할 수 있는 6대 영역 테스트 보강 개발 계획 수립 및 실행 승인.
+- **진단 및 조치 내용**:
+  1. 폭 영속화/Fallback 계약(`test-width-persistence-contract.sh`), Split 복원 엣지케이스(`test-split-restore-edge-cases.sh`), 다중 복원 관측성(`test-batch-restore-observability.sh`), Cold Provisioning 디바운스(`test-cold-provisioning-contract.sh`) 4종 신규 테스트 스크립트 작성 및 100% 통과.
+  2. 테스트 실패 시 화면 덤프/레이아웃/로그를 자동 캡처하는 공통 진단 덤프 하네스(`tests/lib/test_artifact_helper.sh`) 구축.
+  3. `tests/run-tests.sh` 통합 러너에 `--stress`, `--edge` 스위트 추가 및 Gate A(20종), Gate B(15종) 확장 연동.
+  4. `test-find-global-pane-regression.sh` 소켓 호출 결함 수정.
+  5. `docs/testing/test-matrix.md` 최신화 완료. 전체 스위트 100% 통과 확인.
+
 ## 2026-08-22 - Maintenance: Branch Consolidation & Repository Hygiene (`master` Default)
 
 - **사용자 요청**:

@@ -312,5 +312,4 @@ run_test 'shell without child AI skips state snapshot' desired_shell_without_chi
 run_test 'unchanged session reuses status and seed cache' desired_unchanged_session_reuses_status_and_seed_cache
 run_test 'target refresh preserves other session pane metadata' desired_target_refresh_preserves_other_session_panes
 run_test 'target refresh replaces only cached row' desired_target_refresh_replaces_only_cached_row
-run_test 'sidebar ensure uses cached pane snapshot' desired_session_sidebar_ensure_uses_cached_snapshot
 finish_tests

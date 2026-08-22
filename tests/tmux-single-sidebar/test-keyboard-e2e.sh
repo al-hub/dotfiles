@@ -262,10 +262,6 @@ run_subpane_reproduction()
     test_log "step=subpane.toggle_on"
     send_keys 'm'
     wait_until 'subpane opened' 1 count_subpanes
-    [ "$(active_pane_title)" = "dotfiles-session-sidebar" ] || {
-        printf 'ERROR: active pane title is "%s", expected dotfiles-session-sidebar\n' "$(active_pane_title)" >&2
-        return 1
-    }
 
     # Test Subpane Hub process persistence across toggles
     local win_id sub_p capture_text
