@@ -6,6 +6,18 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Layout Snapshot Symmetry & Binary Installation Sync
+
+- **사용자 요청**:
+  - 서브페인을 하단에서 상단으로 이동 후, 각 세션 간 이동(Enter) 시 높이가 -1씩 계속 줄어드는 현상에 대한 원인 분석 및 아키텍처 개선 요청.
+- **원인 분석**:
+  1. `snapshot_work_layout_transaction`에서 상단(`-b`) 서브페인 분리 후 재조인 시 `join-pane -v -l "$sub_height"`를 실행하여 경계선 1줄 오차로 인해 높이가 $H - 1$로 줄어들던 누락 지점 발견.
+  2. 로컬 설치 경로(`~/.local/bin/tmux-session-launcher`)가 이전 빌드 바이너리로 유지되어 사용자의 실행 중인 tmux 단축키와 훅이 구버전을 실행하던 불일치 확인.
+- **조치 내용**:
+  1. `snapshot_work_layout_transaction`에 `pos_flag == "-b"` 시 `join_l="$((sub_height + 1))"` 사전 보상 적용 (`tmux-session-launcher`).
+  2. 최신 번들을 `~/.local/bin/tmux-session-launcher`에 동기화.
+  3. 전체 15개 서브페인/코어 테스트 100% 통과 검증.
+
 ## 2026-08-22 - Architecture: JIT Height Capture & Manual Resize Preservation
 
 - **사용자 요청**:

@@ -6,6 +6,15 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Layout Snapshot Symmetry & Binary Installation Sync
+
+- **작업 레이아웃 스냅샷 내 상단 서브페인 경계선 사전 보상 (`scripts/tmux-session-launcher`)**:
+  - `snapshot_work_layout_transaction`에서 상단(`-b`) 서브페인 임시 분리 후 재조인(`join-pane`) 시 `join_l="$((sub_height + 1))"` 사전 보상을 누락하여 레이아웃 스냅샷 직후 서브페인 높이가 1줄씩 줄어들던 버그 완전 해결.
+- **로컬 설치 바이너리 동기화 (`~/.local/bin/tmux-session-launcher`)**:
+  - `dist/tmux-session-launcher` 최신 빌드 바이너리를 `~/.local/bin/tmux-session-launcher`에 동기화하여, 실행 중인 tmux 단축키(`Ctrl+a P`) 및 런처 훅이 최신 아키텍처 코드를 즉시 실행하도록 보장.
+- **프로덕션 번들 빌드 및 전체 테스트 검증 (15/15 PASS)**:
+  - 15개 전체 서브페인/코어 계약 테스트 스위트 100% 통과 확인.
+
 ## 2026-08-22 - Architecture: JIT Height Capture & Manual Resize Preservation
 
 - **전환 직전 JIT 높이 동기화 (Candidate 1 - `scripts/lib/sidebar_port_tmux.sh`, `scripts/tmux-session-launcher`)**:

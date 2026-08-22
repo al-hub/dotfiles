@@ -3280,7 +3280,11 @@ snapshot_work_layout_transaction()
                 pos_flag="-b"
             fi
         fi
-        if ! tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$sub_height" 2>/dev/null; then
+        local join_l="$sub_height"
+        if [ "$pos_flag" = "-b" ]; then
+            join_l="$((sub_height + 1))"
+        fi
+        if ! tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" 2>/dev/null; then
             tmux join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v 2>/dev/null || true
         fi
         if [ -n "$sub_height" ] && [ "$sub_height" -ge 4 ] 2>/dev/null; then
