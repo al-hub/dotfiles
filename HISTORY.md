@@ -6,6 +6,18 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Atomic Subpane Position Swap & Immediate Switch Preservation
+
+- **원자적 복합 스왑 파이프라인 (Candidate 1 - `scripts/lib/sidebar_port_tmux.sh`)**:
+  - `sidebar_subpane_swap_position`에서 `swap-pane`과 `resize-pane`이 분리 실행될 때 찰나의 순간에 발생하는 거대 임시 높이(35줄 등)가 `window-resized` 훅에 의해 전역 목표 높이로 오인되어 덮어써지던 경합 상태 완전 해결.
+  - `swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h"`를 **단일 원자적 복합 tmux IPC 트랜잭션**으로 통합하여 1개 프레임 내에서 물리적 위치와 높이를 동시 확정.
+- **스왑 시 포커스 보존 및 레이아웃 메타데이터 즉시 동기화 (Candidate 2 - `scripts/lib/sidebar_port_tmux.sh`)**:
+  - 스왑 실행 전 활성 페인(`orig_focus`)을 기억하여 스왑 후에도 원래 작업 컨텍스트(작업창, 서브페인, 런처)를 투명하게 보존하고, `save_sidebar_layout`을 호출하여 윈도우 레이아웃 메타데이터를 즉시 갱신.
+- **스왑 직후 즉시 전환 및 토글 회귀 테스트 추가 (`tests/tmux-single-sidebar/test-subpane-swap-switch-immediate.sh`)**:
+  - 서브페인 상단 스왑 직후 지연 없이 3개 세션 연속 전환(Enter 연타), 서브페인 on/off 토글, 왕복 복귀 전체 시나리오에서 높이 18줄 100% 불변 보존 검증 완료 (ALL PASS).
+- **프로덕션 번들 빌드 (`dist/tmux-session-launcher`)**:
+  - 최신 번들 빌드 및 배포 완료.
+
 ## 2026-08-22 - Architecture: Top-Position Subpane Geometric Symmetry & Intent Decoupling
 
 - **상단(Top) 분할 지오메트리 대칭 어댑터 (Candidate 1 - `scripts/lib/sidebar_switch.sh`, `scripts/lib/sidebar_subpane_hub.sh`, `scripts/lib/sidebar_port_tmux.sh`)**:

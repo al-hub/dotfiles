@@ -820,9 +820,22 @@ sidebar_subpane_swap_position() {
         target_h="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
         [ -n "$target_h" ] && [ "$target_h" -ge 4 ] 2>/dev/null || target_h=12
 
-        sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" 2>/dev/null || true
-        sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
-        sidebar_tmux_cmd select-pane -t "$launcher_pane" 2>/dev/null || true
+        local orig_focus
+        orig_focus="$(sidebar_tmux_cmd display-message -p '#{pane_id}' 2>/dev/null || true)"
+
+        if [ "$orig_focus" = "$sub_pane" ]; then
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sub_pane" 2>/dev/null || true
+        elif [ "$orig_focus" = "$launcher_pane" ]; then
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$launcher_pane" 2>/dev/null || true
+        elif [ -n "$orig_focus" ]; then
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$orig_focus" 2>/dev/null || true
+        else
+            sidebar_tmux_cmd swap-pane -d -s "$launcher_pane" -t "$sub_pane" \; resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
+        fi
+
+        if declare -f save_sidebar_layout >/dev/null 2>&1; then
+            save_sidebar_layout "$window_id" 2>/dev/null || true
+        fi
     fi
 }
 

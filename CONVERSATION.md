@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Atomic Subpane Position Swap & Immediate Switch Preservation
+
+- **사용자 요청**:
+  - 서브페인을 하단에서 상단으로 이동(`P` / `Ctrl+a P`)한 직후 세션 간 이동(Enter) 및 토글 시 높이가 일정하지 않거나 줄어드는 현상에 대한 아키텍처 진단 및 개선 요청.
+  - Candidate 1(원자적 복합 스왑 파이프라인)과 Candidate 2(스왑 시 포커스 보존 및 메타데이터 동기화) 동시 적용 요청.
+- **원인 분석**:
+  1. `swap-pane`과 `resize-pane`이 분리 실행될 때 찰나의 순간에 서브페인이 런처의 거대 높이(35줄)를 일시 점유하고, 이 상태가 `window-resized` 훅에 의해 전역 높이로 오인되어 덮어써짐.
+  2. 스왑 후 포커스가 무조건 런처로 이동하여 사용자의 원래 작업 포커스가 훼손됨.
+- **조치 내용**:
+  1. **Candidate 1 (원자적 스왑 파이프라인)**: `swap-pane \; resize-pane -y "$target_h"`를 단일 tmux IPC 트랜잭션으로 통합 실행 (`sidebar_port_tmux.sh`).
+  2. **Candidate 2 (포커스/메타데이터 보존)**: `orig_focus`를 기억하여 스왑 후에도 원래 포커스를 유지하고 `save_sidebar_layout` 즉시 호출.
+  3. **검증**: `tests/tmux-single-sidebar/test-subpane-swap-switch-immediate.sh` 회귀 테스트 추가 (전체 14개 테스트 ALL PASS).
+
 ## 2026-08-22 - Architecture: Top-Position Subpane Geometric Symmetry & Intent Decoupling
 
 - **사용자 요청**:
