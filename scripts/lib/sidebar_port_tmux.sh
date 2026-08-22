@@ -244,9 +244,26 @@ read_persisted_sidebar_subpane_position() {
     esac
 }
 
+sidebar_layout_hook_guard_active() {
+    local guard
+    guard="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_LAYOUT_HOOK_GUARD_OPTION:-@dotfiles_sidebar_layout_hook_guard}" 2>/dev/null || true)"
+    case "$guard" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    local now
+    now="$(date +%s%N)"
+    if [ "$guard" -gt "$now" ]; then
+        return 0
+    fi
+    return 1
+}
+
 remember_sidebar_subpane_height_for_window() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
+    if declare -f transition_is_active >/dev/null 2>&1 && transition_is_active; then
+        return 0
+    fi
     local win_sess
     win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
     if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$win_sess"; then

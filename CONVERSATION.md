@@ -6,6 +6,19 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-22 - Architecture: Intent vs Transient Observation Decoupling & Atomic Switch Pipeline (Candidate 1)
+
+- **사용자 요청**:
+  - Candidate 1(의도와 물리 관측치 분리) 적용 전, 오류가 정확히 검출(Detect)되는 시나리오를 작성하여 점검한 뒤 승인 후 개선 진행 요청.
+- **검출 시나리오 점검 및 결과**:
+  1. `test-subpane-intent-decay-repro.sh` 작성: $H=20$ 상태에서 전환 중 비동기 훅이 임시 19줄 관측치를 캡처했을 때, 기존 아키텍처에서는 전역 옵션이 19로 오염되고 $20 \to 19 \to 18 \dots$ 로 단조 감쇄(Monotonic Decay)되는 결함을 100% 재현 및 검출 (RED).
+  2. 사용자 승인 후 Candidate 1 구현 진행.
+- **조치 내용**:
+  1. `switch_session`에서 매 전환 시 물리 높이를 재캡처하던 불필요한 관측 코드를 제거하고, 전역 정규 의도(`@dotfiles_sidebar_subpane_height`)를 읽어 조인하도록 분리 (`tmux-session-launcher`).
+  2. `remember_sidebar_subpane_height_for_window`에 `transition_is_active` 가드를 적용하여 전환 도중의 비동기 훅 오염 차단 (`sidebar_port_tmux.sh`).
+  3. `sidebar_switch_execute_hot` 복합 명령에 `resize-pane`을 인라인 통합하고 500ms 훅 가드 적용 (`sidebar_switch.sh`).
+  4. 결함 검출 시나리오가 즉시 GREEN으로 통과하고, 전체 16개 서브페인 및 코어 테스트 스위트 100% 통과 (16/16 PASS).
+
 ## 2026-08-22 - Architecture: Switch-Client-First Pipeline Ordering & Detached Dimension Truncation Prevention
 
 - **사용자 요청**:

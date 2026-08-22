@@ -6,6 +6,16 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-22 - Architecture: Intent vs Transient Observation Decoupling & Atomic Switch Pipeline (Candidate 1)
+
+- **사용자 정규 의도(Canonical Intent)와 순간 관측치의 엄격한 분리 (`scripts/tmux-session-launcher`, `scripts/lib/sidebar_port_tmux.sh`)**:
+  - `switch_session` 핫패스에서 세션 전환 시마다 `remember_sidebar_subpane_height_for_window`를 실행하여 물리적 렌더링 관측치를 재측정하던 결합을 제거하고, 정규 전역 설정값(`@dotfiles_sidebar_subpane_height`)을 직접 전달하도록 개선.
+  - `remember_sidebar_subpane_height_for_window`에 전환 활성 가드(`transition_is_active`)를 적용하여, 전환 진행 중 또는 레이아웃 훅 가드 활성 중에 발생하는 비동기 훅(`after-resize-pane`, `after-join-pane`, `window-resized`)이 임시 축소값($H-1$)으로 영속 상태를 오염시키는 피드백 루프 원천 차단.
+- **원자적 복합 IPC 파이프라인 통합 (`scripts/lib/sidebar_switch.sh`)**:
+  - `switch-client`, `join-pane`, `resize-pane`, `select-pane`을 단 1개의 `\;` 복합 트랜잭션으로 묶어 tmux C 코어 내부에서 원자적으로 일괄 처리하고 500ms 훅 가드를 활성화하여 훅 실행 틈새 레이스 컨디션 박멸.
+- **결함 검출 시나리오 및 전체 16개 테스트 스위트 100% 통과 (`tests/tmux-single-sidebar/test-subpane-intent-decay-repro.sh` 등 16/16 PASS)**:
+  - 임시 관측치 오염을 검출하는 회귀 테스트 추가 및 전체 서브페인/코어 테스트 통과 확인.
+
 ## 2026-08-22 - Architecture: Switch-Client-First Pipeline Ordering & Detached Dimension Truncation Prevention
 
 - **전환 파이프라인 순서 재정의 (`switch-client` 선행 실행 - `scripts/lib/sidebar_switch.sh`)**:

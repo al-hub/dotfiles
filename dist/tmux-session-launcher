@@ -746,9 +746,26 @@ read_persisted_sidebar_subpane_position() {
     esac
 }
 
+sidebar_layout_hook_guard_active() {
+    local guard
+    guard="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_LAYOUT_HOOK_GUARD_OPTION:-@dotfiles_sidebar_layout_hook_guard}" 2>/dev/null || true)"
+    case "$guard" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    local now
+    now="$(date +%s%N)"
+    if [ "$guard" -gt "$now" ]; then
+        return 0
+    fi
+    return 1
+}
+
 remember_sidebar_subpane_height_for_window() {
     local window_id="${1:-}"
     [ -n "$window_id" ] || return 0
+    if declare -f transition_is_active >/dev/null 2>&1 && transition_is_active; then
+        return 0
+    fi
     local win_sess
     win_sess="$(sidebar_tmux_cmd display-message -p -t "$window_id" '#{session_name}' 2>/dev/null || true)"
     if declare -f is_infrastructure_session >/dev/null 2>&1 && is_infrastructure_session "$win_sess"; then
@@ -1478,17 +1495,20 @@ sidebar_switch_execute_hot() {
                 join_l="$((target_h + 1))"
             fi
 
+            if declare -f set_sidebar_layout_hook_guard >/dev/null 2>&1; then
+                set_sidebar_layout_hook_guard 500
+            else
+                sidebar_tmux_cmd set-option -gq "${SIDEBAR_LAYOUT_HOOK_GUARD_OPTION:-@dotfiles_sidebar_layout_hook_guard}" "$(( $(date +%s%N) + 500000000 ))" 2>/dev/null || true
+            fi
+
             if [ -n "$client_tty" ]; then
-                if ! sidebar_tmux_cmd switch-client -c "$client_tty" -t "$target_spec" \; set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
-                    sidebar_tmux_cmd switch-client -c "$client_tty" -t "$target_spec" \; set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
+                if ! sidebar_tmux_cmd switch-client -c "$client_tty" -t "$target_spec" \; set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                    sidebar_tmux_cmd switch-client -c "$client_tty" -t "$target_spec" \; set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
             else
-                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
-                    sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
+                if ! sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v -l "$join_l" \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null; then
+                    sidebar_tmux_cmd set-option -gq "$lease_opt" "$target_win" \; join-pane -d $pos_flag -s "$sub_pane" -t "$sidebar_pane" -v \; resize-pane -t "$sub_pane" -y "$target_h" \; select-pane -t "$sidebar_pane" 2>/dev/null || return 1
                 fi
-            fi
-            if [ -n "$target_h" ] && [ "$target_h" -ge 4 ] 2>/dev/null; then
-                sidebar_tmux_cmd resize-pane -t "$sub_pane" -y "$target_h" 2>/dev/null || true
             fi
             sidebar_tmux_cmd set-option -p -q -t "$sub_pane" allow-rename off 2>/dev/null || true
             sidebar_tmux_cmd select-pane -t "$sub_pane" -T "${SIDEBAR_SUBPANE_TITLE:-dotfiles-sidebar-subpane}" 2>/dev/null || true
@@ -2860,7 +2880,7 @@ sync_sidebar_layout()
         transition_defer_hook_sync layout
         return 0
     fi
-    if [ "$source" != manual-resize ] && sidebar_layout_hook_guard_active; then
+    if sidebar_layout_hook_guard_active; then
         return 0
     fi
     sidebar_operation_busy && {
@@ -4500,11 +4520,11 @@ switch_session()
     local subpane_enabled sub_pane="" sub_height=""
     subpane_enabled="$(sidebar_tmux_cmd show-option -gqv "${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}" 2>/dev/null || echo 0)"
     if [ "$subpane_enabled" = "1" ]; then
-        if [ -n "$source_window" ] && declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
-            remember_sidebar_subpane_height_for_window "$source_window"
-        fi
         local opt="${SIDEBAR_SUBPANE_HEIGHT_OPTION:-@dotfiles_sidebar_subpane_height}"
         sub_height="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
+        if [ -z "$sub_height" ] && declare -f sidebar_subpane_get_height >/dev/null 2>&1; then
+            sub_height="$(sidebar_subpane_get_height 2>/dev/null || true)"
+        fi
         if [ -n "$source_window" ] && [ "$source_window" != "$target_window" ]; then
             sub_pane="$(sidebar_window_subpane "$source_window" || true)"
             if [ -z "$sub_pane" ]; then
