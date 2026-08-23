@@ -111,6 +111,8 @@ SIDEBAR_TARGET_MARKER_OPTION="@dotfiles_sidebar_target_marker"
 SIDEBAR_RESTORE_TOPOLOGY_OPTION="@dotfiles_sidebar_restore_topology"
 SIDEBAR_WIDTH_APPLY_GUARD_OPTION="@dotfiles_sidebar_width_apply_guard"
 SIDEBAR_PROVISION_OPTION="@dotfiles_sidebar_provisioning"
+SIDEBAR_TOPOLOGY_EPOCH_OPTION="@dotfiles_sidebar_topology_epoch"
+my_topology_epoch=0
 TMUX_BATCH_BUSY_OPTION="@tmux_batch_busy"
 FAIL_STEP="${TMUX_SESSION_LAUNCHER_FAIL_STEP:-}"
 SIDEBAR_ASYNC_RESTORE="${TMUX_SESSION_SIDEBAR_ASYNC_RESTORE:-true}"
@@ -258,6 +260,7 @@ current_transition_source=""
 current_transition_target=""
 transition_metrics_start_us=0
 sidebar_session_cached=""
+rendered_attached_once=false
 last_force_refresh_check_epoch=""
 last_input_epoch_us=""
 tick_timer_pid=""
@@ -932,12 +935,14 @@ check_restore_precondition()
             return 1
         }
     fi
-    if [ "${created:-false}" = true ] && [ -n "${restore_created_identity:-}" ]; then
-        actual_identity="$(session_identity_fingerprint "$restore_name_value")"
-        [ "$actual_identity" = "$restore_created_identity" ] || {
-            operation_conflict "$operation_id" restore "$phase" restored-session-changed
-            return 1
-        }
+    if [ "${created:-false}" = true ]; then
+        if [ -n "${restore_created_identity:-}" ]; then
+            actual_identity="$(session_identity_fingerprint "$restore_name_value")"
+            [ "$actual_identity" = "$restore_created_identity" ] || {
+                operation_conflict "$operation_id" restore "$phase" restored-session-changed
+                return 1
+            }
+        fi
     elif session_exists "$restore_name_value"; then
         operation_conflict "$operation_id" restore "$phase" restore-name-collision
         return 1
@@ -1089,10 +1094,16 @@ sync_sidebar_layout()
 
     tmux set-option -gq "$SIDEBAR_LAYOUT_HOOK_GUARD_OPTION" "$(( $(date +%s%N) + 500000000 ))" 2>/dev/null || true
     sleep "${TMUX_SESSION_SIDEBAR_LAYOUT_DEBOUNCE:-0.05}"
-    if [ "$source" = manual-resize ] && ! sidebar_width_apply_guard_active; then
-        remember_sidebar_width_for_window "$window_id"
-        if declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
-            remember_sidebar_subpane_height_for_window "$window_id" 2>/dev/null || true
+    if { [ "$source" = manual-resize ] || [ "$source" = window-resized ]; } && ! sidebar_width_apply_guard_active && ! transition_is_active; then
+        local is_attached
+        is_attached="$(tmux display-message -p -t "$window_id" '#{?window_active,1,0}' 2>/dev/null || echo 0)"
+        if [ "$source" = manual-resize ] || [ "$is_attached" = "1" ]; then
+            remember_sidebar_width_for_window "$window_id"
+            if declare -f remember_sidebar_subpane_height_for_window >/dev/null 2>&1; then
+                remember_sidebar_subpane_height_for_window "$window_id" 2>/dev/null || true
+            fi
+        else
+            trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=detached-window"
         fi
     else
         trace_event "sidebar.width.global-save.skip window=$window_id source=$source reason=non-manual-or-internal"
@@ -1715,15 +1726,8 @@ current_sidebar_width()
 
 sidebar_width()
 {
-    case "${_cache_sidebar_width:-}" in
-        ''|*[!0-9]*) ;;
-        *) printf '%s\n' "$_cache_sidebar_width"; return 0 ;;
-    esac
-
     local remembered width persisted
 
-    # A target window can be narrower while detached. Its live pane width is
-    # therefore not a stable sidebar width source for the next transition.
     remembered="$(tmux show-option -gqv '@dotfiles-session-sidebar-width' 2>/dev/null || true)"
     case "$remembered" in
         ''|*[!0-9]*) ;;
@@ -1732,6 +1736,11 @@ sidebar_width()
             printf '%s\n' "$remembered"
             return 0
             ;;
+    esac
+
+    case "${_cache_sidebar_width:-}" in
+        ''|*[!0-9]*) ;;
+        *) printf '%s\n' "$_cache_sidebar_width"; return 0 ;;
     esac
 
     persisted="$(read_persisted_sidebar_width || true)"
@@ -2507,8 +2516,21 @@ wait_for_sidebar_content_ready()
     return 1
 }
 
+bump_topology_epoch()
+{
+    local current_epoch
+    current_epoch="$(tmux show-option -gqv "$SIDEBAR_TOPOLOGY_EPOCH_OPTION" 2>/dev/null || echo 0)"
+    case "$current_epoch" in
+        ''|*[!0-9]*) current_epoch=0 ;;
+    esac
+    current_epoch=$(( current_epoch + 1 ))
+    tmux set-option -gq "$SIDEBAR_TOPOLOGY_EPOCH_OPTION" "$current_epoch" 2>/dev/null || true
+    trace_event "topology.epoch.bump epoch=$current_epoch"
+}
+
 signal_managed_sidebar_refresh()
 {
+    bump_topology_epoch
     local window_id sidebar_pane sidebar_pid
     while IFS= read -r window_id; do
         [ -n "$window_id" ] || continue
@@ -2531,6 +2553,7 @@ signal_managed_sidebar_refresh()
 
 signal_managed_sidebar_refresh_batch()
 {
+    bump_topology_epoch
     local session_name_value pane_id pane_pid
     while IFS='|' read -r session_name_value pane_id pane_pid; do
         [ -n "$pane_id" ] || continue
@@ -3370,16 +3393,27 @@ pane_height()
 
 update_pane_geometry()
 {
-    local width height
-    if [ -n "$SELF_PANE" ]; then
-        width="$(tmux display-message -p -t "$SELF_PANE" '#{pane_width}' 2>/dev/null || printf '35')"
-        height="$(tmux display-message -p -t "$SELF_PANE" '#{pane_height}' 2>/dev/null || printf '20')"
-    else
-        width="$(tmux display-message -p '#{pane_width}' 2>/dev/null || printf '35')"
-        height="$(tmux display-message -p '#{pane_height}' 2>/dev/null || printf '20')"
+    local width="" height=""
+    width="$(tput cols 2>/dev/null || true)"
+    height="$(tput lines 2>/dev/null || true)"
+    if [ -z "$width" ] || [ "$width" -le 0 ] 2>/dev/null; then
+        width="${COLUMNS:-}"
+    fi
+    if [ -z "$height" ] || [ "$height" -le 0 ] 2>/dev/null; then
+        height="${LINES:-}"
+    fi
+    if [ -z "$width" ] || [ "$width" -le 0 ] 2>/dev/null; then
+        if [ -n "${TMUX_PANE:-${SELF_PANE:-}}" ]; then
+            width="$(tmux display-message -p -t "${TMUX_PANE:-${SELF_PANE:-}}" '#{pane_width}' 2>/dev/null || echo 35)"
+        fi
+    fi
+    if [ -z "$height" ] || [ "$height" -le 0 ] 2>/dev/null; then
+        if [ -n "${TMUX_PANE:-${SELF_PANE:-}}" ]; then
+            height="$(tmux display-message -p -t "${TMUX_PANE:-${SELF_PANE:-}}" '#{pane_height}' 2>/dev/null || echo 40)"
+        fi
     fi
     case "$width" in ''|*[!0-9]*) width=35 ;; esac
-    case "$height" in ''|*[!0-9]*) height=20 ;; esac
+    case "$height" in ''|*[!0-9]*) height=40 ;; esac
     cached_pane_width="$width"
     cached_pane_height="$height"
 }
@@ -3521,9 +3555,6 @@ collect_sessions()
         client_switch_occurred=true
     fi
     old_client_sessions="$client_sessions"
-    if [ "$client_switch_occurred" = "true" ]; then
-        mark_full_render_required client-switch-refresh
-    fi
     local my_session
     my_session="$(sidebar_session_name || true)"
     if [ -n "$my_session" ]; then
@@ -3553,30 +3584,54 @@ collect_sessions()
         is_my_session_attached=true
     fi
 
+    if [ "$client_switch_occurred" = "true" ]; then
+        if [ "$is_my_session_attached" = "true" ] || [ "$client_session_is_my_session" = "true" ]; then
+            if ! selection_sync_window_pending; then
+                mark_full_render_required client-switch-refresh
+            fi
+        fi
+    fi
+
     local session_switch_occurred=false
     if [ -n "${old_current_session:-}" ] && [ "$current_session" != "$old_current_session" ]; then
         session_switch_occurred=true
     fi
 
     if [ "$is_my_session_attached" = "true" ] && [ "${was_my_session_attached:-}" != "true" ]; then
-        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
-            selected_session="$my_session"
-            old_selected="$my_session"
-            trace_event "selection.refresh.reset reason=client-session-attached session=$my_session"
+        if selection_sync_window_pending; then
+            trace_event "selection.refresh.absorb reason=client-session-attached session=$my_session"
+            if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+                selected_session="$my_session"
+                old_selected="$my_session"
+            fi
         else
-            trace_event "selection.refresh.preserve reason=client-session-attached selected=$selected_session current=$my_session"
+            if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+                selected_session="$my_session"
+                old_selected="$my_session"
+                trace_event "selection.refresh.reset reason=client-session-attached session=$my_session"
+            else
+                trace_event "selection.refresh.preserve reason=client-session-attached selected=$selected_session current=$my_session"
+            fi
+            mark_full_render_required client-session-attached
         fi
-        mark_full_render_required client-session-attached
     fi
     if [ "$client_switch_occurred" = "true" ] && [ "$client_session_is_my_session" = "true" ]; then
-        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
-            selected_session="$my_session"
-            old_selected="$my_session"
-            trace_event "selection.refresh.reset reason=client-list-change session=$my_session"
+        if selection_sync_window_pending; then
+            trace_event "selection.refresh.absorb reason=client-session-switch session=$my_session"
+            if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+                selected_session="$my_session"
+                old_selected="$my_session"
+            fi
         else
-            trace_event "selection.refresh.preserve reason=client-list-change selected=$selected_session current=$my_session"
+            if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+                selected_session="$my_session"
+                old_selected="$my_session"
+                trace_event "selection.refresh.reset reason=client-list-change session=$my_session"
+            else
+                trace_event "selection.refresh.preserve reason=client-list-change selected=$selected_session current=$my_session"
+            fi
+            mark_full_render_required client-session-switch
         fi
-        mark_full_render_required client-session-switch
     fi
     was_my_session_attached="$is_my_session_attached"
     if [ "$timing_enabled" = "1" ]; then
@@ -4071,27 +4126,33 @@ EOF
 
     selected_session="${session_names[$selected_index]}"
     if [ "$client_switch_occurred" = "true" ] && [ "$client_session_is_my_session" = "true" ]; then
-        if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
-            align_selection_to_session "$my_session"
-            trace_event "selection.refresh.align reason=client-list-change session=$my_session"
-        else
-            trace_event "selection.refresh.align-skip reason=valid-selection selected=$selected_session current=$my_session"
-        fi
+        align_selection_to_session "$my_session"
+        trace_event "selection.refresh.align reason=client-list-change session=$my_session"
     fi
     ensure_selection_visible
-    trace_event "collect.sessions.end count=${#session_names[@]} selected=$selected_session"
+    my_topology_epoch="$(tmux show-option -gqv "$SIDEBAR_TOPOLOGY_EPOCH_OPTION" 2>/dev/null || echo 0)"
+    trace_event "collect.sessions.end count=${#session_names[@]} selected=$selected_session epoch=$my_topology_epoch"
     debug_log "collect_sessions end current_session=$current_session selected_session=$selected_session selected_index=$selected_index count=${#session_names[@]}"
 }
 
 ensure_selection_visible()
 {
-    height="${cached_pane_height:-20}"
+    if [ -z "${cached_pane_height:-}" ] || [ "${cached_pane_height:-0}" -le 0 ]; then
+        update_pane_geometry
+    fi
+    height="${cached_pane_height:-40}"
     if [ "$view_mode" = "history" ]; then
         visible_rows=$(((height - 4) / 2))
     else
         visible_rows=$((height - 3))
     fi
     [ "$visible_rows" -lt 1 ] && visible_rows=1
+
+    local count="${#session_names[@]}"
+    if [ "$count" -gt 0 ] && [ "$selected_index" -ge "$count" ]; then
+        selected_index=$((count - 1))
+    fi
+    [ "$selected_index" -lt 0 ] && selected_index=0
 
     if [ "$selected_index" -lt "$scroll_offset" ]; then
         scroll_offset="$selected_index"
@@ -4100,6 +4161,9 @@ ensure_selection_visible()
     fi
 
     [ "$scroll_offset" -lt 0 ] && scroll_offset=0
+    if [ "$count" -gt 0 ] && [ "$scroll_offset" -ge "$count" ]; then
+        scroll_offset=0
+    fi
     return 0
 }
 
@@ -4185,21 +4249,24 @@ render_header()
 
 render_footer()
 {
+    if [ -z "${cached_pane_height:-}" ] || [ "${cached_pane_height:-0}" -le 0 ]; then
+        update_pane_geometry
+    fi
     width="${cached_pane_width:-35}"
-    height="${cached_pane_height:-20}"
-    help='j/k Enter c/r/d o/a s/P q'
+    height="${cached_pane_height:-40}"
+    help='Enter o:Open c:Create d:Del'
 
     if [ "$width" -ge 45 ]; then
-        help='j/k | Enter | c/r/d | o/a | s: sub | P: pos | q'
+        help='j/k:Move | Enter:Select | o:Open | c:Create | d:Del | P:Sub | q'
+    elif [ "$width" -ge 35 ]; then
+        help='Enter:Select o:Open c:Create d:Del'
     elif [ "$width" -ge 30 ]; then
-        help='j/k | Enter | c/r/d | o/a | s/P | q'
+        help='Enter o:Open c:Create d:Del'
     fi
 
-    local max_w=$((width - 1))
-    [ "$max_w" -lt 1 ] && max_w=1
     move_cursor "$height" 1
     clear_line
-    printf '%s' "$(truncate_text "$help" "$max_w")"
+    printf '%s' "$(truncate_text "$help" "$width")"
 }
 
 history_title_from_file()
@@ -4289,7 +4356,13 @@ render_history()
 
     move_cursor "$line" 1
     clear_line
-    printf '%s' "$(truncate_text 'open: Space mark, a all, Enter restore, d delete' "$width")"
+    local hist_help="Space:Mark a:All Enter:Open"
+    if [ "$width" -ge 45 ]; then
+        hist_help="open: Space:Mark | a:All | Enter:Open | d:Delete"
+    elif [ "$width" -ge 35 ]; then
+        hist_help="open: Space:Mark a:All Enter:Open"
+    fi
+    printf '%s' "$(truncate_text "$hist_help" "$width")"
 
     line="$start"
     while [ "$line" -lt "${cached_pane_height:-20}" ]; do
@@ -4319,21 +4392,47 @@ print_session_name()
 format_session_name()
 {
     local name="$1"
-    local width="${2:-0}"
+    local width="$2"
     local animate="${3:-false}"
     local seed="${4:-0}"
 
     [ "$width" -lt 0 ] && width=0
     local text=""
+    local text_visual_width=0
     if [ "$width" -gt 0 ]; then
-        text="${name:0:width}"
+        local total_cell_width
+        if declare -f sidebar_domain_animation_measure_cell_width >/dev/null 2>&1; then
+            total_cell_width="$(sidebar_domain_animation_measure_cell_width "$name")"
+        else
+            total_cell_width="${#name}"
+        fi
+
+        if [ "$total_cell_width" -gt "$width" ] && [ "$width" -gt 1 ]; then
+            if declare -f sidebar_domain_animation_fit_cell_width >/dev/null 2>&1; then
+                text="$(sidebar_domain_animation_fit_cell_width "$name" "$((width - 1))")…"
+                text_visual_width="$(sidebar_domain_animation_measure_cell_width "$text")"
+            else
+                text="${name:0:$((width - 1))}…"
+                text_visual_width="${#text}"
+            fi
+        else
+            if declare -f sidebar_domain_animation_fit_cell_width >/dev/null 2>&1; then
+                text="$(sidebar_domain_animation_fit_cell_width "$name" "$width")"
+                text_visual_width="$(sidebar_domain_animation_measure_cell_width "$text")"
+            else
+                text="${name:0:width}"
+                text_visual_width="${#text}"
+            fi
+        fi
     fi
-    local text_width="${#text}"
-    local padding=$((width - text_width))
+
+    local padding=$((width - text_visual_width))
+    [ "$padding" -lt 0 ] && padding=0
     local result='' char phase color colored
 
     if [ "$animate" = "true" ] && [ "$SIDEBAR_ANIMATION_ENABLED" = "true" ]; then
-        for ((i = 0; i < text_width; i++)); do
+        local text_len="${#text}"
+        for ((i = 0; i < text_len; i++)); do
             char="${text:i:1}"
             phase=$(((i - animation_frame + seed + 24) % 24))
             case "$phase" in
@@ -4411,43 +4510,9 @@ render_selection_pair()
 render_marker_delta()
 {
     local old_current="$1" old_selected_index="$2" old_selected_session="$3"
-    local -a changed_indexes=()
-    local index name old_current_index old_selected_name_index current_index selected_name_index duplicate
-    local marker_buffer=""
-
-    old_current_index="$(session_index_for_name "$old_current" || true)"
-    old_selected_name_index="$(session_index_for_name "$old_selected_session" || true)"
-    current_index="$(session_index_for_name "$current_session" || true)"
-    selected_name_index="$(session_index_for_name "$selected_session" || true)"
-    for index in "$old_current_index" "$old_selected_name_index" "$old_selected_index" \
-        "$current_index" "$selected_name_index"; do
-        case "$index" in
-            ''|*[!0-9]*) continue ;;
-        esac
-        duplicate=false
-        for name in "${changed_indexes[@]}"; do
-            if [ "$name" = "$index" ]; then
-                duplicate=true
-                break
-            fi
-        done
-        [ "$duplicate" = false ] && changed_indexes+=("$index")
-    done
-
-    for index in "${changed_indexes[@]}"; do
-        row_is_visible "$index" || continue
-        format_row "$index"
-        marker_buffer+="$row_render_result"
-    done
-    if [ -n "$marker_buffer" ]; then
-        printf '%s' "$marker_buffer"
-        render_marker_column_all
-        trace_event "render.marker-delta old_current=${old_current:-none} old_selected=${old_selected_session:-none} current=$current_session selected=$selected_session rows=${#changed_indexes[@]}"
-    else
-        render_visible_rows
-        render_marker_column_all
-        trace_event "render.marker-delta.fallback reason=rows-not-visible current=$current_session selected=$selected_session"
-    fi
+    render_visible_rows
+    render_marker_column_all
+    trace_event "render.marker-delta old_current=${old_current:-none} old_selected=${old_selected_session:-none} current=$current_session selected=$selected_session"
 }
 
 render_marker_column_all()
@@ -4657,23 +4722,26 @@ state_refresh_due()
 
 render_visible_rows()
 {
-    height="${cached_pane_height:-20}"
-    visible_rows="$(session_visible_rows)"
+    height="${cached_pane_height:-40}"
+    visible_rows=$((height - 3))
     [ "$visible_rows" -lt 1 ] && visible_rows=1
     end=$((scroll_offset + visible_rows))
     index="$scroll_offset"
     line=2
+    local rows_buf="" line_clear=""
 
     while [ "$line" -lt "$height" ]; do
-        move_cursor "$line" 1
-        clear_line
+        printf -v line_clear '\033[%s;1H\033[2K' "$line"
+        rows_buf+="$line_clear"
         line=$((line + 1))
     done
 
     while [ "$index" -lt "$end" ] && [ "$index" -lt "${#session_names[@]}" ]; do
-        render_row "$index"
+        format_row "$index"
+        rows_buf+="$row_render_result"
         index=$((index + 1))
     done
+    printf '%s' "$rows_buf"
 }
 
 render_visible_session_rows()
@@ -4693,24 +4761,19 @@ render_full()
     update_pane_geometry
     last_width="${cached_pane_width:-35}"
     last_height="${cached_pane_height:-20}"
+    ensure_selection_visible
     debug_log "render_full start generation=$render_generation reason=$render_reason current_session=$current_session selected_session=$selected_session view_mode=$view_mode count=${#session_names[@]}"
 
-    local buffer
-    buffer="$(
-        printf '\033[H\033[2J'
-        hide_cursor
-        render_header
-        if [ "$view_mode" = "sessions" ]; then
-            render_visible_rows
-        elif [ "$view_mode" = "history" ]; then
-            render_history
-        fi
-        render_footer
-    )"
-    printf '%s' "$buffer"
+    printf '\033[H\033[2J'
+    hide_cursor
+    render_header
     if [ "$view_mode" = "sessions" ]; then
+        render_visible_rows
         render_marker_column_all
+    elif [ "$view_mode" = "history" ]; then
+        render_history
     fi
+    render_footer
 
     if [ -n "$metrics_render_start" ]; then
         metrics_render_end="$(metrics_now_us)"
@@ -4775,6 +4838,20 @@ sidebar_consume_pending_target_marker()
     local old_current="$current_session"
     local old_selected_index="$selected_index"
     local old_selected_session="$selected_session"
+    local old_scroll_offset="$scroll_offset"
+    local old_height="${cached_pane_height:-0}"
+
+    local current_global_epoch topology_dirty=false
+    current_global_epoch="$(tmux show-option -gqv "$SIDEBAR_TOPOLOGY_EPOCH_OPTION" 2>/dev/null || echo 0)"
+    if [ "$current_global_epoch" != "$my_topology_epoch" ]; then
+        topology_dirty=true
+    fi
+
+    local current_session_count
+    current_session_count="$(sidebar_tmux_list_user_sessions 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+    if [ "$current_session_count" -ne "${#session_names[@]}" ]; then
+        topology_dirty=true
+    fi
 
     local found=false
     local idx
@@ -4784,8 +4861,8 @@ sidebar_consume_pending_target_marker()
             break
         fi
     done
-    if [ "$found" != true ]; then
-        collect_sessions false "$target_session"
+    if [ "$topology_dirty" = true ] || [ "$found" != true ] || [ "${#session_names[@]}" -le 1 ]; then
+        collect_sessions true "$target_session"
     fi
 
     # 3. Call selection_coordinator_align_current "$target_session"
@@ -4796,10 +4873,34 @@ sidebar_consume_pending_target_marker()
     selected_session="$target_session"
     ensure_selection_visible
 
-    # 5. Re-render the marker column / delta row immediately
-    if [ "$view_mode" = "sessions" ]; then
-        render_marker_delta "$old_current" "$old_selected_index" "$old_selected_session"
+    # 5. Check if geometry or scroll offset shifted
+    update_pane_geometry
+    local geometry_dirty=false
+    if [ "${rendered_attached_once:-false}" != "true" ]; then
+        geometry_dirty=true
+        rendered_attached_once=true
+    elif [ "$old_height" -gt 0 ] && [ "$cached_pane_height" -ne "$old_height" ]; then
+        geometry_dirty=true
     fi
+    if [ "$scroll_offset" -ne "$old_scroll_offset" ]; then
+        geometry_dirty=true
+    fi
+
+    # 6. Re-render
+    if [ "$view_mode" = "sessions" ]; then
+        if [ "$topology_dirty" = true ] || [ "$geometry_dirty" = true ]; then
+            render_full "marker-handover-reconcile"
+        else
+            render_marker_delta "$old_current" "$old_selected_index" "$old_selected_session"
+            # Self-healing footer boundary: always self-heal footer row so transient messages never persist
+            render_footer
+        fi
+    fi
+    sidebar_tmux_cmd set-option -gq "@sidebar_force_refresh_$target_session" 0 2>/dev/null || true
+    sidebar_tmux_cmd set-option -gq "@sidebar_force_refresh_${sidebar_session_cached:-$target_session}" 0 2>/dev/null || true
+    refresh_signal_pending=false
+    transition_render_coalesced=true
+    last_force_refresh_check_epoch="${EPOCHSECONDS:-$SECONDS}"
     trace_event "marker.handover.consumed target=$target_session window=$SIDEBAR_WINDOW_ID index=$selected_index"
     return 0
 }
@@ -5008,6 +5109,7 @@ cleanup_prompt_traps()
     trap handle_geometry_signal WINCH 2>/dev/null || true
     prompt_active=false
     post_operation_fast_read=true
+    discard_pending_input 2>/dev/null || true
 }
 
 prompt_text()
@@ -5289,6 +5391,20 @@ verify_restored_geometry()
     actual="$(tmux list-panes -t "$target" -F '#{pane_left},#{pane_top},#{pane_width},#{pane_height}' 2>/dev/null | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
     expected="$(printf '%s\n' "$expected" | tr ' ' '\n' | awk -F ',' 'NF >= 4 { print $1 "," $2 "," $3 "," $4 }' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
     if [ "$actual" != "$expected" ]; then
+        local exp_count act_count
+        exp_count="$(printf '%s\n' "$expected" | wc -w)"
+        act_count="$(printf '%s\n' "$actual" | wc -w)"
+        if [ "$exp_count" -eq "$act_count" ]; then
+            local adjusted_expected
+            adjusted_expected="$(printf '%s\n' "$expected" | tr ' ' '\n' | awk -F ',' 'NF >= 4 { top = ($2 == 1) ? 0 : $2; h = ($2 == 1) ? $4 + 1 : $4; print $1 "," top "," $3 "," h }' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+            if [ "$actual" = "$adjusted_expected" ]; then
+                return 0
+            fi
+            adjusted_expected="$(printf '%s\n' "$expected" | tr ' ' '\n' | awk -F ',' 'NF >= 4 { top = ($2 == 0) ? 1 : $2; h = ($2 == 0 && $4 > 1) ? $4 - 1 : $4; print $1 "," top "," $3 "," h }' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+            if [ "$actual" = "$adjusted_expected" ]; then
+                return 0
+            fi
+        fi
         trace_event "restore.geometry.error target=$target expected=$expected actual=$actual"
         return 1
     fi
@@ -6130,14 +6246,21 @@ restore_archive()
         awk -F '|' '$1 != 1 { print $2; exit }' || true)"
 
     trace_event "restore.sidebar.provision.begin session=$restore_name model=window-local batch=$restore_batch_mode"
-    # A restored session can contain more than one window. In batch mode, we mark
-    # windows as lazily managed and defer presenter provisioning until focused.
+    # A restored session can contain more than one window.
+    # Selective Eager Warm: Active window is provisioned and warmed immediately in background,
+    # while inactive background windows defer presenter provisioning until focused.
     for restore_window_target in "${restore_window_targets[@]}"; do
         [ -n "$restore_window_target" ] || continue
         if [ "$restore_batch_mode" = true ]; then
-            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
-            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
-            sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_PROVISION_OPTION" "lazy" 2>/dev/null || true
+            if [ "$restore_window_target" = "$active_window_target" ]; then
+                sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
+                provision_sidebar_window "$restore_window_target" "$(sidebar_width)" || true
+                wait_for_sidebar_window_ready "$restore_window_target" || true
+            else
+                sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_MANAGED_OPTION" 1 2>/dev/null || true
+                sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_WINDOW_READY_OPTION" 0 2>/dev/null || true
+                sidebar_tmux_cmd set-option -wq -t "$restore_window_target" "$SIDEBAR_PROVISION_OPTION" "lazy" 2>/dev/null || true
+            fi
             continue
         fi
         if ! provision_sidebar_window "$restore_window_target" "$(sidebar_width)"; then
@@ -6160,32 +6283,29 @@ restore_archive()
             restore_abort ensure-sidebar-ready
             return 1
         }
-        # The work-only layout is needed while panes are created, but the final
+    fi
+    # The work-only layout is needed while panes are created, but the final
         # user-visible geometry also includes the sidebar. Reapply the archived
         # full-window layout only after the new sidebar pane has been provisioned
         # and mapped to the archived pane identity.
         for window_index in "${!restore_window_targets[@]}"; do
+            local curr_target="${restore_window_targets[$window_index]}"
+            [ -n "$curr_target" ] || continue
             if [ -n "${restore_window_sidebar_layouts[$window_index]:-}" ]; then
-                restore_archived_sidebar_layout \
-                    "${restore_window_targets[$window_index]}" \
-                    "${restore_window_sidebar_layouts[$window_index]}" \
-                    "${restore_window_sidebar_panes[$window_index]:-}" \
-                    "${restore_window_sidebar_active[$window_index]:-}" \
-                    "${restore_window_sidebar_pane[$window_index]:-}" \
-                    "${restore_window_work_panes[$window_index]:-}" || {
-                    restore_abort sidebar-layout
-                    return 1
-                }
+                if [ "$restore_batch_mode" = true ] && [ "$curr_target" != "$active_window_target" ]; then
+                    local spec="${restore_window_sidebar_layouts[$window_index]}"$'\t'"${restore_window_sidebar_panes[$window_index]:-}"$'\t'"${restore_window_sidebar_active[$window_index]:-}"$'\t'"${restore_window_sidebar_pane[$window_index]:-}"$'\t'"${restore_window_work_panes[$window_index]:-}"
+                    sidebar_tmux_cmd set-option -wq -t "$curr_target" "@dotfiles_sidebar_layout_spec" "$spec" 2>/dev/null || true
+                else
+                    restore_archived_sidebar_layout \
+                        "$curr_target" \
+                        "${restore_window_sidebar_layouts[$window_index]}" \
+                        "${restore_window_sidebar_panes[$window_index]:-}" \
+                        "${restore_window_sidebar_active[$window_index]:-}" \
+                        "${restore_window_sidebar_pane[$window_index]:-}" \
+                        "${restore_window_work_panes[$window_index]:-}" || true
+                fi
             fi
         done
-    else
-        for window_index in "${!restore_window_targets[@]}"; do
-            if [ -n "${restore_window_sidebar_layouts[$window_index]:-}" ]; then
-                local spec="${restore_window_sidebar_layouts[$window_index]}"$'\t'"${restore_window_sidebar_panes[$window_index]:-}"$'\t'"${restore_window_sidebar_active[$window_index]:-}"$'\t'"${restore_window_sidebar_pane[$window_index]:-}"$'\t'"${restore_window_work_panes[$window_index]:-}"
-                sidebar_tmux_cmd set-option -wq -t "${restore_window_targets[$window_index]}" "@dotfiles_sidebar_layout_spec" "$spec" 2>/dev/null || true
-            fi
-        done
-    fi
     trace_event "restore.sidebar.provision.end session=$restore_name model=window-local"
     check_restore_precondition "$restore_operation_id" before-client-switch "$restore_owner_identity" "$restore_original_session" "$restore_original_identity" "$restore_name" || {
         restore_abort external-conflict
@@ -6869,6 +6989,7 @@ move_selection()
     trace_id="$selection_trace_id"
     trace_event "selection.update.begin id=$trace_id direction=$direction index=$selected_index"
     old_index="$selected_index"
+    old_scroll_offset="$scroll_offset"
     count="${#session_names[@]}"
 
     [ "$count" -eq 0 ] && return 0
@@ -6890,13 +7011,14 @@ move_selection()
     fi
 
     trace_event "selection.render.begin id=$trace_id old_index=$old_index new_index=$selected_index"
-    if row_is_visible "$old_index" && row_is_visible "$selected_index"; then
+    if [ "$scroll_offset" -eq "$old_scroll_offset" ] && row_is_visible "$old_index" && row_is_visible "$selected_index"; then
         render_selection_pair "$old_index" "$selected_index"
     else
         render_visible_rows
     fi
     _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
     _sidebar_action_generation_dirty=1
+    flush_action_generation_if_dirty
     trace_event "selection.render.end id=$trace_id old_index=$old_index new_index=$selected_index"
     trace_event "selection.update.end id=$trace_id index=$selected_index session=$selected_session"
     if [ -n "$metrics_input_start" ]; then
@@ -6995,6 +7117,7 @@ move_history_selection()
     render_history
     _sidebar_local_action_generation=$(( ${_sidebar_local_action_generation:-0} + 1 ))
     _sidebar_action_generation_dirty=1
+    flush_action_generation_if_dirty
 }
 
 toggle_history_mark()
@@ -7217,8 +7340,13 @@ run_tui()
             old_width="${cached_pane_width:-}"
             old_height="${cached_pane_height:-}"
             update_pane_geometry
-            if [ -z "$old_width" ] || [ -z "$old_height" ] ||
-                [ "$old_width" != "$cached_pane_width" ] || [ "$old_height" != "$cached_pane_height" ]; then
+            if [ -n "$old_width" ] && [ -n "$old_height" ] &&
+                { [ "$old_width" != "$cached_pane_width" ] || [ "$old_height" != "$cached_pane_height" ]; }; then
+                if [ -n "$cached_pane_width" ] && [ "$cached_pane_width" -ge 15 ] && [ "$cached_pane_width" != "$old_width" ]; then
+                    _cache_sidebar_width="$cached_pane_width"
+                    tmux set-option -gq '@dotfiles-session-sidebar-width' "$cached_pane_width" 2>/dev/null || true
+                    persist_sidebar_width "$cached_pane_width" 2>/dev/null || true
+                fi
                 mark_full_render_required geometry-invalidated
                 trace_event "geometry.signal changed old=${old_width:-none},${old_height:-none} new=$cached_pane_width,$cached_pane_height"
             else
@@ -7257,7 +7385,11 @@ run_tui()
                 else
                     # Non-blocking optimistic visual feedback for immediate <50ms sensory acknowledgment
                     if [ -n "$selected_session" ]; then
-                        move_cursor "${cached_pane_height:-20}" 1
+                        if [ -z "${cached_pane_height:-}" ] || [ "${cached_pane_height:-0}" -le 0 ]; then
+                            update_pane_geometry
+                        fi
+                        local cur_h="${cached_pane_height:-40}"
+                        move_cursor "$cur_h" 1
                         clear_line
                         local switch_msg="⚡ switching to $selected_session..."
                         local max_msg_w=$(( ${cached_pane_width:-35} - 1 ))
@@ -7269,6 +7401,7 @@ run_tui()
                     if [ "$switch_result" -eq 0 ]; then
                         refresh_signal_pending=false
                         align_selection_to_session "$selected_session"
+                        render_footer
                     else
                         request_full_render transition-failed
                     fi
@@ -7361,14 +7494,14 @@ run_tui()
                     fi
                     ;;
                 *)
-                    if selection_sync_window_pending && [ "${session_topology_changed:-false}" != "true" ]; then
+                    if selection_sync_window_pending; then
                         native_transition_render_skip=true
                     fi
                     ;;
             esac
             if [ "$native_transition_render_skip" = true ]; then
                 trace_event "render.full.skip reason=native-session-transition full_reason=${full_render_required_reason:-unspecified} session=$current_session selected=$selected_session"
-            elif [ "$transition_render_coalesced" = true ] && [ "${session_topology_changed:-false}" != "true" ]; then
+            elif [ "$transition_render_coalesced" = true ] && [ "${session_topology_changed:-false}" != "true" ] && [ "$full_render_required_reason" != "geometry-invalidated" ]; then
                 trace_event "render.coalesce.skip reason=transition-render-already-flushed session=$current_session"
             else
                 render_full full-render-required
@@ -7449,13 +7582,19 @@ run_tui()
                             # marker delta after client ownership settles.
                             trace_event "render.full.skip reason=native-session-transition force_reason=$force_refresh session=$sidebar_owner_session"
                             sidebar_tmux_cmd set-option -gq "$force_refresh_flag" 0 2>/dev/null || true
+                            refresh_signal_tick=false
                         elif [ "$force_refresh" = "1" ] || [ "$refresh_signal_tick" = "true" ]; then
-                            view_mode="sessions"
-                            for idx in "${!history_checked[@]}"; do
-                                history_checked["$idx"]=false
-                            done
-                            collect_sessions false "$sidebar_owner_session"
-                            align_selection_to_session "$sidebar_owner_session"
+                            if [ "$view_mode" = "history" ]; then
+                                collect_history
+                            else
+                                for idx in "${!history_checked[@]}"; do
+                                    history_checked["$idx"]=false
+                                done
+                                collect_sessions false "$sidebar_owner_session"
+                                if [ -z "${selected_session:-}" ] || ! session_exists "$selected_session"; then
+                                    align_selection_to_session "$sidebar_owner_session"
+                                fi
+                            fi
                             render_full force-refresh
                             session_animation_refresh_indexes=()
                             last_state_refresh_epoch="${EPOCHSECONDS:-$SECONDS}"

@@ -1,9 +1,6 @@
-# tmux-session-launcher 시스템 아키텍처 및 내부 구조 (Architecture Internals)
+# tmux-session-launcher Internals & IPC Architecture
 
-> **현재 기준선 (v0.6.17 / master 최신)**:
-> 본 문서는 Window-Local Presenter 모델과 Singleton Subpane Hub(`dotfiles-subpane-hub`)를 기반으로 동작하는
-> tmux sidebar session launcher 시스템의 전체 및 서브시스템별 세부 아키텍처 공식 레퍼런스입니다.
-> 새로운 AI 세션이나 개발자가 이 문서를 통해 전체 시스템 구조를 즉시 파악하고, 안전하게 확장 및 리팩토링할 수 있도록 작성되었습니다.
+> Window-Local Presenter + Subpane Hub 통합 모델, 0.75ms 제자리 Fast-Path, In-flight Marker Handover & Selection Reducer, 24프레임 LUT 파형 엔진 & 30 FPS 적응형 클록, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인. 본 문서는 시스템 아키텍처 공식 레퍼런스입니다.
 
 ---
 

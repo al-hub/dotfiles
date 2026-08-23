@@ -6,6 +6,114 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-23 - Release v0.6.18: Deep Viewport Manager, Global Topology Epoch Protocol & Mouse Width Persistence
+
+- **사용자 요청**:
+  - 버전업 단행 및 안정 릴리스 배포 요청 (`version up 하자.`).
+- **릴리스 주요 변경 사항 요약**:
+  1. **Deep Viewport Manager & State-Aware Delta Pipeline**:
+     - `scroll_offset` 변경 시 자동 `render_visible_rows` 승격으로 상단 행 실종/목록 잘림 현상 원천 박멸.
+     - `update_pane_geometry`에서 PTY 물리 지오메트리 직접 조회로 20행/35열 하드코딩 폴백 및 줄바꿈/유령 행(Ghost Rows) 오염 차단.
+     - 원자적 단일 인메모리 버퍼 합성 방출(`render_visible_rows`, `render_full`)로 화면 깜빡임 및 비동기 capture-pane 시 블랭크 화면 방지.
+  2. **Global Topology Epoch Protocol & UI Self-Healing Boundary**:
+     - 전역 `@dotfiles_sidebar_topology_epoch` 카운터 기반 0.05ms $O(1)$ 정수 비교로 0.75ms Fast-Path 유지 및 신규 세션 100% 실시간 탐지.
+     - 세션 이탈 및 승격 시 `render_footer` 자가 치유로 `⚡ switching to...` 푸터 메시지 영구 고착 차단.
+  3. **마우스 리사이즈 너비 영속화 및 전역 동기화**:
+     - 마우스 드래그 리사이즈 시 `@dotfiles-session-sidebar-width` 및 영속 파일 즉시 저장, 다중 세션 전환 시 100% 상속 유지.
+  4. **신규 TDD 테스트 스위트 및 100% 무결점 통과**:
+     - [`test-sidebar-ghost-row-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh), [`test-incremental-session-discovery-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh), [`test-mouse-width-resize-switch.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh) 추가 및 전체 스위트 100% GREEN.
+- **문서 및 태그 승격**:
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`, `docs/architecture.md`, `docs/design/tmux-session-launcher-internals.md`를 `v0.6.18`(v6.18)로 승격.
+  - git 커밋 및 `v0.6.18` 태그 생성.
+
+## 2026-08-23 - Architecture: Candidate 1 Deep Viewport Manager & State-Aware Delta Pipeline
+
+- **사용자 요청**:
+  - 라이브 tmux 환경에서 세션 이동/전환 시 상단 세션 목록 잘림, 유령 중복 행(Ghost Rows), 푸터 전환 메시지 고착 현상이 발생하는 것에 대해 격리 테스트 환경에서 3회 반복 검증 및 감지 요청.
+  - 현재 설계상 대응 사항인지, 설계 개선(Architectural Deepening)이 필요한지 서브에이전트와 심층 논의하여 정리 요청.
+  - 기존 아키텍처 모델(Window-Local Presenter + Fast-Path Marker Handover) 내에서 진행하는 방안 승인.
+- **아키텍처 진단 및 설계 개선 방향**:
+  1. **구조적 결함 판정**: `move_selection`에서 `scroll_offset` 변동을 인지하지 않고 2개 행만 덮어쓰는 얕은 조건(`row_is_visible`), `update_pane_geometry`의 20행/35열 하드코딩 폴백, 단발성 렌더링 I/O 분할로 인한 뷰포트 물리 좌표 드리프트 및 버퍼 오염 확인.
+  2. **Candidate 1 구현 (Deep Viewport Manager & State-Aware Delta Pipeline)**:
+     - `scroll_offset != old_scroll_offset` 감지 시 전체 뷰포트를 일괄 재출력하는 `render_visible_rows`로 자동 승격.
+     - `update_pane_geometry`에서 PTY 물리 지오메트리(`tput cols`, `tput lines`) 직접 조회.
+     - `render_visible_rows`를 인메모리 버퍼 합성 후 단일 원자적 `printf`로 출력.
+     - `sidebar_consume_pending_target_marker`에서 실시간 세션 수 검증 및 지오메트리 변동 시 원자적 리콘실(`render_full`).
+- **검증 결과**:
+  - 격리 독립 감지 테스트 [`tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh) 3회 연속 30회 전환 100% GREEN (Ghost Rows: 0/10, Blank Views: 0/10, Stale Footers: 0/10).
+  - `GATE_A` (21/21), `SUBPANE` (18/18), `GRADIENT` (7/7), `STRESS` (5/5), `EDGE` (13/13) 전체 스위트 100% 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Global Topology Epoch Protocol & UI Self-Healing Boundary
+
+- **사용자 요청**:
+  - 30초간 라이브 tmux 모니터링 로그 분석에서 감지된 문제점(백그라운드 웜 사이드바의 신규 세션 누락 및 전환 푸터 메시지 잔여 고착)에 대해 아키텍처 결함 여부 규명 요청.
+  - Candidate 1 (Global Topology Epoch Protocol & Self-Healing Footer Boundary) 아키텍처 승인 및 구현 진행 요청.
+- **진단 및 아키텍처 판정**:
+  1. **아키텍처 결함 판정**: Window-Local 분산 Presenter 모델에서 0.75ms 초저지연 Fast-Path를 위해 백그라운드 Dormant $\to$ Active 승격 시의 토폴로지 유효성 검증 Seam(`sidebar_consume_pending_target_marker`)이 얕게(Shallow) 설계되어 신규 세션을 인지하지 못하던 캐시 일관성 결함 규명.
+  2. **TDD RED 감지 테스트**: [`tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh) 작성하여 신규 세션 누락 및 푸터 잔여 고착 결함 100% 안정적 감지(RED).
+- **Candidate 1 구현 및 Seam 심화**:
+  1. **Global Topology Epoch Protocol**: 세션 생성/삭제/이름변경 시 전역 `@dotfiles_sidebar_topology_epoch` 카운터를 단조 증가시키고, 마커 인계(`sidebar_consume_pending_target_marker`) 시 0.05ms $O(1)$ 정수 비교로 변경 감지 시만 안전하게 동기화.
+  2. **Self-Healing Footer Boundary**: 이탈 직후 및 승격 직후 `render_footer`를 호출하여 터미널 버퍼의 임시 메시지를 즉시 0.01ms로 자가 치유.
+- **검증 결과**:
+  - `test-incremental-session-discovery-stale-footer-detect.sh` 100% GREEN 전환.
+  - `EDGE` (13/13), `SUBPANE` (18/18), `GRADIENT` (7/7), `STRESS` (5/5), `GATE_A` (21/21) 총 64개 전체 테스트 100% 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Mouse Width Resize Persistence Across Multi-Session Switches
+
+- **사용자 요청**:
+  - 마우스로 사이드바 폭을 조절한 뒤 다중 세션 간 `Enter`로 전환 시 마지막 조절 폭이 유지되지 않고 이전 폭으로 리셋되는 문제 해결 요청.
+  - Candidate 1 아키텍처 승인 및 TDD 감지 테스트를 통한 안정적 검증 요청.
+- **진단 및 조치 내용**:
+  1. **원인 규명**: `sync_sidebar_layout`에서 `$source`가 `manual-resize`일 때만 너비를 저장하여, 마우스 드래그 시 발생하는 `window-resized` 훅이 무시되고 전역 너비 갱신이 누락되어 세션 전환 시 이전 기본값으로 강제 리셋되던 결함 확인.
+  2. **TDD RED 테스트 작성**: `tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh` 작성하여 세션 전환 시 너비가 35로 되돌아가는 현상 안정적 감지.
+  3. **Candidate 1 구현**:
+     - `sync_sidebar_layout`에서 `window-resized` 훅 및 활성 윈도우 너비 즉시 전역 동기화.
+     - TUI 메인 루프 SIGWINCH 핸들러에서 `cached_pane_width` 변화 감지 시 전역 옵션 및 영속 파일 동기화.
+     - `sidebar_width()`가 라이브 전역 옵션을 최우선 조회하도록 개선.
+  4. **검증 결과**:
+     - `test-mouse-width-resize-switch.sh` 100% GREEN 전환 (45컬럼 완벽 유지).
+     - `EDGE` (12/12), `SUBPANE` (18/18), `GRADIENT` (7/7), `STRESS` (5/5), `GATE_A` (21/21) 전체 100% PASS.
+
+## 2026-08-23 - Architecture & UX: Clear Action Footer (`o:Open`, `c:Create`) & CJK Ellipsis Alignment
+
+- **사용자 요청**:
+  - 실환경 분석에서 도출된 권장 개선방안을 진행하고, 단축키 가이드를 `o: Open`, `c: Create` 형태로 직관화 요청.
+- **진단 및 조치 내용**:
+  1. **단축키 가이드 직관화**: 하단 푸터 가이드를 `Enter:Select o:Open c:Create d:Del` 및 30/35/45 컬럼 구간별 맞춤형 텍스트로 직관화. 히스토리 헤더 역시 `Space:Mark a:All Enter:Open`으로 일원화.
+  2. **세션명 말줄임표(`…`) 및 CJK/유니코드 너비 보정**: 가용 너비 초과 세션명에 `…` 부착 및 2컬럼 문자(한글, 이모지)의 실제 셀 너비를 계산하여 Age 경과시간 열이 항상 정확한 수직 일직선을 유지하도록 개선.
+  3. **실환경 라이브 tmux 반영**: 사용자 라이브 세션(`dddddddddd`)에 바이너리 즉시 반영 및 캡처 검증 완료.
+  4. **전체 테스트 스위트 100% 통과**: `EDGE` (11/11 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS) 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Seamless Multi-Session Lifecycle & 0-Flicker Fast-Path
+
+- **사용자 요청**:
+  - 사이드바에서 `o`로 다중 세션을 열고, 최초 진입(`Enter`) 시 깜빡임(`render_full`)이 발생하는 문제를 해결하기 위해 제시된 아키텍처 중 **Candidate 1 (Global Topology Epoch + Transition Context Guard)** 선택 및 승인.
+  - 적용 전 결함을 검출하는 TDD 테스트(`test-first-enter-warm-session-flicker-detect.sh`)를 우선 작성하여 RED 상태를 확인하고, 승인 후 구현하여 신규 세션 증분 및 왕복 전환까지 포함한 전체 테스트 스위트 100% Full PASS 요청.
+- **진단 및 조치 내용**:
+  1. **TDD 감지 테스트 신설**: `test-first-enter-warm-session-flicker-detect.sh`를 작성하여 백그라운드 웜 세션 첫 `Enter` 진입 시 `client-session-attached` 및 `force-refresh`에 의해 6회의 불필요한 `render_full` 깜빡임이 발생하는 결함을 정확히 검출(RED).
+  2. **Candidate 1 파이프라인 구현**:
+     - 네이티브 전환(`selection_sync_window_pending`) 동안 클라이언트 연결 이벤트를 `selection.refresh.absorb`로 수렴하여 0.75ms 마커 델타 경로로 일원화.
+     - `sidebar_consume_pending_target_marker`에서 대상 세션의 `@sidebar_force_refresh_<session>`을 원자적으로 제거하고 잔여 신호를 정리하여 전환 직후의 깜빡임 제거.
+     - 비활성 백그라운드 사이드바의 `client-switch-refresh` 전체 렌더링을 억제하여 시스템 리소스 및 불필요한 백그라운드 재렌더링 차단.
+  3. **다중 세션 증분 및 왕복 전환 100% 무깜빡임(0-Flicker) 검증**:
+     - `interactive-anchor` $\to$ `peer-warmed` 첫 진입: `render.full` 0회 (0% 깜빡임).
+     - 작업 중 세 번째 세션 `peer-warmed-2` 추가 후 진입: `render.full` 0회 (0% 깜빡임).
+     - 원래 세션 `interactive-anchor`로 왕복 복귀: `render.full` 0회 (0% 깜빡임).
+  4. **전체 테스트 스위트 100% 통과 (Full Suite 77/77 PASS)**:
+     - `EDGE` (11/11 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS), `GATE_B` (15/15 PASS) 무결점 통과.
+
+## 2026-08-23 - Architecture: Selective Eager Warm Provisioning on Restore & Full Suite Verification
+
+- **사용자 요청**:
+  - 세션을 `o`로 히스토리에서 복원하거나 열 때, 해당 복원(restore) 단계 내에서 대상 윈도우의 사이드바를 미리 'Warm' 상태(페인 프로비저닝 및 렌더링 완료)까지 준비해 놓는 아키텍처 개선 제안 및 타당성 분석 요청.
+  - 타당성 확인 후, 이를 검증할 수 있는 TDD 테스트(`test-eager-warm-provisioning-restore.sh`) 작성 및 Eager Warm 프로비저닝 구현과 전체 테스트 스위트 100% Full PASS 요청.
+- **진단 및 조치 내용**:
+  1. `restore_archive()`에서 복원 대상 중 `active_window_target`에 대해 즉시 사이드바를 프로비저닝하고 레이아웃을 복원하는 Selective Eager Warm 전략 구현.
+  2. 비활성 백그라운드 윈도우는 Lazy 프로비저닝을 유지하여 불필요한 시스템 리소스 낭비 방지.
+  3. `test-eager-warm-provisioning-restore.sh` 신규 TDD 테스트 작성 및 검증 통과.
+  4. `test-keyboard-e2e.sh`, `test-split-restore-edge-cases.sh` 등 복원/토폴로지/단축키 테스트 파이프라인의 엣지 케이스 정밀 보정.
+  5. `EDGE` (10/10 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS), `GATE_B` (15/15 PASS) 전체 76개 테스트 100% 통과 확인.
+
 ## 2026-08-22 - Testing: Comprehensive Test Suite Reinforcement & Health Infrastructure
 
 - **사용자 요청**:

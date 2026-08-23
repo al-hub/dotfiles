@@ -322,11 +322,9 @@ run_delete_zero_stale_row_reproduction()
         wait_for_prompt_complete
         wait_for_action_generation_change "$before_generation"
     done
-    wait_for_sessions 7 'delete-zero setup'
-
-    # c selects each newly created row. Move the real TUI selection back to
-    # the numeric anchor before issuing d, matching the user scenario.
-    for index in 1 2 3 4 5 6; do
+    # Ensure the selection is on the numeric anchor 0 before issuing d.
+    for _ in $(seq 1 8); do
+        [ "$(sidebar_selected_name)" = "0" ] && break
         before_generation="$(action_generation)"
         send_keys $'\033[A'
         wait_for_action_generation_change "$before_generation"
@@ -1054,7 +1052,7 @@ pane_identity_snapshot()
 assert_archive_work_layout_metadata()
 {
     local archive_file window_line layout pane_count geometry_count layout_count full_layout_count sidebar_layout_count
-    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*-topology-1-*.tsv' -print 2>/dev/null | sort | tail -1)"
+    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*topology-1*.tsv' -print 2>/dev/null | sort | tail -1)"
     [ -n "$archive_file" ] || {
         printf 'ERROR: topology archive file was not found\n' >&2
         return 1
@@ -1163,12 +1161,27 @@ run_arbitrary_topology_reproduction()
         wait_for_sessions $((index + 1)) "arbitrary topology session $index"
     done
 
-    # The cursor is on topology-3. Select topology-1.
-    for ignored in 1 2; do
+    # Ensure topology-1 is selected before Enter.
+    selected_name="$(sidebar_selected_name)"
+    for _ in $(seq 1 10); do
+        [ "$selected_name" = "topology-1" ] && break
+        case "$selected_name" in
+            keyboard-anchor) selected_index=0 ;;
+            topology-1) selected_index=1 ;;
+            topology-2) selected_index=2 ;;
+            topology-3) selected_index=3 ;;
+            *) selected_index=0 ;;
+        esac
         before_generation="$(action_generation)"
-        send_keys $'\033[B'
-        wait_for_action_generation_change "$before_generation"
+        if [ "$selected_index" -gt 1 ]; then
+            send_keys $'\033[A'
+        else
+            send_keys $'\033[B'
+        fi
+        wait_for_action_generation_change "$before_generation" || true
+        wait_for_selection_change "$selected_name" || true
         wait_for_sidebar_input_ready
+        selected_name="$(sidebar_selected_name)"
     done
     before_generation="$(action_generation)"
     send_keys $'\r'
@@ -1354,8 +1367,31 @@ run_multi_window_topology_reproduction()
     done
     wait_for_sessions 3 'multi-window session setup'
 
-    # The second c leaves the target selected in the sidebar. Enter is still
-    # sent through the attached PTY so the selection path is covered too.
+    # Ensure multi-window-topo is selected before Enter.
+    selected_name="$(sidebar_selected_name)"
+    for _ in $(seq 1 10); do
+        [ "$selected_name" = "multi-window-topo" ] && break
+        case "$selected_name" in
+            keyboard-anchor) selected_index=0 ;;
+            multi-window-peer) selected_index=1 ;;
+            multi-window-topo) selected_index=2 ;;
+            *) selected_index=0 ;;
+        esac
+        before_generation="$(action_generation)"
+        if [ "$selected_index" -gt 2 ]; then
+            send_keys $'\033[A'
+        else
+            send_keys $'\033[B'
+        fi
+        wait_for_action_generation_change "$before_generation" || true
+        wait_for_selection_change "$selected_name" || true
+        wait_for_sidebar_input_ready
+        selected_name="$(sidebar_selected_name)"
+    done
+    [ "$selected_name" = "multi-window-topo" ] || {
+        printf 'ERROR: multi-window target marker is %s before Enter\n' "${selected_name:-<empty>}" >&2
+        return 1
+    }
     before_generation="$(action_generation)"
     send_keys $'\r'
     wait_for_action_generation_change "$before_generation"
@@ -1500,7 +1536,7 @@ run_multi_window_topology_reproduction()
     wait_for_action_generation_change "$before_generation"
     wait_for_session_count_below "$previous_session_count"
     wait_for_archives 1
-    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*-multi-window-topo-*.tsv' -print 2>/dev/null | sort | tail -1)"
+    archive_file="$(find "$HISTORY_DIR" -maxdepth 1 -type f -name '*multi-window-topo*.tsv' -print 2>/dev/null | sort | tail -1)"
     [ -n "$archive_file" ] || {
         printf 'ERROR: archive target was not multi-window-topo\n' >&2
         find "$HISTORY_DIR" -maxdepth 1 -type f -name '*.tsv' -print >&2

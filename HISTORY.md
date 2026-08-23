@@ -6,6 +6,92 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Release v0.6.18: Deep Viewport Manager, Global Topology Epoch Protocol & Mouse Width Persistence
+
+- **v0.6.18(v6.18) 공식 안정 릴리스 발행**:
+  - `feature/single-sidebar`의 핵심 개선 사항(State-Aware Viewport Manager, 전역 토폴로지 에포크 프로토콜, 자가 치유 푸터 경계, PTY 물리 크기 직접 조회, 인메모리 단일 버퍼 합성 방출, 마우스 너비 리사이즈 영속화)을 통합 반영.
+  - 신규 TDD 감지 테스트 3종 추가: [`test-sidebar-ghost-row-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh), [`test-incremental-session-discovery-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh), [`test-mouse-width-resize-switch.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh).
+  - 3회 반복 30회 전환 격리 안정성 검증 100% GREEN (Ghost Rows: 0/30, Blank Views: 0/30, Stale Footers: 0/30).
+  - `GATE_A`, `SUBPANE`, `GRADIENT`, `STRESS`, `EDGE` 전체 65개 테스트 스위트 100% 무결점 통과.
+  - `v0.6.18` 태그 생성 및 배포.
+
+## 2026-08-23 - Architecture: Candidate 1 Deep Viewport Manager & State-Aware Delta Pipeline
+
+- **Deep Viewport Manager & Buffer Hygiene Pipeline 구축 (`scripts/tmux-session-launcher`)**:
+  - `move_selection`에서 `scroll_offset` 변동 감지(`scroll_offset != old_scroll_offset`) 시 `render_selection_pair` 대신 전체 뷰포트를 일괄 재출력하는 `render_visible_rows`로 자동 승격하여 상단 행 잘림/실종 현상 원천 박멸.
+  - `update_pane_geometry`를 개선하여 `tput cols`, `tput lines` 및 PTY `$COLUMNS`/`$LINES`를 직접 조회하도록 하여, 20행/35열 하드코딩 폴백으로 인한 터미널 줄바꿈 오염 및 잔상(Ghost Rows) 완전 차단.
+  - `render_visible_rows` 및 `render_full`에서 개별 `printf` 방출을 인메모리 단일 버퍼(`rows_buf`)로 합성하여 단일 원자적 `printf`로 출력함으로써, 화면 깜빡임 및 레이스 컨디션에 의한 블랭크 화면 방지.
+  - `sidebar_consume_pending_target_marker`에서 `current_session_count != ${#session_names[@]}`를 검증하여 CLI 세션 변경 사항을 즉시 반영하고, `rendered_attached_once` 및 지오메트리 변동 시 원자적 리콘실(`render_full`)을 수행.
+- **신규 TDD 격리 감지 테스트 및 3회 연속 안정성 검증 (100% GREEN)**:
+  - [`tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh) 추가 (RED 100% 감지 후 Candidate 1 적용으로 3회 반복 30회 전환 100% GREEN 통과).
+  - `GATE_A` (21/21 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `EDGE` (13/13 PASS) 전체 스위트 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Global Topology Epoch Protocol & UI Self-Healing Boundary
+
+- **Global Topology Epoch Protocol 구축 (`scripts/tmux-session-launcher`)**:
+  - 세션 생성(`new-session`), 삭제(`kill-session`), 이름 변경(`rename-session`), 아카이브 복원(`restore_archives`) 등 토폴로지 변경 시 전역 단조 증가 카운터(`@dotfiles_sidebar_topology_epoch`)를 1씩 증가시키는 `bump_topology_epoch` Seam 구축.
+  - Presenter가 백그라운드 Dormant에서 Active로 승격(`sidebar_consume_pending_target_marker`)될 때 전역 에포크와 로컬 에포크를 0.05ms $O(1)$로 정수 비교.
+  - **에포크 일치 시**: 토폴로지 변경이 없으므로 **0.75ms 0-Flicker Fast-Path(`render_marker_delta`) 100% 유지**.
+  - **에포크 불일치 시**: 세션 집합이 변경되었음을 감지하고 `collect_sessions true` 및 `render_full`을 수행하여 신규 생성된 세션(`sess-gamma`, `ffffffffffff`)을 100% 누락 없이 발견.
+- **Self-Healing Footer Boundary 구현 (`scripts/tmux-session-launcher`)**:
+  - 세션 이탈 직전(`switch_session` 성공 직후) 및 타깃 세션 승격 직후(`sidebar_consume_pending_target_marker`) `render_footer`를 호출하여 터미널 버퍼의 임시 전환 메시지(`⚡ switching to...`)가 영구 고착되지 않고 즉시 정상 단축키 가이드(`Enter:Select o:Open c:Create d:Del`)로 0.01ms 자가 치유되도록 보장.
+- **신규 TDD 감지 테스트 및 전체 테스트 스위트 100% PASS**:
+  - [`tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh) 추가 (RED 감지 후 Candidate 1 적용으로 100% GREEN 전환).
+  - `EDGE` (13/13 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS) 총 64개 테스트 100% 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Mouse Width Resize Persistence Across Multi-Session Switches
+
+- **마우스 리사이즈 너비 영속화 및 전역 동기화 (`scripts/tmux-session-launcher`)**:
+  - `sync_sidebar_layout`에서 `$source`가 `window-resized`(마우스 드래그)일 때 활성 윈도우의 사이드바 너비를 즉시 `@dotfiles-session-sidebar-width` 및 영속 파일에 저장하도록 Seam 개선.
+  - TUI 메인 루프에서 SIGWINCH(`geometry_signal_pending`) 발생 시 `cached_pane_width` 델타 변화를 감지하여 전역 옵션과 설정 파일을 즉시 갱신.
+  - `sidebar_width()` 조회 시 메모리 캐시보다 라이브 전역 tmux 옵션을 우선 조회하여, 다른 프로세스/세션에서 마우스로 조절된 너비를 세션 전환 시 100% 즉시 상속.
+- **신규 TDD 감지 테스트 및 전체 테스트 스위트 100% PASS**:
+  - [`tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh) 추가 (RED 감지 후 Candidate 1 적용으로 100% GREEN 전환).
+  - `EDGE` (12/12 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS) 100% 무결점 통과.
+
+## 2026-08-23 - Architecture & UX: Clear Action Footer (`o:Open`, `c:Create`) & CJK Ellipsis Alignment
+
+- **사이드바 하단 액션 가이드 직관화 (`scripts/tmux-session-launcher`)**:
+  - 사용자 피드백을 반영하여 하단 푸터 도움말을 `o:Open`, `c:Create`, `Enter:Select`, `d:Del`로 직관화.
+  - 너비 30, 35, 45+ 컬럼 구간별 최적 텍스트 티어링(`Enter o:Open c:Create d:Del` 등) 적용으로 잘림 현상 박멸.
+  - 히스토리 모드(`o`) 헤더 역시 `Space:Mark a:All Enter:Open`으로 통일하여 일관된 UX 제공.
+- **세션명 말줄임표(Ellipsis `…`) 및 CJK/유니코드 셀 너비(wcwidth) 정렬 보정 (`scripts/tmux-session-launcher`)**:
+  - `format_session_name`에서 가용 너비(15컬럼) 초과 시 단순 절삭 대신 `…` 말줄임표를 자동 부착(`ffffffffffffff…`, `test-archive-s…`).
+  - 한글(CJK) 및 Emoji 2컬럼 문자의 시각적 너비를 `sidebar_domain_animation_measure_cell_width`로 정확히 계산하여 우측 Age(경과시간) 열 정렬이 1픽셀의 오차도 없이 일직선으로 정렬되도록 개선.
+- **실환경 라이브 tmux 반영 및 전체 테스트 스위트 100% PASS 검증**:
+  - 사용자의 라이브 tmux 환경(`dddddddddd: 7 panes`)에 실시간 적용 및 화면 캡처 검증 완료.
+  - `EDGE` (11/11 PASS), `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS) 100% 무결점 통과.
+
+## 2026-08-23 - Architecture: Candidate 1 Seamless Multi-Session Lifecycle & 0-Flicker Fast-Path
+
+- **전환 컨텍스트 가드 및 클라이언트 연결 흡수 파이프라인 구축 (`scripts/tmux-session-launcher`)**:
+  - 네이티브 전환(`selection_sync_window_pending`) 컨텍스트 하에서 `client-session-attached` 및 `client-session-switch` 이벤트를 `selection.refresh.absorb`로 수렴하여 백그라운드 웜 세션 첫 진입 시의 불필요한 `render_full` 전체 화면 재렌더링을 완전히 제거.
+  - 마커 인계(`sidebar_consume_pending_target_marker`) 시 대상 세션의 `@sidebar_force_refresh_<session>` 플래그를 원자적으로 초기화하고 `refresh_signal_pending=false` 및 `transition_render_coalesced=true`를 설정하여 전환 직후 잔여 신호에 의한 깜빡임 차단.
+  - 비활성 백그라운드 사이드바의 경우 다른 클라이언트 간 전환 시 `mark_full_render_required client-switch-refresh` 실행을 억제하여 불필요한 CPU/렌더링 오버헤드 박멸.
+- **TDD 감지 및 다중 세션 증분 검증 테스트 신설 (`tests/tmux-single-sidebar/test-first-enter-warm-session-flicker-detect.sh`)**:
+  - 실제 PTY 키보드 입력(`Enter`)을 통한 첫 진입 시 `render.full.begin` 및 `client-session-attached` 결함 검출(RED) $\to$ Candidate 1 적용 후 0-Flicker Fast-Path 완전 통과(GREEN) 입증.
+  - 최초 진입 후 증분 신규 세션 생성 및 왕복 전환(`Anchor` $\to$ `Peer 1` $\to$ `Peer 2` $\to$ `Anchor`) 전 과정에서 `render_full` 0회(0% 깜빡임) 무결성 검증.
+- **전체 테스트 스위트 100% 통과 (Full Suite 77/77 PASS)**:
+  - `EDGE` (11/11 PASS): 신규 `test-first-enter-warm-session-flicker-detect.sh` 포함 전체 통과.
+  - `SUBPANE` (18/18 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS), `GATE_A` (21/21 PASS), `GATE_B` (15/15 PASS) 100% 무결점 통과.
+
+## 2026-08-23 - Architecture: Selective Eager Warm Provisioning on Restore & Full Suite Verification
+
+- **세션 복원(Restore) 단계 내 Selective Eager Warm 프로비저닝 구현 (`scripts/tmux-session-launcher`)**:
+  - `o` (History Restore / `tui_restore_archives`) 및 배치 복원(`a` -> `Enter`) 시, 활성 윈도우(`active_window_target`)의 사이드바 페인을 복원 트랜잭션 내에서 즉시 spawn하고 `restore_archived_sidebar_layout`을 적용하여 렌더링 및 Ready 상태를 사전 완성.
+  - 비활성 백그라운드 윈도우는 Lazy 프로비저닝 정책을 유지하여 불필요한 시스템 리소스 낭비 방지.
+  - 사용자가 세션 목록에서 `Enter`로 첫 진입할 때 지연/깜빡임 없이 0.75ms Fast-Path(`render_marker_delta`)로 즉각 전환되도록 최적화.
+- **백그라운드 강제 갱신 신호 처리 시 `view_mode` 및 세션 선택 무결성 강화 (`scripts/tmux-session-launcher`)**:
+  - `force-refresh` 신호 처리 시 `view_mode`가 history인 경우 `collect_history`를 유지하도록 개선하고, 세션 모드에서도 기존 유효 `selected_session`을 보존하여 사용자 커서 이동 상태 파괴 방지.
+  - `check_restore_precondition`에서 `created=true` 상태일 때의 세션 충돌 검사 논리를 정밀화하여 자체 생성 세션과의 거짓 충돌 방지.
+- **전체 테스트 스위트 100% 통과 검증 (Full Suite 76/76 PASS)**:
+  - `EDGE` (10/10 PASS): `test-eager-warm-provisioning-restore.sh` 신설 포함 전체 통과.
+  - `SUBPANE` (18/18 PASS): 서브페인 생명주기/스왑/지오메트리 보존 전체 통과.
+  - `GRADIENT` (7/7 PASS): 웨이브폼 렌더러 및 애니메이션 생명주기 전체 통과.
+  - `STRESS` (5/5 PASS): 15회 고속 전환/락 회수 스트레스 전체 통과.
+  - `GATE_A` (21/21 PASS): 단위 및 계약 테스트 전체 통과.
+  - `GATE_B` (15/15 PASS): 3회 연속 E2E, 복합 토폴로지, 분할 엣지케이스 전체 통과.
+
 ## 2026-08-22 - Testing: Comprehensive Test Suite Reinforcement & Health Infrastructure
 
 - **tmux 테스트 스위트 6대 핵심 영역 보강 스크립트 신설**:

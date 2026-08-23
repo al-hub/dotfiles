@@ -88,7 +88,19 @@ wait_until() {
   return 1
 }
 
-client_session() { if [ -n "${CLIENT_TTY:-}" ]; then tmuxc display-message -c "$CLIENT_TTY" -p '#{client_session}' 2>/dev/null || true; else tmuxc list-clients -F '#{client_control_mode}|#{session_name}' 2>/dev/null | awk -F'|' '$1 != 1 {print $2; exit}'; fi; }
+client_session() {
+  local sess=""
+  if [ -n "${CLIENT_TTY:-}" ]; then
+    sess="$(tmuxc display-message -c "$CLIENT_TTY" -p '#{session_name}' 2>/dev/null || true)"
+  fi
+  if [ -z "$sess" ]; then
+    sess="$(tmuxc list-clients -F '#{client_control_mode}|#{client_tty}|#{session_name}' 2>/dev/null | awk -F'|' -v tty="${CLIENT_TTY:-}" '($1 != 1 && (tty == "" || $2 == tty)) {print $3; exit}')"
+  fi
+  if [ -z "$sess" ]; then
+    sess="$(tmuxc list-clients -F '#{client_control_mode}|#{session_name}' 2>/dev/null | awk -F'|' '$1 != 1 {print $2; exit}')"
+  fi
+  printf '%s\n' "$sess"
+}
 client_tty() { local tty; tty="$(tmuxc list-clients -F '#{client_control_mode}|#{client_tty}' 2>/dev/null | awk -F'|' '$1 != 1 && $2 != "" {print $2; exit}')"; if [ -n "$tty" ]; then printf '%s\n' "$tty"; else tmuxc list-clients -F '#{client_tty}' 2>/dev/null | grep -v '^[[:space:]]*$' | head -n 1; fi; }
 client_window_id() { local win; win="$(tmuxc list-clients -F '#{client_tty}|#{window_id}' 2>/dev/null | awk -F'|' -v tty="${CLIENT_TTY:-}" '$1 == tty && $2 != "" {print $2; exit}')"; if [ -n "$win" ]; then printf '%s\n' "$win"; else win="$(tmuxc list-clients -F '#{client_control_mode}|#{window_id}' 2>/dev/null | awk -F'|' '$1 != 1 && $2 != "" {print $2; exit}')"; if [ -n "$win" ]; then printf '%s\n' "$win"; else tmuxc list-windows -F '#{window_id}' 2>/dev/null | head -n 1; fi; fi; }
 sidebar_pane_id() { tmuxc list-panes -t "$(client_window_id)" -F '#{pane_id}|#{pane_title}' | awk -F'|' '$2=="dotfiles-session-sidebar"{print $1; exit}'; }

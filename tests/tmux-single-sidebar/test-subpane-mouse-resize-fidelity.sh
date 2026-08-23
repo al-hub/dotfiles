@@ -46,6 +46,13 @@ echo "=== Initial: subpane height = $(tmux -L "$SOCKET" display-message -p -t "$
 echo "--- Simulating User Mouse Drag to 28 ---"
 tmux -L "$SOCKET" resize-pane -t "$sub_p" -y 28
 
+# Allow async tmux hook (run-shell -b) to update option
+for i in {1..20}; do
+    h_opt="$(tmux -L "$SOCKET" show-option -gqv @dotfiles_sidebar_subpane_height 2>/dev/null || true)"
+    [ "$h_opt" = "28" ] && break
+    sleep 0.05
+done
+
 # Step 3: User immediately switches to sess_2 (Enter in launcher)
 echo "--- Simulating Immediate Session Switch to sess_2 ---"
 bash "$SCRIPT_DIR/dist/tmux-session-launcher" --ensure-sidebar-window "$win_2"

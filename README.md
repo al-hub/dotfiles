@@ -38,7 +38,7 @@ DOTFILES_VERSION=v0.1 bash install.sh
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
 ```
 
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.17`이며, 사용자는 `--v v0.6.17`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.17은 Look-Up Table(LUT) 24프레임 파형 엔진 및 30 FPS 적응형 클록, CJK/Emoji 터미널 너비 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 및 백그라운드 실시간 파형 대시보드, 서브페인 상/하 위치 전환 및 세션 전환 유지, 결정론적 아카이브 명명 규칙, 배치 복원 시 다중 분할 레이아웃 무결성 직렬화, tmux 3.2a 하위 호환성 상단 서브페인 지오메트리 보정 및 원자적 파이프라인을 통합 반영하였습니다.
+설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.18`이며, 사용자는 `--v v0.6.18`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.18은 Look-Up Table(LUT) 24프레임 파형 엔진 및 30 FPS 적응형 클록, CJK/Emoji 터미널 너비 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 및 백그라운드 실시간 파형 대시보드, 서브페인 상/하 위치 전환 및 세션 전환 유지, 마우스 리사이즈 너비 영속화, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인을 통합 반영하였습니다.
 
 ## 로컬 개발 및 테스트 설치
 

@@ -38,6 +38,7 @@ tmuxc() { HOME="$HOME_DIR" TMUX_SESSION_HISTORY_DIR="$HISTORY_DIR" "${TMUX[@]}" 
 
 # 0. Setup isolated server with dummy anchor session
 tmuxc new-session -d -s anchor -x 120 -y 50 -c "$REPO_ROOT" 'sleep 300'
+tmuxc set-environment -g TMUX_SESSION_HISTORY_DIR "$HISTORY_DIR"
 
 echo "=== [1/3] Testing Split Restore with Subpane Active ==="
 # Create session split-subpane (120x50)
@@ -68,6 +69,7 @@ tmuxc run-shell "$LAUNCHER --archive-session split-subpane false"
 
 # Kill and restore
 tmuxc kill-session -t '=split-subpane:'
+while tmuxc has-session -t '=split-subpane:' 2>/dev/null; do sleep 0.05; done
 tmuxc run-shell "$LAUNCHER --restore-archive '$HISTORY_DIR/split-subpane.tsv' op-split-subpane true"
 tmuxc has-session -t '=split-subpane:' || { echo "FAIL: session not restored"; exit 1; }
 
@@ -95,6 +97,7 @@ echo "Original vertical heights: hp1=$orig_h1, hp2=$orig_h2"
 # Archive and restore
 tmuxc run-shell "$LAUNCHER --archive-session split-height false"
 tmuxc kill-session -t '=split-height:'
+while tmuxc has-session -t '=split-height:' 2>/dev/null; do sleep 0.05; done
 tmuxc run-shell "$LAUNCHER --restore-archive '$HISTORY_DIR/split-height.tsv' op-height true"
 
 restored_win2="$(tmuxc list-windows -t '=split-height:' -F '#{window_id}' | head -n 1)"
@@ -106,6 +109,7 @@ echo "Restored vertical heights: $restored_h_list"
 
 echo "=== [3/3] Testing Terminal Resolution Adaptability on Restore ==="
 tmuxc kill-session -t '=split-subpane:' 2>/dev/null || true
+while tmuxc has-session -t '=split-subpane:' 2>/dev/null; do sleep 0.05; done
 tmuxc run-shell "$LAUNCHER --restore-archive '$HISTORY_DIR/split-subpane.tsv' op-adapt true"
 tmuxc has-session -t '=split-subpane:' || { echo "FAIL: adaptive restore failed"; exit 1; }
 

@@ -192,9 +192,14 @@ bash tests/tmux-single-sidebar/test-width-persistence-contract.sh
 bash tests/tmux-single-sidebar/test-width-clamping-single-line.sh
 bash tests/tmux-single-sidebar/test-long-session-name-switching-flicker-detect.sh
 bash tests/tmux-single-sidebar/test-negative-width-substring-regression.sh
+bash tests/tmux-single-sidebar/test-eager-warm-provisioning-restore.sh
 bash tests/tmux-single-sidebar/test-cold-provisioning-contract.sh
 bash tests/tmux-single-sidebar/test-batch-restore-observability.sh
 bash tests/tmux-single-sidebar/test-split-restore-edge-cases.sh
+bash tests/tmux-single-sidebar/test-first-enter-warm-session-flicker-detect.sh
+bash tests/tmux-single-sidebar/test-mouse-width-resize-switch.sh
+bash tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-detect.sh
+bash tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh
 bash tests/tmux-single-sidebar/test-missing-session-switch-graceful.sh
 bash tests/tmux-single-sidebar/test-find-global-pane-regression.sh
 ```
