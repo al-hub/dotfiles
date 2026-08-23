@@ -154,6 +154,7 @@ case "${TARGET_SUITE}" in
             "${SINGLE_DIR}/test-subpane-swap-switch-immediate.sh"
             "${SINGLE_DIR}/test-subpane-top-switch-decay.sh"
             "${SINGLE_DIR}/test-keyboard-e2e-subpane.sh"
+            "${SINGLE_DIR}/test-subpane-default-bottom-off-height-persist.sh"
             "${SINGLE_DIR}/test-subpane-p-key-rapid-loop.sh"
             "${SINGLE_DIR}/test-subpane-multi-session-stress.sh"
         )

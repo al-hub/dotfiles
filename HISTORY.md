@@ -6,6 +6,27 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Release v0.6.19: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
+
+- **v0.6.19(v6.19) 공식 안정 릴리스 발행**:
+  - 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence)을 시스템 전반에 표준화 반영.
+  - 서버 부팅 시 `@dotfiles_sidebar_subpane_enabled` 미설정 시 기본 0 (OFF), `@dotfiles_sidebar_subpane_position` 미설정 시 기본 bottom 설정.
+  - 마우스/리사이즈로 조절된 물리적 `height`만 `~/.local/state/dotfiles/tmux-sidebar-subpane-height`에 영속화.
+  - 신규 TDD 전용 계약 테스트 추가: [`tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh).
+  - `SUBPANE` (19/19), `GATE_A` (21/21), `GRADIENT` (7/7), `STRESS` (5/5) 전체 스위트 100% 무결점 통과.
+  - `v0.6.19` 태그 생성 및 배포.
+
+## 2026-08-23 - Architecture: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
+
+- **서브페인 제약조건 모델(Minimal State & Clean Cold Start) 구축 (`scripts/lib/sidebar_port_tmux.sh`)**:
+  - **Default State**: tmux 서버 부팅 시 `@dotfiles_sidebar_subpane_enabled`이 없으면 항상 `0 (OFF, 닫힘)`으로 규정하여 첫 진입 시 온전한 메인 작업 공간 제공 (시각적 노이즈 0).
+  - **Default Position**: tmux 서버 부팅 시 `@dotfiles_sidebar_subpane_position`이 없으면 항상 `bottom (하단 배치)`으로 규정하여 프롬프트 밀림 방지.
+  - **Height-Only Persistence**: 서브페인의 상태 중 사용자가 크기를 조절한 `height` (높이, e.g. 15~18줄)만 디스크 파일(`~/.local/state/dotfiles/tmux-sidebar-subpane-height`)에 원자적으로 영속화하여, 서브페인을 의도적으로 열 때 즉시 맞춤 높이로 복원.
+  - `persist_sidebar_subpane_enabled` 및 `persist_sidebar_subpane_position`의 불필요한 디스크 파일 저장을 제거하고 런타임 전용 옵션으로 격리하여 비정상 종료 후의 상태 오염 원천 차단.
+- **전용 TDD 계약 테스트 추가 및 SUBPANE 스위트 100% 통과**:
+  - [`tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh) 추가 및 검증 (Cold boot OFF, default bottom, height 18 cold restart 복원 검증).
+  - `SUBPANE` 종합 스위트 (19/19 PASS), `GATE_A` (21/21 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS) 무결점 통과.
+
 ## 2026-08-23 - Release v0.6.18: Deep Viewport Manager, Global Topology Epoch Protocol & Mouse Width Persistence
 
 - **v0.6.18(v6.18) 공식 안정 릴리스 발행**:

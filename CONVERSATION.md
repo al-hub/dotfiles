@@ -6,6 +6,35 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-23 - Release v0.6.19: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
+
+- **사용자 요청**:
+  - 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence) 반영에 따른 버전업 단행 및 안정 릴리스 배포 요청 (`version up 하자.`).
+- **릴리스 주요 변경 사항 요약**:
+  1. **Subpane Minimal State Constraint Model**:
+     - tmux 서버 부팅 시 `@dotfiles_sidebar_subpane_enabled` 옵션 부재 시 기본 `OFF (0, 닫힘)`로 시작하여 0-Noise의 깨끗한 작업 환경 보장 및 전환 IPC 오버헤드 0ms 유지.
+     - tmux 서버 부팅 시 `@dotfiles_sidebar_subpane_position` 옵션 부재 시 기본 `bottom (하단 배치)`으로 시작.
+     - 서브페인의 조절된 물리적 크기(`height`)만 `~/.local/state/dotfiles/tmux-sidebar-subpane-height`에 영속화하여, 의도적 활성화(Toggle ON) 시 즉시 맞춤 높이로 복원.
+     - 런타임 중 `Ctrl+a P`로 Top/Bottom 위치 전환 및 토글 동작은 런타임 메모리 옵션으로만 유지하여 비정상 종료 시의 상태 오염 원천 차단.
+  2. **신규 TDD 전용 계약 테스트**:
+     - [`tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh) 추가 및 전체 `SUBPANE` 스위트 19개 테스트 100% GREEN 통과.
+- **문서 및 태그 승격**:
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`, `docs/architecture.md`, `docs/design/tmux-session-launcher-internals.md`를 `v0.6.19`(v6.19)로 승격.
+  - git 커밋 및 `v0.6.19` 태그 생성.
+
+## 2026-08-23 - Architecture: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
+
+- **사용자 요청**:
+  - tmux에서 subpane을 제약조건으로 하여, 시작할 때 기본 `bottom(하단 배치)`, `항상 OFF(닫힘)`로 규정하고 `height`만 저장하여 복원 시 활용하는 설계 방안 검토 및 진행 요청 (`진행해보자.`).
+- **아키텍처 분석 및 구현 내용**:
+  1. **상태 최소화(Minimal State)**: 3중 영속화(position, enabled, height)에서 불필요한 enabled/position 디스크 쓰기를 제거하고 런타임 전용 옵션(`@dotfiles_sidebar_subpane_enabled`, `@dotfiles_sidebar_subpane_position`)으로 격리.
+  2. **Clean Cold Start**: tmux 서버 부팅 시 서브페인은 항상 OFF(0), 위치는 항상 Bottom으로 시작하여 100% 결정론적이고 깨끗한 작업 환경 제공.
+  3. **Height-Only Persistence**: 사용자가 조정한 물리적 높이만 `~/.local/state/dotfiles/tmux-sidebar-subpane-height`에 영속화하여, 서브페인을 켤 때 해당 높이로 자동 복원.
+  4. **TDD 전용 계약 테스트**: [`tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh) 작성 및 100% 통과 검증.
+- **검증 결과**:
+  - `SUBPANE` 스위트 19개 전체 100% 통과 (19/19 PASS).
+  - `GATE_A` (21/21), `GRADIENT` (7/7), `STRESS` (5/5) 전체 무결점 통과.
+
 ## 2026-08-23 - Release v0.6.18: Deep Viewport Manager, Global Topology Epoch Protocol & Mouse Width Persistence
 
 - **사용자 요청**:

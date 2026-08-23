@@ -171,6 +171,7 @@ bash tests/tmux-single-sidebar/test-subpane-swap-manual-resize-fidelity.sh
 
 # PTY E2E 및 스트레스
 bash tests/tmux-single-sidebar/test-keyboard-e2e-subpane.sh
+bash tests/tmux-single-sidebar/test-subpane-default-bottom-off-height-persist.sh
 bash tests/tmux-single-sidebar/test-subpane-p-key-rapid-loop.sh
 bash tests/tmux-single-sidebar/test-subpane-multi-session-stress.sh
 ```

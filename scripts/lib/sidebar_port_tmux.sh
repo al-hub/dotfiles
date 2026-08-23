@@ -121,46 +121,19 @@ sidebar_port_is_subpane() {
 }
 
 persist_sidebar_subpane_enabled() {
-    local enabled="$1" state_dir tmp_file
-    case "$enabled" in 0|1) ;; *) return 1 ;; esac
-    local state_file="${SIDEBAR_SUBPANE_ENABLED_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-enabled}"
-    state_dir="$(dirname "$state_file")"
-    mkdir -p "$state_dir" 2>/dev/null || return 1
-    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-subpane-enabled.XXXXXX" 2>/dev/null || true)"
-    [ -n "$tmp_file" ] || return 1
-    if ! printf '%s\n' "$enabled" > "$tmp_file"; then
-        rm -f -- "$tmp_file"
-        return 1
-    fi
-    if ! mv -f -- "$tmp_file" "$state_file"; then
-        rm -f -- "$tmp_file"
-        return 1
-    fi
+    return 0
 }
 
 read_persisted_sidebar_subpane_enabled() {
-    local state_file="${SIDEBAR_SUBPANE_ENABLED_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-enabled}"
-    local enabled
-    [ -r "$state_file" ] || return 1
-    IFS= read -r enabled < "$state_file" || true
-    case "$enabled" in
-        0|1) printf '%s\n' "$enabled"; return 0 ;;
-        *) return 1 ;;
-    esac
+    return 1
 }
 
 sidebar_subpane_get_enabled() {
     local opt="${SIDEBAR_SUBPANE_OPTION:-@dotfiles_sidebar_subpane_enabled}"
     local enabled
     enabled="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
-    if [ "$enabled" = "0" ] || [ "$enabled" = "1" ]; then
-        printf '%s\n' "$enabled"
-        return 0
-    fi
-    enabled="$(read_persisted_sidebar_subpane_enabled 2>/dev/null || true)"
-    if [ "$enabled" = "0" ] || [ "$enabled" = "1" ]; then
-        sidebar_tmux_cmd set-option -gq "$opt" "$enabled" 2>/dev/null || true
-        printf '%s\n' "$enabled"
+    if [ "$enabled" = "1" ]; then
+        printf '1\n'
         return 0
     fi
     printf '0\n'
@@ -220,32 +193,11 @@ sidebar_subpane_get_height() {
 }
 
 persist_sidebar_subpane_position() {
-    local pos="$1" state_dir tmp_file
-    case "$pos" in top|bottom) ;; *) return 1 ;; esac
-    local state_file="${SIDEBAR_SUBPANE_POSITION_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-position}"
-    state_dir="$(dirname "$state_file")"
-    mkdir -p "$state_dir" 2>/dev/null || return 1
-    tmp_file="$(mktemp "$state_dir/.tmux-sidebar-subpane-position.XXXXXX" 2>/dev/null || true)"
-    [ -n "$tmp_file" ] || return 1
-    if ! printf '%s\n' "$pos" > "$tmp_file"; then
-        rm -f -- "$tmp_file"
-        return 1
-    fi
-    if ! mv -f -- "$tmp_file" "$state_file"; then
-        rm -f -- "$tmp_file"
-        return 1
-    fi
+    return 0
 }
 
 read_persisted_sidebar_subpane_position() {
-    local state_file="${SIDEBAR_SUBPANE_POSITION_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tmux-sidebar-subpane-position}"
-    local pos
-    [ -r "$state_file" ] || return 1
-    IFS= read -r pos < "$state_file" || true
-    case "$pos" in
-        top|bottom) printf '%s\n' "$pos"; return 0 ;;
-        *) return 1 ;;
-    esac
+    return 1
 }
 
 sidebar_layout_hook_guard_active() {
@@ -331,12 +283,6 @@ sidebar_subpane_get_position() {
     local opt="${SIDEBAR_SUBPANE_POSITION_OPTION:-@dotfiles_sidebar_subpane_position}"
     local pos
     pos="$(sidebar_tmux_cmd show-option -gqv "$opt" 2>/dev/null || true)"
-    if [ -z "$pos" ]; then
-        pos="$(read_persisted_sidebar_subpane_position 2>/dev/null || true)"
-        if [ -n "$pos" ]; then
-            sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
-        fi
-    fi
     case "$pos" in
         top|TOP) printf 'top\n' ;;
         *) printf 'bottom\n' ;;
@@ -351,7 +297,6 @@ sidebar_subpane_set_position() {
         *) pos="bottom" ;;
     esac
     sidebar_tmux_cmd set-option -gq "$opt" "$pos" 2>/dev/null || true
-    persist_sidebar_subpane_position "$pos" 2>/dev/null || true
 }
 
 sidebar_subpane_swap_position() {
