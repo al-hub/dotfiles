@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Release v0.7.0: Decoupled Upstream Session Dock & Universal Setup Controller
+
+- **`tmux-session-dock` 독립 오픈소스 저장소 분리 및 배포 완료**:
+  - 독립 저장소: `https://github.com/al-hub/tmux-session-dock` (`v0.1.0`).
+  - Window-Local Thin Presenter, 24프레임 LUT 파형 엔진, 38종 프리미엄 테마 시스템, 서브페인 허브를 독립 오픈소스로 승격.
+- **`dotfiles` 저장소 최상위 워크스페이스 오케스트레이터(Top-Level Orchestrator) 전환**:
+  - **통합 라이프사이클 제어기 (`./setup.sh`)**: `install`, `update`, `uninstall`, `status`, `doctor`, `purge` 단일 CLI 체계 구축.
+  - **무중단 하위 호환성**: `setup`, `install.sh`, `uninstall.sh` 심볼릭 링크 완비.
+  - **초경량화 (Zero-Fat Dotfiles)**: dotfiles 내부의 중복된 `scripts/lib/*` (10개 모듈), 모놀리스 런처, `dist/`, 테마 38종 및 TUI 테스트 스위트(~500 KB)를 완전 정리하고 upstream `tmux-session-dock` 소비 구조로 전환.
+  - `dotfiles` 공식 안정 릴리스 **`v0.7.0`** 태그 생성 및 배포.
+
 ## 2026-08-23 - Release v0.6.21: Interactive Help Viewer & 38-Theme System with Rich Preview Inspector
 
 - **v0.6.21(v6.21) 공식 안정 릴리스 발행**:

@@ -17,30 +17,19 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip"]
 packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker", "tmux-command-palette", "tmux-help-viewer"]
-description = "tmux configuration"
+depends = ["tmux-session-dock", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
+description = "tmux configuration with upstream session dock integration"
 
 [[dotfiles]]
-name = "tmux-session-launcher"
+name = "tmux-session-dock"
 enabled = false
 hidden = true
-source = "dist/tmux-session-launcher"
-target = "~/.local/bin/tmux-session-launcher"
-commands = ["bash", "tmux"]
-packages = ["bash", "tmux"]
-depends = ["tmux-sidebar-tmux-adapter"]
-description = "tmux session launcher with a single movable sidebar"
-
-[[dotfiles]]
-name = "tmux-sidebar-tmux-adapter"
-enabled = false
-hidden = true
-source = "scripts/tmux-sidebar-tmux-adapter"
-target = "~/.local/bin/tmux-sidebar-tmux-adapter"
+source = ""
+target = "~/.local/bin/tmux-session-dock"
 commands = ["bash", "tmux"]
 packages = ["bash", "tmux"]
 depends = []
-description = "tmux adapter for the single sidebar controller"
+description = "upstream autonomous tmux session dock"
 
 [[dotfiles]]
 name = "tmux-zshrc"
@@ -96,36 +85,3 @@ commands = ["xrdb", "urxvt"]
 packages = ["x11-xserver-utils", "rxvt-unicode"]
 depends = ["urxvt-resize-font"]
 description = "X resources configuration"
-
-[[dotfiles]]
-name = "tmux-theme-picker"
-enabled = false
-hidden = true
-source = "scripts/tmux-theme-picker"
-target = "~/.local/bin/tmux-theme-picker"
-commands = ["bash", "tmux"]
-packages = []
-depends = []
-description = "tmux theme picker script and settings"
-
-[[dotfiles]]
-name = "tmux-command-palette"
-enabled = false
-hidden = true
-source = "scripts/tmux-command-palette"
-target = "~/.local/bin/tmux-command-palette"
-commands = ["bash", "tmux"]
-packages = []
-depends = []
-description = "tmux command palette script"
-
-[[dotfiles]]
-name = "tmux-help-viewer"
-enabled = false
-hidden = true
-source = "scripts/tmux-help-viewer"
-target = "~/.local/bin/tmux-help-viewer"
-commands = ["bash", "tmux"]
-packages = []
-depends = []
-description = "interactive popup help viewer for tmux keybindings"

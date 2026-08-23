@@ -13,76 +13,48 @@
 Debian 또는 Ubuntu 계열 PC에서 아래 명령으로 실행합니다.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash
+# 통합 setup controller로 원클릭 설치
+curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/setup.sh | bash
 ```
 
-`install.sh`는 기본적으로 master branch의 최신 `install.toml`을 내려받아 설치 가능한 전체 항목을 보여주고, 사용자가 선택한 항목만 설치합니다.
+## 버전 설치 및 라이프사이클 관리
 
-## 버전 설치
-
-이 저장소는 `v0.1`부터 tag 기반 버전 설치를 지원합니다. 특정 버전을 명시하려면 아래처럼 실행합니다.
+이 저장소는 `v0.1`부터 tag 기반 버전 설치 및 `./setup.sh` 라이프사이클 명령을 지원합니다.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --v v0.1
+# 특정 버전 설치 (현재 안정 기준: v0.7.0)
+curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/setup.sh | bash -s -- --v v0.7.0
+
+# 로컬 CLI 명령
+./setup.sh install    # 전체 설정 설치 및 upstream tmux-session-dock 자동 프로비저닝
+./setup.sh update     # dotfiles 및 upstream dock 최신 동기화
+./setup.sh uninstall  # 관리 파일 안전 롤백 및 백업 복원
+./setup.sh doctor     # 필수 의존성(zsh, urxvt, tmux, 폰트) 무결성 진단
+./setup.sh status     # 설치 상태 및 심볼릭 링크 개요 출력
 ```
-
-환경변수로도 버전을 지정할 수 있습니다.
-
-```sh
-DOTFILES_VERSION=v0.1 bash install.sh
-```
-
-명시적으로 최신 master 기준 설치를 요청하려면 아래 옵션을 사용할 수 있습니다.
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/install.sh | bash -s -- --latest
-```
-
-설치 시 사용한 버전 또는 branch는 `~/.dotfiles-install/version`에 기록됩니다. 현재 sidebar 최적화 기준은 `v0.6.21`이며, 사용자는 `--v v0.6.21`로 고정 설치할 수 있습니다. 성능 비교 리포트는 `tests/profile-reports/`에 버전별로 보관합니다. v0.6.21은 Look-Up Table(LUT) 24프레임 파형 엔진 및 30 FPS 적응형 클록, CJK/Emoji 터미널 너비 안전 토크나이저, 다중 세션 비동기 AI 활동 추적 및 백그라운드 실시간 파형 대시보드, 서브페인 상/하 위치 전환 및 세션 전환 유지, 마우스 리사이즈 너비 영속화, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인, 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence), 클린 공유 히스토리 파이프라인(Zero Time-Travel History Pollution), 인터랙티브 도움말 뷰어(`Ctrl+a h`), 38종 프리미엄 테마 시스템 및 3단계 계층 구조 표준화(Canonical Taxonomy), 가중치 정렬 및 실시간 리치 프리뷰 인스펙터를 통합 반영하였습니다.
-
-## 로컬 개발 및 테스트 설치
-
-로컬 저장소의 변경 사항을 GitHub에 푸시하지 않고 로컬 파일 시스템에서 직접 참조하여 테스트 설치하려면 `REPO_RAW_URL` 환경 변수를 사용합니다.
-
-```sh
-REPO_RAW_URL="file:///home/al-hub/workspace/dotfiles" bash install.sh
-```
-
-이렇게 하면 `install.sh`가 로컬 디렉터리의 `install.toml` 및 설정 파일들을 직접 참조하여 설치합니다.
 
 ## 현재 구조
 
 ```text
 dotfiles/
-├── install.sh
-├── install.toml
+├── setup.sh                  ← [단일 진실 공급원] 통합 라이프사이클 관리자 (v0.7.0)
+├── setup                     ← 로컬 편의 실행 링크 (./setup install)
+├── install.sh                ← 하위 호환 심볼릭 링크 -> setup.sh
+├── uninstall.sh              ← 하위 호환 심볼릭 링크 -> setup.sh
+├── install.toml              ← 전체 컴포넌트 종속성 및 타깃 명세
 ├── dotfiles/
-│   ├── opencode.jsonc
-│   ├── tmux.conf
-│   ├── tmux.zshrc
-│   ├── vimrc
-│   ├── myrc
-│   ├── Xresources
-│   ├── tmux/
-│   │   └── themes/               ← 테마 설정 파일들 (*.conf)
+│   ├── opencode.jsonc        ← OpenCode personal 설정
+│   ├── tmux.conf             ← Tmux 설정 (upstream tmux-session-dock 연동)
+│   ├── tmux.zshrc            ← Tmux 전용 zsh 설정 (짧은 프롬프트 & completion)
+│   ├── vimrc                 ← Vim 설정
+│   ├── myrc                  ← 공용 셸 설정
+│   ├── Xresources            ← URxvt TrueColor 및 폰트 설정
 │   └── urxvt/
 │       └── ext/
-│           └── resize-font
-├── scripts/
-│   ├── tmux-session-launcher
-│   ├── tmux-sidebar-tmux-adapter
-│   └── tmux-theme-picker         ← 실시간 테마 피커 스크립트
-├── get_dotfiles.sh
-├── install_dotfiles.sh
-├── shortcut.md
-└── docs/
-    ├── README.md                 ← 문서 허브 & 용어 사전
-    ├── architecture.md           ← 설치 아키텍처
-    ├── keybindings.md            ← 주요 단축키 가이드
-    ├── guides/                   ← 설정 & 사용 가이드 (opencode, vim, theme 등)
-    ├── design/                   ← 단일 사이드바 & 런처 상세 설계
-    ├── testing/                  ← 테스트 매트릭스 & 검증 계획
-    └── archives/                 ← 과거 분석 & 벤치마크 리포트
+│           └── resize-font   ← Ctrl+마우스 휠 폰트 크기 조절 Perl 확장
+├── tests/
+│   └── run-tests.sh          ← dotfiles 오케스트레이터 무결성 검증 스위트
+└── docs/                     ← 개발 및 아키텍처 문서 허브
 ```
 
 `dotfiles/` 디렉터리에는 실제 배포할 설정 파일을 둡니다. `install.toml`은 어떤 파일을 설치할지, 어디에 설치할지, 필요한 실행파일과 패키지가 무엇인지 정의합니다.

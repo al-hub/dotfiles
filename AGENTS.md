@@ -5,30 +5,13 @@
 ## 빠른 상태
 
 - 개인 Linux dotfiles 저장소입니다.
-- 설치 흐름의 중심은 `install.sh`와 `install.toml`입니다.
-- sidebar 유지보수 목표는 tmux server당 logical coordinator 1개와 unique managed
-  window당 고정 thin presenter 1개입니다. 물리 pane 1개를 이동하는 모델은 채택하지
-  않으며, `docs/design/tmux-single-sidebar.md`의 M0~M7 TDD strangler 순서를 따릅니다.
-- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `install.sh --v v0.1`로 tag 기준 설치할 수 있게 준비했습니다. v0.6~v0.6.20을 이전 기준으로 보존하고, 현재 안정 기준은 v0.6.21(v6.21)입니다. launcher 내부 latency phase metrics는 기록되며 완화된 기준 목표(전환 1000ms 이내, 외부 키 반응 100ms 이내)를 적용합니다. 제자리 전환(Fast-Path)은 0.75ms 즉각 반환으로 5초 타임아웃 스파이크를 완전 박멸했으며, 복합 IPC 파이프라인(`switch-client \; select-pane`)으로 전환 안정성을 확보했습니다. 인플라이트 마커 핸드오버 및 선택 정렬 리듀서 도입으로 마커 비동기화와 0번 인덱스 오작동 전환을 완전 해결했습니다. Look-Up Table(LUT) 24프레임 파형 엔진 및 30 FPS 적응형 클록, CJK/Emoji 너비 보존 토크나이저, 다중 세션 비동기 AI 활동 추적 및 실시간 파형 대시보드, 서브페인 상/하 전환(`Ctrl+a P`) 및 세션 전환 위치 유지, 마우스 리사이즈 너비 영속화, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인, 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence), 클린 공유 히스토리 파이프라인(Zero Time-Travel History Pollution), 인터랙티브 도움말 뷰어(`Ctrl+a h`), 38종 프리미엄 테마 시스템 및 3단계 계층 구조 표준화(Canonical Taxonomy), 가중치 정렬 및 실시간 리치 프리뷰 인스펙터를 지원합니다.
-- 기본 enabled 설치 항목은 사용자에게 `opencode`와 `tmux`가 보이며, `tmux-session-launcher`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`, `tmux-theme-picker`, `tmux-command-palette`는 hidden dependency로 함께 설치됩니다.
+- 설치 흐름의 중심은 `./setup.sh` (install / update / uninstall / status / doctor / purge)와 `install.toml`입니다.
+- `dotfiles`는 전체 개발 환경(Zsh + URxvt + Vim + OpenCode + Tmux)을 조율하는 **최상위 워크스페이스 오케스트레이터(Top-Level Orchestrator)** 역할을 수행합니다.
+- 세션 런처/도크 TUI 엔진 및 38종 프리미엄 테마 시스템은 독립 최상위 오픈소스 저장소인 [`tmux-session-dock`](https://github.com/al-hub/tmux-session-dock)으로 완전 분리되었으며, dotfiles는 upstream 릴리스(`v0.1.0+`)를 소비(Consume)합니다.
+- 기본 설치는 master 최신 기준이며, 안정 버전은 `v0.1`부터 `setup.sh --v v0.7.0`로 tag 기준 설치할 수 있습니다. 현재 안정 기준은 **v0.7.0**입니다.
+- 기본 enabled 설치 항목은 사용자에게 `opencode`와 `tmux`가 보이며, `tmux-session-dock`, `tmux-zshrc`, `urxvt-resize-font`, `tmux-xresources`는 의존성으로 함께 관리됩니다.
 - `vim`, `shell`은 manifest에 있지만 disabled입니다.
-- 현재 주요 변경은 tmux 하단 status bar와 window tab을 유지하고, pane border 상단에 현재 경로를 표시하며, `Ctrl+a s`로 고정 sidebar session launcher를 열고, tmux 전용 zsh init으로 짧은 prompt와 git completion을 함께 유지하고, URxvt에서 `Ctrl+마우스 휠`로 폰트 크기를 조절하는 것입니다.
-- sidebar는 bash/tmux TUI로 분리되어 있으며, 반복 toggle 시 work layout을 저장/복구하고 current session 삭제 시 다른 session으로 이동하거나 마지막 session이면 tmux server를 종료합니다. sidebar가 열린 상태의 직접 tmux split/resize도 after-command/window-resized hook으로 full layout metadata를 갱신하며, sidebar 이동·복구 시 해당 metadata를 검증합니다. wrapper에 묶인 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`는 sidebar를 제외한 work pane을 대상으로 하는 권장 경로입니다.
-- session 전환은 논리적으로 하나의 shared sidebar 상태를 사용하되, tmux의 pane은 managed window별로 하나씩 사전 provision합니다. target 전환은 `move-pane` 없이 준비된 target pane으로 `switch-client`만 수행하며, hot path에서 layout snapshot/restore와 switch-requested full render를 실행하지 않습니다.
-- active client가 session/window를 직접 변경하면 runtime tmux hook은 target window의 local sidebar 존재만 확인하고, 없을 때 cold provision합니다. `d All`은 `@dotfiles_sidebar_managed`로 표시된 session만 대상으로 하며 외부 session은 보존합니다. archive/restore 중에는 operation busy guard가 추가 입력을 거부합니다.
-- non-owner client의 session/window 변경은 sidebar를 탈취하지 않고 관측 trace만 남깁니다. archive/delete/restore는 session identity, client attachment, owner client tty/session/window precondition을 재검증하며 외부 conflict 시 대상 session 보존과 rollback을 수행합니다.
-- sidebar owner client는 `@dotfiles_sidebar_owner_client`로 고정되며 다른 client가 sidebar를 빼앗지 않습니다. `TMUX_SESSION_LAUNCHER_FAIL_STEP`은 snapshot/move/client-switch/restore-layout/sidebar-focus/transition rollback 테스트에만 사용합니다.
-- archive는 version 3 work-pane logical slot/title/geometry/active metadata와 session 전체 window topology를 기록하고 window-local sidebar infrastructure는 저장하지 않습니다. version 1/2 archive는 legacy parser로 읽을 수 있으며, physical work-pane ID/PID는 restore 시 새로 생성됩니다.
-- archive snapshot helper는 full `list-panes` schema를 기준으로 sidebar를 식별하고 work-only layout/geometry와 full-window sidebar layout을 분리 기록합니다. restore는 sidebar 생성 후 full layout을 재적용하며 arbitrary-topology attached-PTY 회귀에서 metadata·geometry·client-session readiness가 PASS했습니다.
-- numeric session `0` 삭제는 archive target `=0:`과 managed sidebar refresh fan-out을 사용합니다. `test-delete-zero-stale-row.sh`는 삭제 후 stale row 제거와 다음 Enter 전환을 검증합니다.
-- archive 생성은 임시 파일 검증 후 고유 이름으로 rename하며, restore 후 history import marker로 동일 archive의 중복 import를 막습니다. bulk archive 실패 시 session 삭제를 중단합니다.
-- session 전환은 layout snapshot/restore를 사용하지 않습니다. archive/restore와 cold provisioning만 topology/geometry를 검증하며, horizontal/vertical multi-pane window도 local sidebar geometry를 유지합니다.
-- 전환 직후 target sidebar pane이 absent이면 target window에 bounded repair/provision을 수행하고, 정상 전환에서는 이 경로를 실행하지 않습니다. live observer는 반드시 `display-message -c <client_tty>`로 사용자 client context를 고정해야 합니다.
-- 성능 baseline은 `tests/compare-profiles.sh`가 현재 checkout의 launcher를 전용 tmux socket, attached urxvt, 임시 history에서 기본 3회 측정합니다. 사용자 live tmux를 변경하지 않으며, 실패한 invariant는 수치로 기록하지 않고 suite를 실패시킵니다.
-- 전환 metrics는 validate/ensure-target-sidebar/switch-client/stabilize/finish phase를 operation ID로 연결합니다. native 전환은 target marker를 switch 직전에 게시하고 selection-sync ACK 후 client를 전환하며, current/selected marker delta만 갱신하고 실제 geometry 변화가 없는 full render는 억제합니다. attached PTY 전환 623~838ms는 공식 1000ms 기준 내이며, p95 500ms는 후속 최적화 목표입니다. 사용자 live 6회는 marker invariant 6/6, target pane identity 6/6, known error 0건이며 343~593ms로 측정됐습니다.
-- `tmux-sidebar-tmux-adapter`에는 FIFO-backed persistent control-mode 실험 경로가 있으나 `TMUX_SESSION_SIDEBAR_CONTROL_MODE` 기본값은 false입니다. 실제 pane 이동 후 control client event isolation 문제가 확인되어 기본 production은 CLI adapter를 사용하며, control-mode 승격에는 dedicated internal control session/client가 필요합니다.
-- history 화면의 `a`는 모든 archive를 명시적으로 선택하고, restore는 selected/restored cardinality를 trace와 `Restore incomplete: x/y`로 보고합니다. attached-PTY 6-archive 전체선택 restore 회귀가 6/6이어야 합니다.
-- restore 중 tmux 자동 provision hook은 topology guard로 억제되며, archive의 빈/stale layout은 `-` sentinel과 pane-count 검증으로 geometry가 다른 layout의 적용을 막습니다.
+- `setup.sh` (및 `setup`, `install.sh`, `uninstall.sh` 심볼릭 링크)는 전체 구성 요소의 라이프사이클을 단 하나의 일관된 CLI로 총괄 관리합니다.
 
 ## 문서 역할
 

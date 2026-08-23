@@ -6,6 +6,27 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-23 - Release v0.7.0: Decoupled Upstream Session Dock & Universal Setup Controller
+
+- **사용자 요청**:
+  - `tmux` 부분을 독립 저장소로 분리 관리할지 모노레포를 유지할지 장단점 분석 요청.
+  - TUI 세션 관리 도구의 최적 네이밍 논의 (`tmux-session-dock` 확정).
+  - 독립 저장소(`tmux-session-dock`) 생성 및 첫 커밋/자립 생명주기 계획 수립.
+  - `setup install/uninstall/update` 통합 방식의 인체공학적 제어기 도입 제안.
+  - 분리 후 `dotfiles` 저장소의 역할 및 마이그레이션 방향성 수립과 실행 요청 (`진행하자.`).
+- **구현 내용**:
+  1. **독립 저장소 `tmux-session-dock` 배포 (`v0.1.0`)**:
+     - `git@github.com:al-hub/tmux-session-dock.git` 생성 및 `setup.sh`, `Makefile`, `session-dock.tmux` 구축.
+     - 10개 핵심 도메인 라이브러리를 단일 실행 번들(`dist/tmux-session-dock`, 418KB)로 컴파일.
+     - 38종 테마 및 TUI 테스트 스위트 100% 통과 (Gate A 23/23, Subpane 19/19, Gradient 7/7).
+     - 첫 커밋 및 `v0.1.0` 태그 원격 푸시 완료.
+  2. **`dotfiles` 저장소 최상위 오케스트레이터 전환 (`v0.7.0`)**:
+     - 통합 라이프사이클 제어기 `setup.sh` (install / update / uninstall / doctor / status / purge) 구축.
+     - `setup`, `install.sh`, `uninstall.sh` 심볼릭 링크로 100% 무중단 하위 호환성 유지.
+     - `install.toml` 및 `dotfiles/tmux.conf`를 upstream `tmux-session-dock` 소비 구조로 전환.
+     - dotfiles 내부의 중복 코드 500KB+ 완전 제거 (Zero-Fat Dotfiles 달성).
+     - `dotfiles` 공식 릴리스 `v0.7.0` 태그 생성 및 배포.
+
 ## 2026-08-23 - Release v0.6.21: Interactive Help Viewer & 38-Theme System with Rich Preview Inspector
 
 - **사용자 요청**:
