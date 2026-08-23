@@ -5321,52 +5321,19 @@ EOF
 
 archive_shell_history()
 {
-    history_file="$(tmux_history_file)"
-    [ -f "$history_file" ] || return 0
-
-    tail -n 200 "$history_file" 2>/dev/null |
-        while IFS= read -r history_line; do
-            printf 'history\t%s\n' "$history_line"
-        done
+    return 0
 }
 
 append_archive_history()
 {
-    archive_path="$1"
-    history_file="$(tmux_history_file)"
-    history_dir="$(dirname "$history_file")"
-
-    [ -d "$history_dir" ] || mkdir -p "$history_dir"
-    while IFS="$(printf '\t')" read -r record history_line; do
-        [ "$record" = history ] || continue
-        printf '%s\n' "$history_line"
-    done < "$archive_path" >> "$history_file"
+    return 0
 }
 
 validate_archive_file() { sidebar_archive_validate_file "$@"; }
 
 append_archive_history_once()
 {
-    local archive_path_value="$1" marker_path marker_tmp
-    marker_path="${archive_path_value}${ARCHIVE_HISTORY_MARKER_SUFFIX}"
-    [ -f "$marker_path" ] && return 0
-    marker_tmp="${marker_path}.pending-${BASHPID:-$$}"
-    if ! append_archive_history "$archive_path_value"; then
-        rm -f "$marker_tmp"
-        return 1
-    fi
-    if ! printf 'archive=%s\n' "$(basename "$archive_path_value")" > "$marker_tmp"; then
-        rm -f "$marker_tmp"
-        return 1
-    fi
-    if ! mv -n "$marker_tmp" "$marker_path" 2>/dev/null; then
-        if [ ! -f "$marker_path" ]; then
-            rm -f "$marker_tmp"
-            return 1
-        fi
-        rm -f "$marker_tmp"
-    fi
-    trace_event "restore.history.imported archive=$archive_path_value marker=$marker_path"
+    return 0
 }
 
 clear_restored_work_panes()

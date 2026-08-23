@@ -203,6 +203,7 @@ bash tests/tmux-single-sidebar/test-incremental-session-discovery-stale-footer-d
 bash tests/tmux-single-sidebar/test-sidebar-ghost-row-stale-footer-detect.sh
 bash tests/tmux-single-sidebar/test-missing-session-switch-graceful.sh
 bash tests/tmux-single-sidebar/test-find-global-pane-regression.sh
+bash tests/tmux-single-sidebar/test-restore-history-no-pollution.sh
 ```
 
 ### 사이드바 애니메이션 및 웨이브폼 스위트

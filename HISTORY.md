@@ -6,6 +6,24 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Release v0.6.20: Clean Shared History & Zero Time-Travel Pollution
+
+- **v0.6.20(v6.20) 공식 안정 릴리스 발행**:
+  - 아카이브 복원(`o`) 시 전역 `tmux.zsh_history` 파일에 과거 명령어를 재주입하던 안티패턴을 완전히 제거하여 시간 역전 오염(Time-Travel Pollution) 박멸.
+  - 신규 TDD 전용 계약 테스트 추가: [`tests/tmux-single-sidebar/test-restore-history-no-pollution.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-restore-history-no-pollution.sh).
+  - `GATE_A` (22/22), `SUBPANE` (19/19), `GRADIENT` (7/7), `STRESS` (5/5) 전체 스위트 100% 무결점 통과.
+  - `v0.6.20` 태그 생성 및 배포.
+
+## 2026-08-23 - Architecture: Clean Shared History & Zero Time-Travel Pollution
+
+- **아카이브 복원 시 셸 히스토리 재주입 제거 및 무결성 확보 (`scripts/tmux-session-launcher`)**:
+  - `archive_session()`의 전역 히스토리 스냅샷(`archive_shell_history`)과 `restore_archive()`의 과거 히스토리 전역 파일 재주입(`append_archive_history`, `append_archive_history_once`)을 안전한 no-op으로 전환.
+  - 아카이브 세션을 복원(`o`)하더라도 기존 활성 세션 및 전체 tmux 환경의 `~/.cache/dotfiles/tmux.zsh_history` 시간 순서(Chrono-order)가 과거 명령어로 뒤섞이거나 오염되는 시간 역전 현상(Time-Travel Pollution)을 100% 원천 박멸.
+  - 복원된 pane은 현재 셸의 자연스러운 실시간 히스토리를 유지하며 0-Side-Effect로 동작.
+- **신규 TDD 전용 계약 테스트 추가 및 스위트 통과**:
+  - [`tests/tmux-single-sidebar/test-restore-history-no-pollution.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-restore-history-no-pollution.sh) 추가 및 통과 검증 (레거시 아카이브 복원 시에도 `$HISTFILE` 변경 0% 검증).
+  - `GATE_A` (22/22 PASS), `SUBPANE` (19/19 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS) 전체 무결점 통과.
+
 ## 2026-08-23 - Release v0.6.19: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
 
 - **v0.6.19(v6.19) 공식 안정 릴리스 발행**:

@@ -6,6 +6,31 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-23 - Release v0.6.20: Clean Shared History & Zero Time-Travel Pollution
+
+- **사용자 요청**:
+  - 클린 공유 히스토리 아키텍처(Zero Time-Travel History Pollution) 반영에 따른 버전업 단행 및 안정 릴리스 배포 요청 (`version up 하자.`).
+- **릴리스 주요 변경 사항 요약**:
+  1. **Zero Time-Travel History Pollution**:
+     - 아카이브 복원(`o`) 시 전역 `tmux.zsh_history` 파일에 과거 명령어를 재주입하던 `append_archive_history_once` 및 `archive_shell_history`를 no-op으로 전환하여 전역 셸 히스토리 오염 완전 차단.
+     - 아카이브 복원 후에도 현재 활성 세션 및 새로 띄운 pane의 셸 명령어 시간 순서(Chrono-order) 100% 무결성 보존.
+  2. **신규 TDD 전용 계약 테스트**:
+     - [`tests/tmux-single-sidebar/test-restore-history-no-pollution.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-restore-history-no-pollution.sh) 추가 및 전체 스위트 100% GREEN 통과.
+- **문서 및 태그 승격**:
+  - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`, `docs/architecture.md`, `docs/design/tmux-session-launcher-internals.md`를 `v0.6.20`(v6.20)으로 승격.
+  - git 커밋 및 `v0.6.20` 태그 생성.
+
+## 2026-08-23 - Architecture: Clean Shared History & Zero Time-Travel Pollution
+
+- **사용자 요청**:
+  - pane 작업내역(셸 명령어 히스토리) 관리 방식 분석 결과 승인 및 아카이브 복원(`o`) 시의 히스토리 재주입/오염 제거 개선 진행 요청 (`개선 방향으로 진행하자.`).
+- **아키텍처 분석 및 구현 내용**:
+  1. **오염 원인 제거**: 과거 아카이브의 200줄을 현재 전역 `tmux.zsh_history` 맨 끝에 append하던 `append_archive_history_once` 및 `archive_shell_history`를 no-op으로 전환.
+  2. **Zero Time-Travel Pollution**: 과거 세션을 복원하더라도 현재 작업 중인 다른 세션의 셸 히스토리 시간 순서가 과거 명령어로 역전/오염되지 않도록 완벽 격리.
+  3. **TDD 전용 계약 테스트**: [`tests/tmux-single-sidebar/test-restore-history-no-pollution.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-restore-history-no-pollution.sh) 추가 및 검증 (레거시 아카이브 복원 후에도 `$HISTFILE` 100% 보존 확인).
+- **검증 결과**:
+  - `GATE_A` (22/22), `SUBPANE` (19/19), `GRADIENT` (7/7), `STRESS` (5/5) 전체 무결점 통과.
+
 ## 2026-08-23 - Release v0.6.19: Subpane Constraint Model (Default Bottom, Always-OFF, Height-Only Persistence)
 
 - **사용자 요청**:
