@@ -476,7 +476,7 @@ after_install_item()
         tmux-theme-picker)
             ensure_executable "$target"
             mkdir -p "$HOME/.config/tmux/themes"
-            themes="classic-baseline open-catppuccin-mocha open-nord open-onedark open-solarized-dark open-rose-pine open-gruvbox open-tokyonight eye-astigmatism-safe eye-circadian-warm eye-scotopic-forest code-cyberpunk-neon code-monokai-pro code-github-light"
+            themes="base-classic open-catppuccin-mocha open-catppuccin-mocha-focus open-dracula open-dracula-focus open-everforest open-everforest-focus open-gruvbox open-gruvbox-focus open-kanagawa open-kanagawa-focus open-nord open-nord-focus open-onedark open-onedark-focus open-rose-pine open-rose-pine-focus open-solarized-dark open-solarized-dark-focus open-tokyonight open-tokyonight-focus eye-astigmatism-safe eye-astigmatism-safe-focus eye-circadian-warm eye-circadian-warm-focus eye-scotopic-forest eye-scotopic-forest-focus code-cyberpunk-neon code-github-light code-monokai-pro code-powershell code-windows-terminal disp-oled-pureblack disp-paper-sepia os-apple-pro os-ubuntu-aubergine retro-crt-amber retro-crt-phosphor"
             for t in $themes; do
                 local t_source="dotfiles/tmux/themes/${t}.conf"
                 local t_target="$HOME/.config/tmux/themes/${t}.conf"
@@ -494,6 +494,10 @@ after_install_item()
                     log "Downloaded theme $t to themes dir"
                 fi
             done
+            # Backward compatibility aliases
+            ln -sf "$HOME/.config/tmux/themes/base-classic.conf" "$HOME/.config/tmux/themes/classic-baseline.conf" 2>/dev/null || true
+            ln -sf "$HOME/.config/tmux/themes/disp-oled-pureblack.conf" "$HOME/.config/tmux/themes/display-oled-pureblack.conf" 2>/dev/null || true
+            ln -sf "$HOME/.config/tmux/themes/disp-paper-sepia.conf" "$HOME/.config/tmux/themes/paper-sepia.conf" 2>/dev/null || true
             if [ ! -f "$HOME/.config/tmux/theme.conf" ]; then
                 cp "$HOME/.config/tmux/themes/classic-baseline.conf" "$HOME/.config/tmux/theme.conf"
                 log "Initialized default theme as classic-baseline.conf"

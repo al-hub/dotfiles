@@ -47,65 +47,71 @@ tmux -L codex-dotfiles-test -f dotfiles/tmux.conf new-session
 
 ---
 
-## 3. 시력 보호 테마 3종 설계 및 과학적 근거
+## 3. 테마 명명 체계 및 포커스 페어링 규칙 (Canonical 3-Tier Taxonomy)
 
-사용자의 안구 건강 및 시인성 향상을 위해 최신 안과학 및 생체 리듬 연구 논문을 기초로 3가지 고유 테마를 추가 설계하였습니다.
+모든 테마 파일은 3단계 계층 구조를 따르도록 표준화되어 있습니다:
+$$\mathbf{규칙:\quad} \texttt{<카테고리>-<패밀리>[-<서브스타일>][-<변형>].conf}$$
+
+* **카테고리 접두사**: `base-` (기본), `open-` (오픈소스 명작), `code-` (코딩/셸), `eye-` (시력보호), `disp-` (디스플레이/조도), `os-` (운영체제), `retro-` (레트로 하드웨어)
+* **포커스 1:1 페어링**: 모든 `-focus` 테마는 대응하는 Standard 테마의 전체 이름 뒤에 `-focus`를 결합하여 완벽한 1:1 페어를 이룹니다.
+
+---
+
+## 4. 시력 보호 테마 (Eye-Care Series: 기본 & 포커스 특화 6종)
+
+사용자의 안구 건강 및 시인성 향상을 위해 최신 안과학 및 생체 리듬 연구 논문을 기초로 설계된 3가지 테마 및 활성/비활성 페인 음영 대비를 극대화한 포커스 특화(-focus) 테마 3종입니다.
 
 ### 테마 1. Astigmatism-Safe (난시 예방 & 하일레이션 방지)
-* **파일명**: `eye-astigmatism-safe.conf`
-* **과학적 근거 (Halation Effect & Contrast Sensitivity)**
-  * *참고 문헌*: *Astigmatism and Light Scatter in Dark Mode UI (Journal of Optometry)* / *Contrast Sensitivity and Visual Fatigue (Ergonomics)*
-  * **하일레이션(Halation)** 현상은 어두운 배경 위에 극도로 높은 휘도의 텍스트(순백색)가 존재할 때 안구 렌즈(수정체 및 각막)의 굴절 오차로 인해 글자 주변에 하얗게 안개가 낀 것처럼 번지는 현상입니다. 이는 난시 환자들에게 특히 심하게 나타나며 글자 인식을 방해하고 모양체근에 과도한 조절 스트레스를 줍니다.
-  * **해결 방안**: 배경과 텍스트의 명도 대비(Contrast Ratio)를 가독성을 잃지 않으면서도 눈 피로를 유발하지 않는 최적 범위인 **WCAG AA 등급(4.5:1 ~ 6:1)** 수준으로 제어합니다. 순백색 대신 편안한 회백색(#e0e0e0) 글씨와 차분한 어두운 그레이(#20222c) 배경을 활용하여 눈부심과 빛 번짐을 원천 억제합니다.
+* **파일명**: `eye-astigmatism-safe.conf` & `eye-astigmatism-safe-focus.conf`
+* **과학적 근거**: 순백색 대신 편안한 회백색(#e0e0e0) 글씨와 차분한 어두운 그레이(#20222c) 배경을 활용하여 눈부심과 빛 번짐을 원천 억제합니다. Focus 버전에서는 활성 페인에 실버/오프화이트 보더를 부여합니다.
 
 ### 테마 2. Circadian-Warm (생체 리듬 보존 및 청색광 차단)
-* **파일명**: `eye-circadian-warm.conf`
-* **과학적 근거 (Blue-Light Filtering & Melatonin Regulation)**
-  * *참고 문헌*: *Blue-light filtering and circadian rhythms (Progress in Retinal and Eye Research)* / *Spectral Sensitivity of Melanopsin-Expressing Retinal Ganglion Cells (Journal of Neuroscience)*
-  * **멜라놉신(Melanopsin)** 단백질을 함유한 망막 신경절 세포(ipRGCs)는 460~480nm 사이의 단파장 청색광(Blue Light)에 가장 민감하게 활성화됩니다. 야간에 컴퓨터 모니터의 강한 청색광을 쬐면 ipRGCs가 뇌에 주간 신호를 보내 수면 유도 호르몬인 멜라토닌 분비를 강하게 억제하고 안구 표면 건조 및 각막 피로를 유발합니다.
-  * **해결 방안**: 스펙트럼상 청색(Blue) 계열 파장을 극단적으로 배제하고, 눈에 자극이 덜하고 긴 파장 대역인 따뜻한 색온도(2700K 대역의 호박색/Amber 및 소프트 오렌지)만을 조합하였습니다. 밤 시간대 코딩 시 생체 리듬 교란을 방지하고 숙면을 취하도록 돕습니다.
+* **파일명**: `eye-circadian-warm.conf` & `eye-circadian-warm-focus.conf`
+* **과학적 근거**: 청색(Blue) 계열 파장을 배제하고, 2700K 대역의 호박색(Amber) 및 소프트 오렌지만을 조합하여 야간 코딩 시 멜라토닌 분비 억제를 막아줍니다. Focus 버전에서는 활성 페인에 앰버 골드 보더를 적용합니다.
 
 ### 테마 3. Scotopic-Forest (야간 암순응 및 간상세포 순응)
-* **파일명**: `eye-scotopic-forest.conf`
-* **과학적 근거 (Scotopic Vision & Purkinje Effect)**
-  * *참고 문헌*: *Spectral Sensitivity of the Human Eye (Optics Express)* / *Scotopic Vision and Dark Adaptation in Visual Displays (Human Factors)*
-  * 인간의 눈은 밝은 조도(Photopic Vision)에서는 황색광(555nm)에 가장 민감하지만, 조도가 극도로 어두운 야간 환경(Scotopic Vision)에서는 간상세포(Rod cells)가 작동하여 청록색/녹색 스펙트럼(507nm~555nm 근처)에 대한 인지 감도가 극대화됩니다(푸르킨예 현상).
-  * **해결 방안**: 어두운 숲속의 녹음 테마로 설계하여 모니터 화면이 내뿜는 전체 휘도(Luminance) 광량 자체를 최대한 낮춥니다. 광량이 매우 적은 저조도 상태에서도 인간이 가장 적은 눈 피로도로 빠르게 텍스트를 인지할 수 있는 연한 세이지/허브 그린(#a3be8c)을 텍스트 색상으로 활용하여 눈 시림 현상을 원천 방지합니다.
+* **파일명**: `eye-scotopic-forest.conf` & `eye-scotopic-forest-focus.conf`
+* **과학적 근거**: 어두운 조도에서 간상세포가 가장 민감하게 반응하는 연한 세이지/허브 그린(#a3be8c) 텍스트를 활용하여 광량 피로도를 최소화합니다. Focus 버전에서는 활성 페인에 허브 그린 액센트 보더를 적용합니다.
 
 ---
 
-## 4. 코딩 전용 테마 3종
+## 5. 코딩 및 셸 전용 테마 5종
 
-코딩 세션 동안 구문 강조(Syntax highlighting) 시인성을 최대로 끌어올리거나 개발자 특유의 창의적 감성과 고전적 화이트 디자인을 재현한 3종의 테마입니다.
-
-### 테마 1. Cyberpunk-Neon (사이버펑크 네온)
-* **파일명**: `code-cyberpunk-neon.conf`
-* **특징**: 깊은 딥 바이올렛/미드나잇 퍼플 `#0f0b15` 배경 위에 강렬한 네온 핑크, 형광 그린, 네온 시안 컬러를 극단적으로 믹스하여 개발자의 집중도를 극대화하고 미래지향적인 미래 감성을 선사합니다.
-
-### 테마 2. Monokai-Pro (모노카이 프로)
-* **파일명**: `code-monokai-pro.conf`
-* **특징**: 전통적인 Monokai 테마를 현대 인지 공학의 관점에서 리파인한 다크 그레이 프로페셔널 코딩 테마입니다. 색 구별이 지나치게 강해 피로를 자극하던 원색 톤을 톤다운(Muted)하여 한층 부드럽고 차분한 파스텔 톤 옐로우와 그린으로 가독성을 한 차원 끌어올렸습니다.
-
-### 테마 3. Github-Light (깃허브 라이트)
-* **파일명**: `code-github-light.conf`
-* **특징**: 주간 사무실 환경 및 자연광이 풍부한 일조 환경에서 눈 피로를 덜어주는 고전적 화이트 코딩 테마입니다. 깃허브 웹 에디터 고유의 깔끔한 화이트/연회색 배경과 명도가 명확하게 잡힌 블루/그린 폰트 조화를 완벽하게 복사하여 화이트 계열 마니아 개발자들의 선호를 고려했습니다.
+* **`code-windows-terminal.conf`**: Windows Terminal Campbell `#0C0C0C` 딥 차콜 블랙 & 윈도우 액센트 블루(`#0078D7`), 시안(`#61D6D6`) 보더.
+* **`code-powershell.conf`**: Windows PowerShell 딥 네이비 블루(`#012456`) & 옐로우(`#ffff00`), 애저 스카이 블루(`#00a2ed`).
+* **`code-cyberpunk-neon.conf`**: 딥 바이올렛 `#0f0b15` & 강렬한 네온 핑크/시안.
+* **`code-monokai-pro.conf`**: 톤다운 파스텔 옐로우/그린 다크 프로페셔널.
+* **`code-github-light.conf`**: 주간 자연광 및 사무실 환경용 클래식 화이트.
 
 ---
 
-## 5. Reddit 인기 테마 3종
+## 6. 글로벌 오픈소스 & 포커스 대비 특화 테마 (Open & Focus Series: 20종)
 
-Reddit의 r/unixporn, r/tmux, r/neovim 등 개발자 커뮤니티에서 가장 언급 횟수가 많고 찬사를 받는 프리미엄 이식 테마 3종입니다.
+Reddit의 r/unixporn, r/tmux, r/neovim 등에서 사랑받는 명품 오픈소스 테마 10종과, **활성 페인(Focused)과 비활성 페인(Unfocused) 간의 음영 및 보더 대비를 극대화한 포커스 특화(-focus) 테마 10종**을 제공합니다.
 
-### 테마 1. Rose Pine (로즈 파인)
-* **파일명**: `open-rose-pine.conf`
-* **특징**: 북유럽의 몽환적이고 고요한 자연을 모티브로 삼아, 차분한 오크/틸 그레이 배경 위에 은은한 로즈 핑크와 머스터드 골드 톤을 활용하여 서정적이고 감각적인 비주얼을 자랑합니다.
+1. **Dracula** (글로벌 1위 다크): `open-dracula.conf` & `open-dracula-focus.conf`
+2. **Kanagawa** (우키요에 와비사비): `open-kanagawa.conf` & `open-kanagawa-focus.conf`
+3. **Everforest** (자연주의 포레스트): `open-everforest.conf` & `open-everforest-focus.conf`
+4. **Catppuccin Mocha**: `open-catppuccin-mocha.conf` & `open-catppuccin-mocha-focus.conf`
+5. **Nord**: `open-nord.conf` & `open-nord-focus.conf`
+6. **One Dark**: `open-onedark.conf` & `open-onedark-focus.conf`
+7. **Gruvbox**: `open-gruvbox.conf` & `open-gruvbox-focus.conf`
+8. **Tokyo Night**: `open-tokyonight.conf` & `open-tokyonight-focus.conf`
+9. **Rosé Pine**: `open-rose-pine.conf` & `open-rose-pine-focus.conf`
+10. **Solarized Dark**: `open-solarized-dark.conf` & `open-solarized-dark-focus.conf`
 
-### 테마 2. Gruvbox (그루브박스)
-* **파일명**: `open-gruvbox.conf`
-* **특징**: 전 세계 터미널 유저들 사이에서 가장 견고한 마니아층을 지닌 레트로 클래식 테마입니다. 따뜻한 황갈색 클레이 배경 위에 시인성이 뚜렷한 노랑, 주황, 빨강의 조합을 사용하여 최고의 대비 효과와 고전적인 해커 감성을 동시에 제공합니다.
+---
 
-### 테마 3. Tokyonight (도쿄나이트)
-* **파일명**: `open-tokyonight.conf`
-* **특징**: 도쿄의 화려한 네온사인 밤거리를 묘사하여 깊은 딥 네이비 배경에 쨍하고 선명한 시안, 블루, 라이트 마젠타 포인트 컬러를 균형 있게 배분한 대표적인 하이테크 스타일 테마입니다.
+## 7. 특수 디스플레이 & 접근성 특화 테마 (Display & Accessibility)
 
+* **`disp-oled-pureblack.conf`**: OLED 100% True Black(`#000000`) 배경으로 소자 전원 차단 $\to$ 배터리 절전 및 무한 명암비.
+* **`disp-paper-sepia.conf`**: 주간 창가/자연광 환경에서 눈부심을 차단하는 킨들 전자책 & 양피지 크림(`#fbf0d9`) + 에스프레소 잉크(`#433422`).
 
+---
+
+## 8. OS & 레트로 플랫폼 시그니처 테마 (OS & Retro Heritage)
+
+* **`os-ubuntu-aubergine.conf`**: Canonical Ubuntu 공식 딥 오베르진(`#300a24`) + 시그니처 오렌지(`#e95420`).
+* **`os-apple-pro.conf`**: macOS Terminal 기본 'Pro'/'Homebrew' 스타일 다크 그래파이트(`#1c1c1e`) + 애플 네온 그린(`#30d158`).
+* **`retro-crt-phosphor.conf`**: 1980년대 DEC VT220 및 매트릭스 터미널의 P1 그린 인광체(525nm, `#33ff33`).
+* **`retro-crt-amber.conf`**: 유럽 TCO 표준 호박색 P3 앰버 인광체(589nm, `#ffb000`, 청색광 0% 차단).

@@ -11,9 +11,9 @@
 
 ## Version Model
 
-- 현재 안정 설치 버전은 `v0.6.20` (v6.20)이다.
+- 현재 안정 설치 버전은 `v0.6.21` (v6.21)이다.
 - `install.sh` 기본 실행은 `master` 최신 커밋을 기준으로 동작한다.
-- `install.sh --v v0.6.20` 또는 `install.sh --version v0.6.20`은 GitHub raw URL을 `refs/tags/v0.6.20` 기준으로 계산한다.
+- `install.sh --v v0.6.21` 또는 `install.sh --version v0.6.21`은 GitHub raw URL을 `refs/tags/v0.6.21` 기준으로 계산한다.
 - `install.sh --latest`는 명시적으로 `master` branch 기준으로 설치한다.
 - `REPO_RAW_URL`이나 `INSTALL_TOML_URL`을 직접 지정하면 테스트용 raw URL을 강제로 사용할 수 있다.
 - 새 버전을 배포할 때는 버전 문자열만 바꾸는 것으로 끝내지 말고, 해당 커밋에 같은 이름의 git tag를 만들어야 한다.

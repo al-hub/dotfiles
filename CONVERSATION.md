@@ -6,6 +6,115 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-23 - Release v0.6.21: Interactive Help Viewer & 38-Theme System with Rich Preview Inspector
+
+- **사용자 요청**:
+  - 버전 업 및 릴리스 배포 요청 (`version up 하자.`).
+- **구현 내용**:
+  1. **신규 기능 종합**:
+     - 인터랙티브 도움말 뷰어 (`scripts/tmux-help-viewer`, `Ctrl+a h` / `?`, TUI `h` / `?`).
+     - 38종 프리미엄 테마 시스템 완성 (글로벌 S-Tier, 디스플레이 특화, OS/레트로 플랫폼).
+     - 3단계 계층 구조 표준화 (Canonical Taxonomy) 및 Focus 테마 1:1 페어링.
+     - `tmux-theme-picker` 가중치 정렬, ANSI 뱃지 및 우측 48% 실시간 리치 프리뷰 인스펙터.
+  2. **문서 및 태그 배포**:
+     - `AGENTS.md`, `GEMINI.md`, `README.md`, `HISTORY.md`, `docs/architecture.md`, `docs/design/tmux-session-launcher-internals.md`를 `v0.6.21`(v6.21)으로 승격.
+     - git 커밋 및 `v0.6.21` 태그 생성.
+
+## 2026-08-23 - Feature: 3-Tier Canonical Taxonomy, Weighted Sorting & Rich Preview Inspector
+
+- **사용자 요청**:
+  - 38종 테마의 효과적 활용을 위한 네이밍 체계 표준화 및 배치/시각화 전략 전면 적용 요청 (`위내용을 진행하자.`).
+- **구현 내용**:
+  1. **38종 테마 3단계 계층 구조 표준화 (`<category>-<family>[-<flavor>][-<variant>].conf`)**:
+     - `base-classic.conf`, `disp-oled-pureblack.conf`, `disp-paper-sepia.conf` 표준 정규화.
+     - Focus 테마 1:1 페어링 불변식 (`<name>.conf` $\leftrightarrow$ `<name>-focus.conf`) 완성.
+     - 하위 호환성 심볼릭 링크 제공.
+  2. **`scripts/tmux-theme-picker` 렌더러 대대적 업그레이드**:
+     - 가중치 기반 정렬 (`BASE` $\to$ `OPEN` $\to$ `CODE` $\to$ `EYE` $\to$ `DISP` $\to$ `OS` $\to$ `RETRO` $\to$ `USER`).
+     - fzf 우측 48% 패널에 실시간 ANSI TrueColor 컬러 칩(`████`), 요약 설명, 환경/인체공학적 추천 정보 표시.
+     - `Ctrl+e` 복제 시 `custom-` 접두사 강제로 Git 배포 및 `install.sh` 덮어쓰기 원천 방지.
+     - 테마 피커 팝업 크기(`75% x 65%`) 최적화.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: Global S-Tier, Display & Platform Heritage Themes (12 New Themes - Total 38 Themes)
+
+- **사용자 요청**:
+  - 서브에이전트와 논의하여 도출한 8종의 핵심 테마 후보군 및 Focus 쌍 전면 도입 요청 (`위 내용 전부 도입하여 적용하자.`).
+- **구현 내용**:
+  1. **총 12종의 신규 테마 파일 생성 (`dotfiles/tmux/themes/*.conf`)**:
+     - Global S-Tier 6종: `open-dracula.conf`, `open-dracula-focus.conf`, `open-kanagawa.conf`, `open-kanagawa-focus.conf`, `open-everforest.conf`, `open-everforest-focus.conf`
+     - Display & Accessibility 2종: `display-oled-pureblack.conf`, `paper-sepia.conf`
+     - OS & Retro 4종: `os-ubuntu-aubergine.conf`, `os-apple-pro.conf`, `retro-crt-phosphor.conf`, `retro-crt-amber.conf`
+  2. **시스템 연동**:
+     - `install.sh` 및 사용자 테마 디렉터리(`~/.config/tmux/themes/`)에 총 38종 테마 등록.
+     - `Ctrl+a T` 테마 피커에서 38종 테마 실시간 전환 및 영구 적용 가능.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: Eye-Care Focus Theme Series (3 Themes)
+
+- **사용자 요청**:
+  - 시력 보호(`eye-`) 테마들에도 활성/비활성 페인 음영 대비를 강화한 포커스 특화 테마 추가 요청 (`eye- theme 도 현재처럼 focus 부분을 추가해서 만들어 놓자.`).
+- **구현 내용**:
+  1. **3종의 시력 보호 포커스 특화 테마 파일 생성 (`dotfiles/tmux/themes/eye-*-focus.conf`)**:
+     - `eye-astigmatism-focus.conf`, `eye-circadian-focus.conf`, `eye-scotopic-focus.conf`
+     - 안과학 기반 시력 보호 컬러 팔레트를 유지하면서, 활성 페인은 딥 다크 배경 + 선명한 포커스 보더를, 비활성 페인은 살짝 밝은 배경을 적용.
+  2. **시스템 연동**:
+     - `install.sh` 및 사용자 테마 디렉터리(`~/.config/tmux/themes/`)에 등록.
+     - `Ctrl+a T` 테마 피커에서 실시간 선택 및 영구 적용 가능.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: Focus-Aware Open Theme Series (7 Themes)
+
+- **사용자 요청**:
+  - 기존 `open-` 테마들을 유지하면서, `classic-baseline`처럼 활성(Focused)/비활성(Unfocused) 영역이 뚜렷하게 나뉘는 포커스 특화 테마 추가 요청 및 활성/비활성 음영 반전 반영 (`이번에 만든 -focus 에서 비활성, 활성 부분만 서로 바꾸자.`).
+- **구현 내용**:
+  1. **7종의 포커스 특화 테마 파일 생성 및 음영 패턴 적용 (`dotfiles/tmux/themes/open-*-focus.conf`)**:
+     - `open-catppuccin-focus.conf`, `open-nord-focus.conf`, `open-onedark-focus.conf`, `open-gruvbox-focus.conf`, `open-tokyonight-focus.conf`, `open-rose-pine-focus.conf`, `open-solarized-focus.conf`
+     - `classic-baseline`과 동일하게 **활성 페인(Active/Focused)은 딥 다크 배경 + 비비드 액센트 보더**를, **비활성 페인(Inactive/Unfocused)은 살짝 밝은 배경**을 적용.
+  2. **시스템 연동**:
+     - `install.sh` 및 사용자 테마 디렉터리(`~/.config/tmux/themes/`)에 등록.
+     - `Ctrl+a T` 테마 피커에서 각 테마 바로 옆에서 실시간 비교/선택 및 영구 적용 가능.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: Windows Terminal Theme Addition (`code-windows-terminal.conf`)
+
+- **사용자 요청**:
+  - Windows Terminal에서 화면 분할 시 사용하는 기본 테마 느낌 추가 요청 (`윈도우 teminal 에서 ctrl + D 하면 화면 쪼개지는데, 그 theme 처럼 하나 추가해두자.`).
+- **구현 내용**:
+  1. **Windows Terminal 전용 테마 파일 생성 (`dotfiles/tmux/themes/code-windows-terminal.conf`)**:
+     - Windows Terminal 시그니처 **Campbell `#0C0C0C` 딥 차콜 블랙** 배경, 윈도우 액센트 블루(`#0078D7`), Campbell 시안(`#61D6D6`) 보더 적용.
+  2. **시스템 연동**:
+     - `install.sh` 및 사용자 테마 디렉터리(`~/.config/tmux/themes/`)에 등록.
+     - `Ctrl+a T` 테마 피커에서 `code-windows-terminal` 즉시 선택 및 영구 적용 가능.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: PowerShell Theme Addition (`code-powershell.conf`)
+
+- **사용자 요청**:
+  - PowerShell과 동일한 느낌의 테마 추가 요청 (`powershell 과 동일한 느낌의 theme 을 우선 추가하자.`).
+- **구현 내용**:
+  1. **PowerShell 전용 테마 파일 생성 (`dotfiles/tmux/themes/code-powershell.conf`)**:
+     - 시그니처 딥 네이비 블루(`#012456`) 배경, 프롬프트 옐로우(`#ffff00`), 애저 스카이 블루(`#00a2ed`) 윈도우 탭 및 보더 적용.
+  2. **시스템 연동**:
+     - `install.sh` 및 사용자 테마 디렉터리(`~/.config/tmux/themes/`)에 등록.
+     - `Ctrl+a T` 테마 피커에서 `code-powershell` 즉시 선택 및 영구 적용 가능.
+     - 문서(`docs/guides/tmux-theme.md`) 업데이트.
+
+## 2026-08-23 - Feature: Interactive Help Viewer (`Ctrl+a h` / `?`)
+
+- **사용자 요청**:
+  - 단축키와 기능을 한눈에 확인할 수 있는 `Ctrl+a` $\to$ `h` 도움말 기능 제안 및 구현 승인 (`진행하자.`).
+- **구현 내용**:
+  1. **대화형 도움말 뷰어 (`scripts/tmux-help-viewer`)**:
+     - 카테고리별(사이드바/TUI 관리, 스마트 페인 분할, 무-Prefix 포커스/위치 이동, Vi 복사 모드) 고해상도 ANSI 컬러 팝업 가이드.
+     - `Esc`, `q`, `Enter`로 원클릭 닫힘.
+  2. **tmux 전역 및 사이드바 TUI 바인딩**:
+     - `dotfiles/tmux.conf`: `bind-key -N "📖 단축키 및 기능 도움말 실행" h display-popup...` 및 `?` 등록.
+     - `scripts/tmux-session-launcher`: 사이드바 TUI 내에서 `h` 또는 `?` 입력 시 도움말 팝업 호출 및 푸터에 `h:Help` 안내 추가.
+     - `install.toml`: `tmux-help-viewer` 히든 모듈 및 `tmux` 의존성 등록.
+  3. **TDD 전용 계약 테스트**:
+     - [`tests/tmux-single-sidebar/test-help-viewer.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-help-viewer.sh) 추가 및 전체 스위트(GATE_A 23개, SUBPANE 19개, GRADIENT 7개, STRESS 5개) 100% 통과.
+
 ## 2026-08-23 - Release v0.6.20: Clean Shared History & Zero Time-Travel Pollution
 
 - **사용자 요청**:

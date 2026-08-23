@@ -6,6 +6,99 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Release v0.6.21: Interactive Help Viewer & 38-Theme System with Rich Preview Inspector
+
+- **v0.6.21(v6.21) 공식 안정 릴리스 발행**:
+  - **인터랙티브 도움말 뷰어 (`scripts/tmux-help-viewer`, `Ctrl+a h` / `?` & TUI `h` / `?`)**: 카테고리별 단축키 가이드 및 기능 설명 팝업 추가.
+  - **38종 프리미엄 테마 시스템 완성**: 글로벌 S-Tier (Dracula, Kanagawa, Everforest), 디스플레이 특화 (OLED TrueBlack, Paper Sepia), OS/레트로 시그니처 (Ubuntu, Apple Pro, CRT Amber/Phosphor) 전면 완비.
+  - **3단계 계층 구조 표준화 (Canonical Taxonomy)**: `<category>-<family>[-<flavor>][-<variant>].conf` 명명 규칙 및 Focus 테마 1:1 페어링 불변식 완성.
+  - **테마 피커 리치 프리뷰 인스펙터 (`tmux-theme-picker`)**: 가중치 기반 정렬, ANSI 뱃지, 실시간 TrueColor 컬러 칩 및 인체공학적 대시보드 렌더링.
+  - `v0.6.21` 태그 생성 및 배포.
+
+## 2026-08-23 - Feature: 3-Tier Canonical Taxonomy, Weighted Sorting & Rich Preview Inspector
+
+- **38종 테마 3단계 계층 구조 표준화 (`<category>-<family>[-<flavor>][-<variant>].conf`)**:
+  - `base-classic.conf`, `disp-oled-pureblack.conf`, `disp-paper-sepia.conf` 표준 정규화.
+  - 모든 Focus 테마의 1:1 페어링 불변식 (`<name>.conf` $\leftrightarrow$ `<name>-focus.conf`) 완성.
+  - 하위 호환성 심볼릭 링크(`classic-baseline.conf`, `display-oled-pureblack.conf`, `paper-sepia.conf`) 유지.
+- **`scripts/tmux-theme-picker` 렌더러 대대적 업그레이드**:
+  - **가중치 기반 도메인 정렬**: `[BASE] (0)` $\to$ `[OPEN] (1)` $\to$ `[CODE] (2)` $\to$ `[EYE] (3)` $\to$ `[DISP] (4)` $\to$ `[OS] (5)` $\to$ `[RETRO] (6)` $\to$ `[USER] (9)`.
+  - **인터랙티브 리치 프리뷰 인스펙터 (`--preview`)**: fzf 우측 48% 패널에 실시간 ANSI TrueColor 컬러 칩(`████`), 요약 설명, 환경/인체공학적 추천 정보 표시.
+  - **커스텀 테마 격리**: `Ctrl+e` 복제 시 `custom-` 접두사 강제로 Git 배포 및 `install.sh` 덮어쓰기 원천 방지.
+  - 테마 피커 팝업 크기(`75% x 65%`) 최적화.
+
+## 2026-08-23 - Feature: Global S-Tier, Display & Platform Heritage Themes (12 New Themes - Total 38 Themes)
+
+- **글로벌 S-Tier, 특수 디스플레이, OS 및 레트로 플랫폼 테마 12종 전격 도입**:
+  - **Global S-Tier & Focus 쌍 (6종)**:
+    1. `open-dracula.conf` & `open-dracula-focus.conf` (전 세계 1위 다크 테마)
+    2. `open-kanagawa.conf` & `open-kanagawa-focus.conf` (우키요에 와비사비 Neovim 명작)
+    3. `open-everforest.conf` & `open-everforest-focus.conf` (자연주의 포레스트 눈보호)
+  - **특수 디스플레이 & 접근성 특화 (2종)**:
+    4. `display-oled-pureblack.conf` (OLED 100% True Black `#000000` 무한 명암비 & 배터리 절전)
+    5. `paper-sepia.conf` (킨들 전자책 & 양피지 크림 `#fbf0d9` 주간 눈부심 차단 리더)
+  - **OS & 레트로 플랫폼 시그니처 (4종)**:
+    6. `os-ubuntu-aubergine.conf` (Canonical Ubuntu 딥 오베르진 `#300a24` & 시그니처 오렌지)
+    7. `os-apple-pro.conf` (macOS Terminal Pro 그래파이트 `#1c1c1e` & 네온 그린)
+    8. `retro-crt-phosphor.conf` (1980s DEC VT220 / Matrix P1 그린 인광체 `#33ff33`)
+    9. `retro-crt-amber.conf` (유럽 TCO 표준 P3 앰버 호박색 인광체 `#ffb000`, 청색광 0% 차단)
+  - `install.sh` 및 `~/.config/tmux/themes/`에 전체 38종 테마 등록 및 `Ctrl+a T` 테마 피커 연동 완료.
+  - 가이드 문서([`docs/guides/tmux-theme.md`](file:///home/al-hub/workspace/dotfiles/docs/guides/tmux-theme.md)) 갱신.
+
+## 2026-08-23 - Feature: Eye-Care Focus Theme Series (3 Themes)
+
+- **시력 보호 포커스 특화 테마 3종 도입 (`dotfiles/tmux/themes/eye-*-focus.conf`)**:
+  - `eye-` 테마 고유의 안과학 및 생체 리듬 보호 컬러 팔레트를 유지하면서, 활성/비활성 페인 음영 대비 및 포커스 보더 시인성 강화.
+  - 추가된 테마 3종:
+    1. `eye-astigmatism-focus.conf` (Inactive `#252833` vs Active `#181920` & Silver `#abb2bf`)
+    2. `eye-circadian-focus.conf` (Inactive `#261b12` vs Active `#120d08` & Amber `#f8a145`)
+    3. `eye-scotopic-focus.conf` (Inactive `#18221d` vs Active `#0a0f0d` & Herb `#a3be8c`)
+  - `install.sh` 및 `~/.config/tmux/themes/` 테마 목록에 자동 등록되어 `Ctrl+a T` 테마 피커에서 즉시 선택 및 영구 적용 가능.
+  - 가이드 문서([`docs/guides/tmux-theme.md`](file:///home/al-hub/workspace/dotfiles/docs/guides/tmux-theme.md)) 갱신.
+
+## 2026-08-23 - Feature: Focus-Aware Open Theme Series (7 Themes)
+
+- **활성/비활성 페인 포커스 대비 특화 오픈 테마 7종 도입 (`dotfiles/tmux/themes/open-*-focus.conf`)**:
+  - `classic-baseline`의 음영 패턴을 완벽히 계승하여, **활성 페인(Active/Focused)은 딥 다크 배경 및 비비드 포커스 보더**를, **비활성 페인(Inactive/Unfocused)은 살짝 밝은 배경**을 적용하여 포커스 영역의 주목도를 극대화.
+  - 추가된 테마 7종:
+    1. `open-catppuccin-focus.conf` (Inactive `#1e1e2e` vs Active `#11111b` & Sapphire `#89b4fa`)
+    2. `open-nord-focus.conf` (Inactive `#2e3440` vs Active `#1e222b` & Frost `#88c0d0`)
+    3. `open-onedark-focus.conf` (Inactive `#282c34` vs Active `#1e2227` & Blue `#61afef`)
+    4. `open-gruvbox-focus.conf` (Inactive `#282828` vs Active `#1d2021` & Gold `#fabd2f`)
+    5. `open-tokyonight-focus.conf` (Inactive `#1a1b26` vs Active `#0f1017` & Neon `#7aa2f7`)
+    6. `open-rose-pine-focus.conf` (Inactive `#191724` vs Active `#12101a` & Love `#eb6f92`)
+    7. `open-solarized-focus.conf` (Inactive `#002b36` vs Active `#001e26` & Blue `#268bd2`)
+  - `install.sh` 및 `~/.config/tmux/themes/` 테마 목록에 자동 등록되어 `Ctrl+a T` 테마 피커에서 즉시 선택 및 영구 적용 가능.
+  - 가이드 문서([`docs/guides/tmux-theme.md`](file:///home/al-hub/workspace/dotfiles/docs/guides/tmux-theme.md)) 갱신.
+
+## 2026-08-23 - Feature: Windows Terminal Theme Addition (`code-windows-terminal.conf`)
+
+- **Windows Terminal 시그니처 Campbell 다크 & 액센트 블루 테마 도입 (`dotfiles/tmux/themes/code-windows-terminal.conf`)**:
+  - Windows Terminal의 기본 시그니처 컬러셋인 **Campbell `#0C0C0C` 딥 차콜 블랙** 배경, 윈도우 액센트 블루(`#0078D7`), Campbell 시안(`#61D6D6`) 보더 완벽 재현.
+  - 페인 분할(`Ctrl+Shift+D` / `Alt+Shift+D` 및 `Ctrl+a |`/`_`) 시 윈도우 터미널 특유의 선명한 경계선 및 탭 분할 감성 제공.
+  - `install.sh` 및 `~/.config/tmux/themes/` 테마 목록에 자동 등록되어 `Ctrl+a T` 테마 피커에서 즉시 선택 및 영구 적용 가능.
+  - 가이드 문서([`docs/guides/tmux-theme.md`](file:///home/al-hub/workspace/dotfiles/docs/guides/tmux-theme.md)) 갱신.
+
+## 2026-08-23 - Feature: PowerShell Theme Addition (`code-powershell.conf`)
+
+- **PowerShell 특유의 블루 & 옐로우/시안 테마 도입 (`dotfiles/tmux/themes/code-powershell.conf`)**:
+  - Windows PowerShell 시그니처 딥 네이비 블루(`#012456`) 배경과 프롬프트 옐로우(`#ffff00`) 및 애저 스카이 블루(`#00a2ed`) 윈도우 탭/보더 완벽 재현.
+  - `install.sh` 및 `~/.config/tmux/themes/` 테마 목록에 자동 등록되어 `Ctrl+a T` 테마 피커에서 즉시 선택 및 영구 적용 가능.
+  - 가이드 문서([`docs/guides/tmux-theme.md`](file:///home/al-hub/workspace/dotfiles/docs/guides/tmux-theme.md)) 갱신.
+
+## 2026-08-23 - Feature: Interactive Help Viewer (`Ctrl+a h` / `?`)
+
+- **대화형 단축키 및 기능 도움말 뷰어 도입 (`scripts/tmux-help-viewer`)**:
+  - `Ctrl+a` $\to$ `h` 또는 `Ctrl+a` $\to$ `?` 입력 시 화면 중앙에 고해상도 ANSI 컬러 도움말 팝업(70% x 65%) 실행.
+  - 카테고리별(사이드바/TUI 관리, 스마트 페인 분할, 무-Prefix 내비게이션/스왑, Vi 복사 모드) 명확한 가이드 제공.
+  - `Esc`, `q`, `Enter`로 즉시 닫힘.
+- **사이드바 TUI 및 설정 통합 (`scripts/tmux-session-launcher`, `dotfiles/tmux.conf`, `install.toml`)**:
+  - 사이드바 TUI 내에서 `h` 또는 `?` 입력 시 도움말 팝업을 즉시 호출하도록 이벤트 핸들러 추가.
+  - 푸터 안내 문구에 `h:Help` 표시.
+  - `install.toml`에 `tmux-help-viewer` 히든 의존성 등록 및 `dotfiles/tmux.conf`에 키 바인딩 등록.
+  - 신규 TDD 전용 계약 테스트 추가: [`tests/tmux-single-sidebar/test-help-viewer.sh`](file:///home/al-hub/workspace/dotfiles/tests/tmux-single-sidebar/test-help-viewer.sh).
+  - `GATE_A` (23/23 PASS), `SUBPANE` (19/19 PASS), `GRADIENT` (7/7 PASS), `STRESS` (5/5 PASS) 전체 통과.
+
 ## 2026-08-23 - Release v0.6.20: Clean Shared History & Zero Time-Travel Pollution
 
 - **v0.6.20(v6.20) 공식 안정 릴리스 발행**:

@@ -17,7 +17,7 @@ source = "dotfiles/tmux.conf"
 target = "~/.tmux.conf"
 commands = ["tmux", "zsh", "bc", "xclip"]
 packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker", "tmux-command-palette"]
+depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker", "tmux-command-palette", "tmux-help-viewer"]
 description = "tmux configuration"
 
 [[dotfiles]]
@@ -118,3 +118,14 @@ commands = ["bash", "tmux"]
 packages = []
 depends = []
 description = "tmux command palette script"
+
+[[dotfiles]]
+name = "tmux-help-viewer"
+enabled = false
+hidden = true
+source = "scripts/tmux-help-viewer"
+target = "~/.local/bin/tmux-help-viewer"
+commands = ["bash", "tmux"]
+packages = []
+depends = []
+description = "interactive popup help viewer for tmux keybindings"

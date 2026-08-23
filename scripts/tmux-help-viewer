@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# tmux-help-viewer: Interactive Popup Help & Keybindings Guide for dotfiles tmux
+# ==============================================================================
+set -euo pipefail
+
+# Colors and styles
+BOLD="\033[1m"
+DIM="\033[2m"
+RESET="\033[0m"
+CYAN="\033[38;5;51m"
+BLUE="\033[38;5;39m"
+EMERALD="\033[38;5;48m"
+YELLOW="\033[38;5;220m"
+MAGENTA="\033[38;5;213m"
+GRAY="\033[38;5;244m"
+BG_DARK="\033[48;5;235m"
+
+# Hide cursor and restore on exit
+printf '\033[?25l'
+trap "printf '\033[?25h\033[0m'" EXIT
+
+draw_help() {
+    clear 2>/dev/null || true
+    printf "${CYAN}${BOLD}╭──────────────────────────────────────────────────────────────────╮${RESET}\n"
+    printf "${CYAN}${BOLD}│${RESET}  ${YELLOW}${BOLD}📖 dotfiles & tmux 주요 단축키 가이드 (Quick Reference)${RESET}          ${CYAN}${BOLD}│${RESET}\n"
+    printf "${CYAN}${BOLD}╰──────────────────────────────────────────────────────────────────╯${RESET}\n"
+    printf "  ${GRAY}기본 Prefix:${RESET} ${BOLD}${CYAN}Ctrl + a${RESET}  ${DIM}(모든 Prefix 단축키는 Ctrl+a 입력 후 실행)${RESET}\n\n"
+
+    printf "  ${EMERALD}${BOLD}[ 🗂️ 사이드바 & TUI 관리 ]${RESET}\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a s${RESET}         ${GRAY}─${RESET}  세션 런처 사이드바 열기 / 닫기 (토글)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a P${RESET}         ${GRAY}─${RESET}  서브페인(터미널) 상단 ↔ 하단 위치 즉시 스왑\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a T${RESET}         ${GRAY}─${RESET}  🎨 16종 컬러 테마 피커 팝업 열기\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a /${RESET}         ${GRAY}─${RESET}  ⌨️ 전체 단축키 검색 (커맨드 팔레트)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a h${RESET} / ${CYAN}${BOLD}?${RESET}     ${GRAY}─${RESET}  📖 본 도움말 가이드 팝업 열기\n\n"
+
+    printf "  ${BLUE}${BOLD}[ ✂️ 작업 영역 분할 & 윈도우 ]${RESET}\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a |${RESET}  또는 ${CYAN}${BOLD}%%%%${RESET}  ${GRAY}─${RESET}  가로 분할 (좌 / 우 split, 사이드바 보호)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a _${RESET}  또는 ${CYAN}${BOLD}\"${RESET}  ${GRAY}─${RESET}  세로 분할 (상 / 하 split, 사이드바 보호)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a c${RESET}         ${GRAY}─${RESET}  새 윈도우 탭 생성 (현재 디렉터리 경로 유지)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a Tab${RESET}       ${GRAY}─${RESET}  다음 윈도우 탭으로 이동\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a Shift+Tab${RESET} ${GRAY}─${RESET}  이전 윈도우 탭으로 이동\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a n${RESET}         ${GRAY}─${RESET}  현재 페인을 새 윈도우 탭으로 분리 (break-pane)\n\n"
+
+    printf "  ${MAGENTA}${BOLD}[ 🧭 포커스 이동 & 위치 맞바꿈 (Prefix 불필요) ]${RESET}\n"
+    printf "    ${CYAN}${BOLD}Alt + 방향키${RESET}      ${GRAY}─${RESET}  페인 포커스 즉시 이동 (${BOLD}← ↓ ↑ →${RESET})\n"
+    printf "    ${CYAN}${BOLD}Ctrl+Alt + 방향키${RESET} ${GRAY}─${RESET}  페인 물리적 위치 즉시 맞바꿈 (${BOLD}← ↓ ↑ →${RESET})\n"
+    printf "    ${CYAN}${BOLD}Ctrl + \\\\${RESET}         ${GRAY}─${RESET}  직전에 사용하던 페인과 원클릭 토글\n"
+    printf "    ${CYAN}${BOLD}마우스 드래그${RESET}     ${GRAY}─${RESET}  페인 경계선 드래그하여 크기 조절 (크기 자동 기억)\n\n"
+
+    printf "  ${YELLOW}${BOLD}[ 📋 복사 모드 & 클립보드 ]${RESET}\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a Escape${RESET}    ${GRAY}─${RESET}  Vi 복사 모드 진입 (${BOLD}v${RESET}: 선택, ${BOLD}y${RESET}: 시스템 복사)\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a p${RESET}         ${GRAY}─${RESET}  tmux 클립보드 붙여넣기\n"
+    printf "    ${CYAN}${BOLD}Ctrl+a v${RESET}         ${GRAY}─${RESET}  현재 화면 캡처 후 새 Vim 에디터 창으로 열기\n\n"
+
+    printf "${GRAY}────────────────────────────────────────────────────────────────────${RESET}\n"
+    printf "  ${DIM}도움말 닫기:${RESET} ${BOLD}${YELLOW}[ Esc ]${RESET} 또는 ${BOLD}${YELLOW}[ q ]${RESET} 또는 ${BOLD}${YELLOW}[ Enter ]${RESET}\n"
+}
+
+draw_help
+
+if [ ! -t 0 ]; then
+    exit 0
+fi
+
+# Wait for key press to close
+while IFS= read -rsn1 key; do
+    case "$key" in
+        $'\e')
+            # Check for escape sequence
+            read -rsn2 -t 0.05 extra 2>/dev/null || true
+            exit 0
+            ;;
+        q|Q|""|$'\n')
+            exit 0
+            ;;
+    esac
+done

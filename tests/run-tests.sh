@@ -107,6 +107,7 @@ case "${TARGET_SUITE}" in
             "${SINGLE_DIR}/test-cold-provisioning-contract.sh"
             "${SINGLE_DIR}/test-batch-restore-observability.sh"
             "${SINGLE_DIR}/test-restore-history-no-pollution.sh"
+            "${SINGLE_DIR}/test-help-viewer.sh"
         )
         ;;
     gate_b)
@@ -186,6 +187,7 @@ case "${TARGET_SUITE}" in
             "${SINGLE_DIR}/test-missing-session-switch-graceful.sh"
             "${SINGLE_DIR}/test-find-global-pane-regression.sh"
             "${SINGLE_DIR}/test-restore-history-no-pollution.sh"
+            "${SINGLE_DIR}/test-help-viewer.sh"
         )
         ;;
     gradient)

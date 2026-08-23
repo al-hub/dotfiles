@@ -1,7 +1,7 @@
 # tmux-session-launcher Internals & IPC Architecture
 
-> **현재 기준선 (v0.6.20 / master 최신)**:
-> Window-Local Presenter + Subpane Hub 통합 모델, 0.75ms 제자리 Fast-Path, In-flight Marker Handover & Selection Reducer, 24프레임 LUT 파형 엔진 & 30 FPS 적응형 클록, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인, 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence), 클린 공유 히스토리 파이프라인(Zero Time-Travel History Pollution). 본 문서는 시스템 아키텍처 공식 레퍼런스입니다.
+> **현재 기준선 (v0.6.21 / master 최신)**:
+> Window-Local Presenter + Subpane Hub 통합 모델, 0.75ms 제자리 Fast-Path, In-flight Marker Handover & Selection Reducer, 24프레임 LUT 파형 엔진 & 30 FPS 적응형 클록, 전역 토폴로지 에포크 프로토콜, 딥 뷰포트 매니저 및 상태 인지 델타 렌더링 파이프라인, 서브페인 제약조건 모델(Default Bottom, Always-OFF, Height-Only Persistence), 클린 공유 히스토리 파이프라인(Zero Time-Travel History Pollution), 인터랙티브 도움말 뷰어(`Ctrl+a h`), 38종 프리미엄 테마 시스템 및 3단계 계층 구조 표준화(Canonical Taxonomy), 가중치 정렬 및 실시간 리치 프리뷰 인스펙터. 본 문서는 시스템 아키텍처 공식 레퍼런스입니다.
 
 ---
 

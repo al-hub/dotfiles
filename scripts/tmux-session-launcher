@@ -4254,14 +4254,14 @@ render_footer()
     fi
     width="${cached_pane_width:-35}"
     height="${cached_pane_height:-40}"
-    help='Enter o:Open c:Create d:Del'
+    help='Enter o:Open c:New h:Help'
 
     if [ "$width" -ge 45 ]; then
-        help='j/k:Move | Enter:Select | o:Open | c:Create | d:Del | P:Sub | q'
+        help='j/k:Move | Enter:Select | o:Open | c:Create | d:Del | h:Help | q'
     elif [ "$width" -ge 35 ]; then
-        help='Enter:Select o:Open c:Create d:Del'
+        help='Enter:Select o:Open c:New h:Help'
     elif [ "$width" -ge 30 ]; then
-        help='Enter o:Open c:Create d:Del'
+        help='Enter o:Open c:New h:Help'
     fi
 
     move_cursor "$height" 1
@@ -7029,6 +7029,7 @@ read_key()
         d) key_result=delete ;;
         /) key_result=filter ;;
         o) key_result=history ;;
+        h|H|\?) key_result=help ;;
         ' ') key_result=mark ;;
         a) key_result=mark-all ;;
         s|S|m|M) key_result=toggle-subpane ;;
@@ -7425,6 +7426,11 @@ run_tui()
                 trace_event "action.begin type=swap-subpane-position"
                 sidebar_subpane_swap_position "${SIDEBAR_WINDOW_ID:-}"
                 request_full_render subpane-swap
+                ;;
+            help)
+                trace_event "action.begin type=help"
+                tmux display-popup -E -w 70% -h 65% "$HOME/.local/bin/tmux-help-viewer" 2>/dev/null || true
+                request_full_render help-return
                 ;;
             esc)
                 if [ "$view_mode" = "history" ]; then
