@@ -1,4 +1,5 @@
-PROMPT='$ '
+# Abbreviated Current Directory in Prompt (~/path $ )
+PROMPT='%F{39}%~%f $ '
 RPROMPT=''
 
 HISTFILE="${HISTFILE:-$HOME/.cache/dotfiles/tmux.zsh_history}"
