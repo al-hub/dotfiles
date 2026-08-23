@@ -198,6 +198,66 @@ clear_install_state() {
     log_ok "Cleared installer state at $STATE_DIR"
 }
 
+do_uninstall() {
+    log_info "Starting uninstallation of dotfiles components..."
+    
+    # 1. Restore from manifest if manifest exists
+    if [ -f "$MANIFEST_FILE" ]; then
+        restore_from_manifest
+    else
+        log_info "No manifest found; cleaning target files defined in install.toml..."
+        load_config
+        while IFS='|' read -r name enabled hidden source target commands packages depends description; do
+            [ -n "$target" ] || continue
+            local target_path
+            target_path="$(expand_path "$target")"
+            if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+                rm -rf "$target_path"
+                log_ok "Removed $target_path"
+            fi
+        done < "$ITEMS_FILE"
+    fi
+
+    # 2. Clean dotfiles binary artifacts from ~/.local/bin
+    rm -f "$HOME/.local/bin/tmux-session-dock" \
+          "$HOME/.local/bin/tmux-session-launcher" \
+          "$HOME/.local/bin/tmux-sidebar-tmux-adapter" \
+          "$HOME/.local/bin/tmux-theme-picker" \
+          "$HOME/.local/bin/tmux-help-viewer" \
+          "$HOME/.local/bin/tmux-command-palette"
+    log_ok "Cleaned dotfiles binary artifacts from ~/.local/bin"
+
+    # 3. Clean ~/.tmux.conf if it matches dotfiles configuration
+    if [ -f "$HOME/.tmux.conf" ]; then
+        if grep -q "tmux-session-dock" "$HOME/.tmux.conf" 2>/dev/null || grep -q "dotfiles" "$HOME/.tmux.conf" 2>/dev/null; then
+            rm -f "$HOME/.tmux.conf"
+            log_ok "Removed managed ~/.tmux.conf"
+        fi
+    fi
+
+    log_ok "Uninstallation completed."
+}
+
+do_purge() {
+    log_warn "Purging all dotfiles components, backups, caches and runtime state..."
+    do_uninstall
+
+    # Purge caches, state, and config
+    rm -rf "$HOME/.cache/dotfiles"
+    rm -rf "$HOME/.config/tmux"
+    rm -rf "$STATE_DIR"
+    log_ok "Purged ~/.cache/dotfiles, ~/.config/tmux, and $STATE_DIR"
+
+    # Purge upstream dock state if installed
+    if [ -d "$TMUX_DOCK_DIR" ]; then
+        rm -rf "$TMUX_DOCK_DIR"
+        log_ok "Purged upstream dock at $TMUX_DOCK_DIR"
+    fi
+    rm -rf "$HOME/.local/state/tmux-session-dock" "$HOME/.cache/tmux-session-dock"
+
+    log_ok "🎉 Complete purge finished! Zero residual files remain."
+}
+
 # -----------------------------------------------------------------------------
 # Configuration Loader (install.toml parser)
 # -----------------------------------------------------------------------------
@@ -484,11 +544,10 @@ case "$CMD" in
         do_update
         ;;
     uninstall|undo|rollback)
-        restore_from_manifest
+        do_uninstall
         ;;
     purge)
-        restore_from_manifest
-        clear_install_state
+        do_purge
         ;;
     status)
         setup_urls
