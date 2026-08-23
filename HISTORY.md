@@ -6,6 +6,17 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-23 - Feature: Batteries-Included Ergonomics Preset & Upstream Dock Integration
+
+- **`tmux-session-dock` Batteries-Included 인체공학 프리셋 구축 (`presets/dotfiles-tmux.conf`)**:
+  - `Ctrl + a` Prefix, 상단 보더 스마트 축소 경로(`#{s|^$HOME|~|:pane_current_path}`), `Alt+방향키` 페인 이동, 안전 창 분할을 dock 내장 프리셋으로 제공.
+  - `@session-dock-dotfiles-mode "on"` 선언형 옵션으로 1초 만에 풀 인체공학 모드 활성화.
+  - `setup.sh`의 `purge` 로직을 강화하여 38개 테마, 관리 설정 파일, 잔여 백그라운드 프로세스까지 100% 원자적 소거.
+- **`dotfiles` 워크스페이스 경량화 및 문서 정합성 동기화**:
+  - `dotfiles/tmux.conf` 내의 중복 설정을 모두 걷어내고 `@session-dock-dotfiles-mode "on"`을 통한 상위 소비 구조로 단일화.
+  - 셸 프롬프트는 의도대로 초미니멀 `PROMPT='$ '`를 보존하여 가로 공간 낭비 방지.
+  - `architecture.md`, `keybindings.md`, `shortcut.md`, `README.md` 전수 점검 및 38종 테마 수량 정합성 동기화.
+
 ## 2026-08-23 - Release v0.7.0: Decoupled Upstream Session Dock & Universal Setup Controller
 
 - **`tmux-session-dock` 독립 오픈소스 저장소 분리 및 배포 완료**:
