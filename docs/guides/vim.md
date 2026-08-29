@@ -107,7 +107,7 @@ effecitive keymap
 tmux  easy spilit  
 
 my dotfiles  
-vimrc tmux.conf urxvt  
+vimrc urxvt (tmux: upstream tmux-session-dock)
 
 리눅스 터미널 생활  
 https://black7375.tistory.com/15  

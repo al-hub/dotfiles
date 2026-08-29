@@ -9,15 +9,16 @@ ctrl + g       : go to line
 e : edit  
 ctrl+s, enter : save  
 
-### dotfiles & tmux
-> 📖 **전체 상세 단축키 레퍼런스**: [docs/keybindings.md](docs/keybindings.md)
+### tmux (upstream tmux-session-dock)
+> https://github.com/al-hub/tmux-session-dock/blob/master/docs/KEYBINDINGS.md
 
-- `Ctrl+a s` : 세션 런처 사이드바 토글 (열기/닫기)
-- `Ctrl+a P` : 서브페인 상/하단 위치 스왑 (Top ↔ Bottom)
-- `Ctrl+a T` : 38종 컬러 테마 피커 팝업
-- `Ctrl+a /` : 단축키 커맨드 팔레트 실행
-- `Alt + 방향키` : 페인 포커스 이동 (Prefix 불필요)
-- `Ctrl + Alt + 방향키` : 페인 위치 스왑 (사이드바 내부: 서브페인 상/하 이동 및 기억)
-- `Ctrl+a |` / `Ctrl+a _` : 작업 영역 가로 / 세로 분할
-- `Ctrl+a Tab` / `Ctrl+a Shift+Tab` : 다음 / 이전 윈도우 탭 이동
-- `Ctrl+a Esc` : vi 스타일 복사 모드 진입 (`v` 선택, `y` 시스템 클립보드 복사)
+- `Ctrl+a s` : 세션 도크 사이드바 토글
+- `Ctrl+a S` : 서브페인 / IME 설정 팝업
+- `Ctrl+a T` : 테마 피커
+- `Ctrl+a /` : 커맨드 팔레트, `Ctrl+a h` : 도움말
+- `Alt + 방향키` : 페인 이동, `Ctrl + Alt + 방향키` : 페인 스왑
+- `Ctrl+a |` / `Ctrl+a _` : 작업 영역 분할 (사이드바 보호)
+- `Ctrl+a Tab` / `Ctrl+a Shift+Tab` : 윈도우 이동
+
+### urxvt (dotfiles)
+- `Ctrl + 휠` : 폰트 크기, `Ctrl + 휠클릭` : 기본 크기

@@ -6,6 +6,25 @@
 
 - 새 대화 주제는 위에 추가합니다.
 
+## 2026-08-30 - v0.8.0: tmux 설정 완전 이관과 SOLID 재구성
+
+- **사용자 요청 흐름**:
+  - dotfiles 구조 파악 → tmux 관련만 → tmux-session-dock과의 관계 → `~/.tmux.conf`를 upstream에 위임하는 안 → "억지로 맞추지 말고 dotfiles에서 tmux.conf를 삭제하는 것은 어떤가" → upstream 보강 먼저, 이후 진행 → SRP 기준 재정리 → `/plan` "SOLID 준수, tmux.conf 제거, tmux 설정 책임 upstream 완전 이관".
+- **진단**:
+  - 이 머신 `~/.tmux.conf`는 이미 upstream 스니펫만 있었고 dotfiles manifest는 비어 있었다. dotfiles 고유 5개 설정(zsh 브리지, vi copy-mode, Tab/BTab, C-M swap, vim-navigator)은 꺼진 채 사용 중 — 설계와 실제가 갈라진 증거.
+  - `~/.tmux.conf` writer가 둘(dotfiles 덮어쓰기 vs upstream append)이라 경합.
+  - SRP 위반 6개: tmux.conf 4책임 혼합, writer 2개, `tmux-zshrc`의 ZDOTDIR 우회, urxvt가 tmux 자식, setup.sh가 upstream 파일 rm, 엔진 문서가 소비자 repo에.
+- **사용자 결정**:
+  1. `tmux.zshrc` repo에서 완전 삭제 (프롬프트는 `~/.zshrc`가 관리, repo 밖).
+  2. 분리 전 엔진 문서/테스트 이번에 삭제.
+  3. URxvt는 독립 visible 모듈 `urxvt`.
+  4. upstream preset 보강(Tab/BTab, Ctrl+Alt swap → v0.3.46)을 먼저 하고 dotfiles 삭제 진행.
+- **설계 원칙 합의**: dotfiles = orchestrator only. "어떤 파일이 바뀌는 이유가 하나". tmux UX는 upstream, 셸은 `~/.zshrc`, 터미널은 `urxvt` 모듈. upstream은 공개 CLI 계약 + version tag로만 의존.
+- **보류/후속**:
+  - vi copy-mode + clipboard `y`는 upstream preset 편입 후보 (v0.3.46 미포함). `Ctrl+a P`, `Ctrl+a ?` 부활 여부는 upstream 결정.
+  - 이 머신 `rm -rf ~/.cache/dotfiles` (tmux.zshrc 잔재)는 사용자 확인 후.
+  - upstream `setup.sh uninstall`의 `pkill -f` 자기 종료 이슈는 upstream에서 수정.
+
 ## 2026-08-23 - Release v0.7.0: Decoupled Upstream Session Dock & Universal Setup Controller
 
 - **사용자 요청**:

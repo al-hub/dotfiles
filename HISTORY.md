@@ -6,6 +6,26 @@
 
 - 의미 있는 설정 변경, 설치 흐름 변경, 위험한 레거시 동작 정리, 검증 결과를 남깁니다.
 
+## 2026-08-30 - v0.8.0: tmux 설정 책임을 upstream tmux-session-dock으로 완전 이관 (SOLID 재구성)
+
+- **`dotfiles/tmux.conf`, `dotfiles/tmux.zshrc` 삭제**:
+  - `~/.tmux.conf`는 upstream `tmux-session-dock/setup.sh install`이 마커 블록으로 단독 소유. dotfiles는 tmux 설정 파일 0개.
+  - dock 로드·`theme.conf` source는 upstream 스니펫과 중복이라 제거. vi copy-mode·`Tab`/`BTab`·`Ctrl+Alt+화살표` swap은 upstream preset 책임(v0.3.46에 Tab/swap 반영). `ZDOTDIR` zsh 브리지는 셸 책임이라 제거 — 프롬프트는 사용자 `~/.zshrc`에서 관리.
+- **`setup.sh` 재작성 (type 기반 dispatch)**:
+  - `install.toml`에 `type = "file" | "upstream"` 도입. `file`은 `source/target/post_install`, `upstream`은 `repo/dir/min_version`.
+  - upstream 모듈은 공개 CLI `setup.sh install|update|uninstall|purge|status`에만 위임. `~/.local/bin/tmux-*` 6개 rm, `~/.tmux.conf` rm, `~/.config/tmux` rm 등 upstream 내부 경로 직접 조작 코드 전부 제거.
+  - `after_install_item`의 모듈 이름 case → `post_install` 훅 어휘(`executable`, `xrdb-merge`).
+  - `min_version` 게이트: `git describe --tags`를 `sort -V`로 비교, 미달 시 경고. `doctor`는 install.toml `commands` 합집합 순회 + upstream `status` 위임.
+  - 위임 호출에 `</dev/null` — `while read` 루프 안 stdin 소진으로 후속 모듈이 건너뛰어지던 버그 수정.
+  - 옵션 첫 인자 실행(`curl ... | bash -s -- --v vX`)이 실제로는 파싱되지 않던 문제 수정. `--skip-upstream`(`--no-dock` alias). 숨김 `dump-config`.
+  - 안정 버전 `v0.8.0`.
+- **`install.toml` 재편**: `tmux`, `tmux-zshrc` 삭제. `tmux-session-dock`을 visible upstream 모듈(`min_version = "v0.3.46"`)로 승격. `tmux-xresources` → 독립 visible 모듈 `urxvt`(hidden 의존성 `urxvt-resize-font`).
+- **분리 전 사이드바 엔진 문서/테스트 제거**: `docs/design`, `docs/testing`, `docs/archives`, `docs/superpowers`, `docs/plans`, `docs/guides/tmux-theme.md`, `docs/guides/reproduction.md`, `tests/profile-*`, `tests/profile-reports`, `tests/lib`, `.superpowers/`. git history에 보존.
+- **`tests/run-tests.sh` 재작성**: 구문 검사 + install.toml 스키마(file은 source/target, upstream은 repo/dir/min_version) + 의존성 해석 + "tmux 설정 부재" 계약 + read-only CLI. `dotfiles/tmux.conf` 격리 로드 검사 삭제.
+- **문서**: README, AGENTS/GEMINI, docs/architecture(책임 경계·모듈 타입·확장 규칙), docs/README(upstream 문서 링크), docs/keybindings(URxvt만 + upstream 링크), shortcut.md, vim.md 정합.
+- **검증**: `bash tests/run-tests.sh` 12/12 PASS. 격리 E2E(`env -u TMUX HOME=<tmp> TMUX_TMPDIR=<tmp>`) install 4 모듈 / uninstall(`~/.tmux.conf` 제거, checkout 보존) / purge(checkout·state 제거) 확인.
+- **주의**: E2E 첫 실행 때 `TMUX_TMPDIR` 격리 없이 upstream uninstall을 돌려 실제 사용자 tmux 서버가 종료됨(upstream uninstall의 `tmux kill-server`). 이후 격리 규칙을 AGENTS.md에 명시. upstream `pkill -f tmux-session-dock` 자기 종료(`Terminated`)는 upstream 이슈.
+
 ## 2026-08-23 - Feature: Batteries-Included Ergonomics Preset & Upstream Dock Integration
 
 - **`tmux-session-dock` Batteries-Included 인체공학 프리셋 구축 (`presets/dotfiles-tmux.conf`)**:

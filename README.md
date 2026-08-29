@@ -1,181 +1,115 @@
 # dotfiles
 
-개인 Linux dotfiles 저장소입니다. 현재는 `install.toml` 목록을 읽어 설치하는 manifest 기반 설치 구조로 관리합니다.
+개인 Linux 개발 환경의 **워크스페이스 오케스트레이터**입니다. `install.toml`에 선언한 모듈을 `setup.sh`가 설치·갱신·제거합니다.
 
-기존 README 내용은 [README.legacy.md](README.legacy.md)에 백업해 두었습니다.
-다음 에이전트가 작업 맥락을 이어받기 위한 문서는 [AGENTS.md](AGENTS.md)에 정리합니다.
-주요 작업 이력은 [HISTORY.md](HISTORY.md)에 누적합니다.
-주제별 대화 맥락은 [CONVERSATION.md](CONVERSATION.md)에 요약합니다.
-설치 구조와 모듈 추가 원칙은 [docs/architecture.md](docs/architecture.md)에 정리합니다.
+dotfiles는 "무엇을, 어느 버전으로, 어떤 순서로 설치하는가"만 책임집니다. 각 컴포넌트의 동작(예: tmux 키바인딩)은 컴포넌트 소유자가 책임집니다. tmux 관련 설정은 전부 독립 저장소 [`tmux-session-dock`](https://github.com/al-hub/tmux-session-dock)이 소유하며, dotfiles에는 tmux 설정 파일이 없습니다.
+
+- 에이전트 handoff: [AGENTS.md](AGENTS.md)
+- 변경 이력: [HISTORY.md](HISTORY.md) / 의사결정 맥락: [CONVERSATION.md](CONVERSATION.md)
+- 설치 모델과 모듈 추가 원칙: [docs/architecture.md](docs/architecture.md)
+- 구 README: [README.legacy.md](README.legacy.md)
 
 ## 빠른 설치
 
-Debian 또는 Ubuntu 계열 PC에서 아래 명령으로 실행합니다.
+Debian / Ubuntu 계열.
 
 ```sh
-# 통합 setup controller로 원클릭 설치
 curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/setup.sh | bash
 ```
 
-## 버전 설치 및 라이프사이클 관리
-
-이 저장소는 `v0.1`부터 tag 기반 버전 설치 및 `./setup.sh` 라이프사이클 명령을 지원합니다.
+## 라이프사이클 명령
 
 ```sh
-# 특정 버전 설치 (현재 안정 기준: v0.7.0)
-curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/setup.sh | bash -s -- --v v0.7.0
+# 특정 릴리스 tag 기준 설치 (현재 안정 기준: v0.8.0)
+curl -fsSL https://raw.githubusercontent.com/al-hub/dotfiles/refs/heads/master/setup.sh | bash -s -- --v v0.8.0
 
-# 로컬 CLI 명령
-./setup.sh install    # 전체 설정 설치 및 upstream tmux-session-dock 자동 프로비저닝
-./setup.sh update     # dotfiles 및 upstream dock 최신 동기화
-./setup.sh uninstall  # 관리 파일 안전 롤백 및 백업 복원
-./setup.sh doctor     # 필수 의존성(zsh, urxvt, tmux, 폰트) 무결성 진단
-./setup.sh status     # 설치 상태 및 심볼릭 링크 개요 출력
+./setup.sh install    # enabled 모듈 설치. upstream 모듈은 해당 저장소의 setup.sh에 위임
+./setup.sh update     # dotfiles pull + upstream 모듈 update + 재설치
+./setup.sh uninstall  # manifest 기준 복원. upstream 모듈은 소유자 uninstall 호출
+./setup.sh purge      # uninstall + 백업/상태/upstream checkout 제거
+./setup.sh status     # 모듈 표 (상태, 타입, 명령, 관리 여부, 버전)
+./setup.sh doctor     # 필수 명령 + upstream 버전 게이트 + 위임 status
 ```
 
-## 현재 구조
+옵션: `--skip-upstream` (upstream 모듈 건너뜀), `--v TAG`, `--latest`.
+환경변수: `DOTFILES_DEV_ROOT` (기본 `~/workspace`) 아래에 `<module>/setup.sh`가 있으면 clone 대신 그 checkout을 사용합니다.
+
+> `uninstall`/`purge`는 upstream `tmux-session-dock` 제거 시 tmux 서버를 종료합니다. tmux 밖에서 실행하세요.
+
+## 구조
 
 ```text
 dotfiles/
-├── setup.sh                  ← [단일 진실 공급원] 통합 라이프사이클 관리자 (v0.7.0)
-├── setup                     ← 로컬 편의 실행 링크 (./setup install)
-├── install.sh                ← 하위 호환 심볼릭 링크 -> setup.sh
-├── uninstall.sh              ← 하위 호환 심볼릭 링크 -> setup.sh
-├── install.toml              ← 전체 컴포넌트 종속성 및 타깃 명세
+├── setup.sh              ← 오케스트레이터 (install / update / uninstall / purge / status / doctor)
+├── setup, install.sh, uninstall.sh   ← setup.sh 심볼릭 링크 (하위 호환)
+├── install.toml          ← 모듈 선언 (type, source/target 또는 repo/dir, depends, min_version)
 ├── dotfiles/
-│   ├── opencode.jsonc        ← OpenCode personal 설정
-│   ├── tmux.conf             ← Tmux 설정 (upstream tmux-session-dock 연동)
-│   ├── tmux.zshrc            ← Tmux 전용 zsh 설정 (짧은 프롬프트 & completion)
-│   ├── vimrc                 ← Vim 설정
-│   ├── myrc                  ← 공용 셸 설정
-│   ├── Xresources            ← URxvt TrueColor 및 폰트 설정
-│   └── urxvt/
-│       └── ext/
-│           └── resize-font   ← Ctrl+마우스 휠 폰트 크기 조절 Perl 확장
-├── tests/
-│   └── run-tests.sh          ← dotfiles 오케스트레이터 무결성 검증 스위트
-└── docs/                     ← 개발 및 아키텍처 문서 허브
+│   ├── opencode.jsonc    ← OpenCode personal 설정
+│   ├── Xresources        ← URxvt TrueColor / 폰트
+│   ├── urxvt/ext/resize-font  ← URxvt Ctrl+휠 폰트 크기 Perl 확장
+│   ├── vimrc             ← Vim (disabled)
+│   └── myrc              ← 공용 셸 함수 (disabled)
+├── tests/run-tests.sh    ← 오케스트레이터 계약 검증
+└── docs/                 ← 설치 모델 문서
 ```
 
-`dotfiles/` 디렉터리에는 실제 배포할 설정 파일을 둡니다. `install.toml`은 어떤 파일을 설치할지, 어디에 설치할지, 필요한 실행파일과 패키지가 무엇인지 정의합니다.
-모듈이 늘어날수록 설치 구조는 [docs/architecture.md](docs/architecture.md)에서 유지합니다.
+## 모듈
 
-## opencode
+| 모듈 | type | 상태 | 대상 |
+|---|---|---|---|
+| `opencode` | file | enabled | `~/.config/opencode/opencode.jsonc` |
+| `tmux-session-dock` | upstream | enabled | `~/.local/share/tmux-session-dock` (소유: `~/.tmux.conf`, `~/.config/tmux/*`, `~/.local/bin/tmux-*`) |
+| `urxvt` | file | enabled | `~/.Xresources` (+ hidden `urxvt-resize-font` → `~/.urxvt/ext/resize-font`) |
+| `vim` | file | disabled | `~/.vimrc` |
+| `shell` | file | disabled | `~/.myrc` |
 
-opencode 설정은 [docs/guides/opencode.md](docs/guides/opencode.md)에 별도로 정리합니다.
-현재는 personal-only seed config를 기준으로 두고, `install.toml`에 있는 `opencode` 항목으로 `~/.config/opencode/opencode.jsonc`를 설치합니다.
-설치 후 CLI가 없으면 공식 설치 스크립트로 자동 설치합니다.
-work profile, 실행 래퍼, allowlist 확장 방향은 [docs/guides/opencode.md](docs/guides/opencode.md)와 [docs/architecture.md](docs/architecture.md)에 남겨둡니다.
+### 모듈 타입
 
-## 설치 방식
-
-`install.sh`는 특정 dotfile 전용 스크립트가 아니라 공통 설치 엔진입니다.
-
-- `Enter`, `q`, `quit`, `exit`: 종료
-- `all`: enabled 항목만 설치
-- `번호`: 선택한 번호만 설치, 예: `1` 또는 `1,3`
-- `undo`: manifest에 기록된 설치 파일을 복원하고 설치 상태를 정리
-- `clear-state`: 설치 파일은 건드리지 않고 manifest 설치 추적 기록만 삭제
-
-기존 대상 파일이 있고 manifest에 기록된 managed 항목이면 자동으로 백업 후 갱신합니다. 비관리 파일은 덮어쓰기 전에 확인합니다. 백업은 아래 위치에 저장됩니다.
-
-```text
-~/.dotfiles-install/backups/
-```
-
-설치 상태는 아래 파일에 기록됩니다.
-
-```text
-~/.dotfiles-install/manifest.tsv
-~/.dotfiles-install/install.toml
-```
-
-## 설치 목록 관리
-
-설치 항목은 [install.toml](install.toml)에서 관리합니다.
+- **file**: 저장소 파일을 `target`으로 복사. 기존 파일은 `~/.dotfiles-install/backups/`에 백업. `post_install` 훅: `executable`, `xrdb-merge`.
+- **upstream**: 독립 저장소를 `dir`에 clone하고 그 저장소의 공개 CLI `setup.sh install|update|uninstall|purge|status`만 호출. 내부 경로를 dotfiles가 알지 않습니다. `min_version`은 `git describe --tags`와 비교해 미달 시 경고.
 
 ```toml
 [[dotfiles]]
-name = "tmux"
+name = "tmux-session-dock"
+type = "upstream"
 enabled = true
-source = "dotfiles/tmux.conf"
-target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip"]
-packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-launcher", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources", "tmux-theme-picker"]
-description = "tmux configuration"
+repo = "https://github.com/al-hub/tmux-session-dock.git"
+dir = "~/.local/share/tmux-session-dock"
+min_version = "v0.3.46"
+commands = ["tmux", "bash", "git"]
 ```
 
-현재 사용자에게 보이는 enabled 항목은 `opencode`와 `tmux`입니다. `opencode`는 선택하면 config를 갱신하고, CLI가 이미 있으면 재설치하지 않습니다. CLI가 없을 때 원격 설치를 원하면 `DOTFILES_INSTALL_OPENCODE_CLI=true`를 명시해야 합니다. tmux session launcher, tmux 전용 zsh 초기화 파일, URxvt resize-font extension, Xresources, 그리고 tmux-theme-picker는 hidden dependency로 설치됩니다. Vim, shell 항목은 목록에 있지만 disabled 상태입니다.
-이미 manifest에 기록된 managed 항목은 재설치 시 새 버전으로 자동 갱신됩니다. 비관리 기존 파일은 덮어쓰기 전에 확인을 요구합니다.
-새 모듈을 넣을 때는 `file / dependency / post-install / external CLI` 중 어느 형태인지 먼저 분류합니다.
+설치 상태는 `~/.dotfiles-install/manifest.tsv`에 기록됩니다. upstream 모듈은 `source = upstream` 행으로 기록되어 uninstall 시 소유자에게 위임됩니다.
 
-tmux는 `ZDOTDIR="$HOME/.cache/dotfiles"`로 zsh를 실행합니다. 이 전용 `.zshrc`는 짧은 `$ ` 프롬프트를 유지하면서 `compinit`을 로드해 git 자동완성을 사용할 수 있게 합니다.
+## tmux
 
-## URxvt font resize
+tmux 설정, 사이드바 세션 도크, 테마, 단축키는 모두 upstream이 제공합니다.
 
-tmux 설치에는 URxvt용 font resize 설정도 hidden dependency로 포함됩니다. URxvt 안에서 tmux를 사용할 때 아래 입력으로 터미널 폰트 크기를 조정합니다.
+- 저장소: https://github.com/al-hub/tmux-session-dock
+- 단축키: [`docs/KEYBINDINGS.md`](https://github.com/al-hub/tmux-session-dock/blob/master/docs/KEYBINDINGS.md)
+- 테마: [`docs/THEMES.md`](https://github.com/al-hub/tmux-session-dock/blob/master/docs/THEMES.md)
 
-- `Ctrl+WheelUp`: 확대
-- `Ctrl+WheelDown`: 축소
-- `Ctrl+WheelClick`: 기본 크기로 복원
-- `Ctrl+-`: 축소
-- `Ctrl++`: 확대
-- `Ctrl+=`: 기본 크기로 복원
-- `Ctrl+?`: 현재 크기 표시
+`~/.tmux.conf`는 upstream `setup.sh install`이 마커 블록(`# >>> tmux-session-dock configuration >>>`)으로 관리합니다. 개인 추가 설정은 그 블록 밖에 직접 적으면 유지됩니다. tmux 안 zsh 프롬프트 등 셸 설정은 `~/.zshrc`에서 관리합니다 (repo 밖).
 
-이 기능은 tmux가 아니라 URxvt Perl extension이 처리합니다. 설치 중 X 세션에서 실행 중이면 `xrdb -merge ~/.Xresources`를 자동으로 시도하고, X 세션이 아니면 다음 로그인 후 아래 명령을 직접 실행해야 적용됩니다.
+## URxvt
+
+`urxvt` 모듈이 `~/.Xresources`와 resize-font 확장을 설치합니다. X 세션 안에서 설치하면 `xrdb -merge`를 자동 시도하고, 아니면 다음 로그인 후 직접 실행합니다.
 
 ```sh
 xrdb -merge ~/.Xresources
 ```
 
-## tmux session launcher & 단축키 안내
+- `Ctrl+WheelUp` / `Ctrl+WheelDown`: 확대 / 축소
+- `Ctrl+WheelClick`, `Ctrl+=`: 기본 크기
+- `Ctrl+-` / `Ctrl++`: 축소 / 확대
+- `Ctrl+?`: 현재 크기 표시
 
-> 📖 **전체 상세 단축키 및 마우스 조작 가이드**: [`docs/keybindings.md`](docs/keybindings.md)
+## opencode
 
-tmux 안에서 `Ctrl+a s`를 누르면 현재 window의 제일 왼쪽에 session launcher sidebar가 열립니다.
-`Ctrl+a s`는 toggle로 동작하므로, sidebar가 이미 열려 있으면 닫고 없으면 엽니다. tmux 시작 시 sidebar는 자동으로 열리지 않습니다.
-상하/좌우로 나뉜 window에서도 sidebar는 전체 높이를 차지하는 왼쪽 pane 하나로 유지됩니다.
+[docs/guides/opencode.md](docs/guides/opencode.md) 참고. `install.toml`의 `opencode` 항목이 `~/.config/opencode/opencode.jsonc`를 설치합니다.
 
-- `Enter`: 선택한 session으로 이동
-- `j`/`k`, `Up`/`Down`: session 선택 이동
-- `c`: 새 session 생성
-- `d`: 선택한 session 삭제
-- `r`: 선택한 session 이름 변경
-- `o`: 삭제한 session history 표시/숨김
-- `q`: 닫기
-- `Esc`: prompt 취소, history 창 닫기
-
-sidebar에 포커스가 있을 때 `Ctrl+a |`, `Ctrl+a _`, `Ctrl+a %`, `Ctrl+a "`로 pane을 나누면 sidebar가 아니라 오른쪽 작업 영역이 나뉩니다. sidebar에서 다른 session으로 이동하면 target session의 active window에 sidebar를 보장합니다.
-sidebar 폭을 직접 조정한 뒤 session을 이동하면, target session의 sidebar도 같은 폭으로 맞춥니다. sidebar를 열고 닫을 때는 sidebar를 제외한 work layout을 저장/복구해 반복 toggle 후에도 기존 pane 비율을 유지합니다.
-session 목록은 선택 표시, session 이름, session 생성 후 경과 시간을 `DAY:HH:MM:SS` 형식으로 보여줍니다. 경과 시간은 1초마다 해당 컬럼만 갱신합니다.
-mouse 기본 동작은 유지하며, sidebar의 session name 위치를 클릭한 경우에만 해당 session으로 이동합니다.
-
-`d`로 session을 삭제할 때 `y`를 입력하면 `~/.cache/dotfiles/tmux-session-history` 아래에 복원용 metadata를 남기고 삭제합니다. 그냥 `Enter`를 누르면 history 없이 삭제하고, `Esc`는 삭제 prompt만 취소합니다. 현재 session도 삭제할 수 있으며, 다른 session이 남아 있으면 그쪽으로 이동한 뒤 삭제하고 남은 session이 없으면 tmux server를 종료합니다. 삭제 확인 prompt에서 `All`을 입력하면 모든 session 삭제를 진행하며, 이어서 history 저장 여부를 한 번 더 묻습니다.
-`o`를 누르면 sidebar 하단 절반에 history 목록이 열립니다. history 목록에서는 `Space`로 여러 항목을 표시하고, `Enter`로 복원하며, `d` 후 `y`로 history 파일을 완전히 삭제합니다. history 창에서 `Esc`를 누르면 history 창만 닫고 기존 sidebar로 돌아갑니다.
-복원은 session/window 이름, sidebar를 제외한 pane current path, sidebar-free window layout metadata, 저장된 shell history를 사용해 원래 session 이름으로 새 session을 만듭니다. 저장된 tmux layout은 새 pane id에 맞게 다시 계산해 vertical-only, horizontal-only, mixed split 배치를 유지합니다. 같은 이름의 session이 이미 있으면 복원하지 않습니다. 실행 중이던 process 자체를 되살리지는 않습니다.
-이 sidebar는 별도 selector 의존성 없이 tmux와 bash만으로 동작합니다. 각 session의 busy/idle 상태는 내부 snapshot 구조에 포함하지만, 현재 UI에는 표시하지 않습니다.
-
-session 전환 시 target sidebar pane에 refresh signal을 보내 `>`를 빠르게 `>*`로 정렬하고, signal 유실이나 startup race에는 기존 polling이 fallback으로 동작합니다. 운용 개선판의 live 측정은 0.75~0.83초였으며, Bash `read -t` 경계 때문에 수십 ms 수준의 완전 즉시 갱신은 후속 refactoring 과제로 남아 있습니다.
-설치 후 이미 실행 중인 sidebar에는 새 코드가 자동 적용되지 않으므로, installer를 다시 실행한 뒤 sidebar를 재시작해야 합니다.
-
-## 로컬 검증
-
-설치 스크립트를 수정한 뒤에는 아래 명령을 실행합니다.
+## 검증
 
 ```sh
-bash -n install.sh
-bash -n scripts/tmux-session-launcher
-bash -n scripts/tmux-theme-picker
-perl -c dotfiles/urxvt/ext/resize-font
-sh -n get_dotfiles.sh
-sh -n install_dotfiles.sh
-git diff --check
-```
-
-`shellcheck`가 설치되어 있다면 아래 검사도 실행합니다.
-
-```sh
-shellcheck install.sh get_dotfiles.sh install_dotfiles.sh
+bash tests/run-tests.sh
 ```
