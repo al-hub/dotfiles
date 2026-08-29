@@ -1,5 +1,16 @@
+# dotfiles module manifest
+#
+# type = "file"      copy `source` (repo path) to `target`; optional post_install hooks:
+#                    "executable" (chmod +x), "xrdb-merge" (xrdb -merge when DISPLAY set)
+# type = "upstream"  delegate to an independent repository's public setup.sh CLI
+#                    (install | update | uninstall | purge | status). `repo` is cloned into
+#                    `dir` unless $DOTFILES_DEV_ROOT/<name>/setup.sh exists. `min_version`
+#                    is compared against `git describe --tags` and warns when below.
+# hidden = true      not listed for the user; installed only as a dependency.
+
 [[dotfiles]]
 name = "opencode"
+type = "file"
 enabled = true
 hidden = false
 source = "dotfiles/opencode.jsonc"
@@ -10,40 +21,47 @@ depends = []
 description = "personal opencode configuration"
 
 [[dotfiles]]
-name = "tmux"
+name = "tmux-session-dock"
+type = "upstream"
 enabled = true
 hidden = false
-source = "dotfiles/tmux.conf"
-target = "~/.tmux.conf"
-commands = ["tmux", "zsh", "bc", "xclip"]
-packages = ["tmux", "zsh", "bc", "xclip"]
-depends = ["tmux-session-dock", "tmux-zshrc", "urxvt-resize-font", "tmux-xresources"]
-description = "tmux configuration with upstream session dock integration"
+repo = "https://github.com/al-hub/tmux-session-dock.git"
+dir = "~/.local/share/tmux-session-dock"
+min_version = "v0.3.46"
+commands = ["tmux", "bash", "git"]
+packages = ["tmux", "git"]
+depends = []
+description = "upstream tmux session dock; owns ~/.tmux.conf and all tmux ergonomics"
 
 [[dotfiles]]
-name = "tmux-session-dock"
-enabled = false
-hidden = true
-source = ""
-target = "~/.local/bin/tmux-session-dock"
-commands = ["bash", "tmux"]
-packages = ["bash", "tmux"]
-depends = []
-description = "upstream autonomous tmux session dock"
+name = "urxvt"
+type = "file"
+enabled = true
+hidden = false
+source = "dotfiles/Xresources"
+target = "~/.Xresources"
+post_install = ["xrdb-merge"]
+commands = ["xrdb", "urxvt"]
+packages = ["x11-xserver-utils", "rxvt-unicode"]
+depends = ["urxvt-resize-font"]
+description = "URxvt TrueColor, font and resize-font extension"
 
 [[dotfiles]]
-name = "tmux-zshrc"
+name = "urxvt-resize-font"
+type = "file"
 enabled = false
 hidden = true
-source = "dotfiles/tmux.zshrc"
-target = "~/.cache/dotfiles/.zshrc"
-commands = ["zsh"]
-packages = ["zsh"]
+source = "dotfiles/urxvt/ext/resize-font"
+target = "~/.urxvt/ext/resize-font"
+post_install = ["executable"]
+commands = ["urxvt"]
+packages = ["rxvt-unicode"]
 depends = []
-description = "tmux-specific zsh initialization"
+description = "URxvt resize-font Perl extension"
 
 [[dotfiles]]
 name = "vim"
+type = "file"
 enabled = false
 hidden = false
 source = "dotfiles/vimrc"
@@ -55,6 +73,7 @@ description = "vim configuration"
 
 [[dotfiles]]
 name = "shell"
+type = "file"
 enabled = false
 hidden = false
 source = "dotfiles/myrc"
@@ -63,25 +82,3 @@ commands = ["sh"]
 packages = []
 depends = []
 description = "shared shell configuration"
-
-[[dotfiles]]
-name = "urxvt-resize-font"
-enabled = false
-hidden = true
-source = "dotfiles/urxvt/ext/resize-font"
-target = "~/.urxvt/ext/resize-font"
-commands = ["urxvt"]
-packages = ["rxvt-unicode"]
-depends = []
-description = "URxvt resize-font extension"
-
-[[dotfiles]]
-name = "tmux-xresources"
-enabled = false
-hidden = true
-source = "dotfiles/Xresources"
-target = "~/.Xresources"
-commands = ["xrdb", "urxvt"]
-packages = ["x11-xserver-utils", "rxvt-unicode"]
-depends = ["urxvt-resize-font"]
-description = "X resources configuration"

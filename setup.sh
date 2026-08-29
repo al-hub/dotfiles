@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# setup.sh - Universal Lifecycle Manager & Workspace Orchestrator for dotfiles
+# setup.sh - dotfiles Workspace Orchestrator
 # https://github.com/al-hub/dotfiles
-# Autonomous Install, Update, Uninstall, Doctor & Status Diagnostics
+#
+# Responsibility: decide WHICH components are installed, in WHAT order, at WHAT
+# version. Component behaviour (e.g. tmux configuration) belongs to the module
+# owner. Upstream modules are driven only through their public setup.sh CLI.
 # ==============================================================================
 set -euo pipefail
 
-DOTFILES_STABLE_VERSION="v0.7.0"
+DOTFILES_STABLE_VERSION="v0.8.0"
 DOTFILES_VERSION="${DOTFILES_VERSION:-master}"
 REPO_RAW_BASE_URL="${REPO_RAW_BASE_URL:-https://raw.githubusercontent.com/al-hub/dotfiles}"
 REPO_RAW_URL="${REPO_RAW_URL:-}"
@@ -14,14 +17,17 @@ INSTALL_TOML_URL="${INSTALL_TOML_URL:-}"
 STATE_DIR="${STATE_DIR:-$HOME/.dotfiles-install}"
 BACKUP_DIR="$STATE_DIR/backups"
 MANIFEST_FILE="$STATE_DIR/manifest.tsv"
-TMUX_DOCK_REPO="https://github.com/al-hub/tmux-session-dock.git"
-TMUX_DOCK_DIR="${TMUX_DOCK_DIR:-$HOME/.local/share/tmux-session-dock}"
+# When <DEV_ROOT>/<module>/setup.sh exists, that checkout is used instead of cloning.
+DOTFILES_DEV_ROOT="${DOTFILES_DEV_ROOT:-$HOME/workspace}"
+SKIP_UPSTREAM="${SKIP_UPSTREAM:-0}"
 
 CONFIG_FILE=""
 ITEMS_FILE=""
-INPUT_FD=0
-INSTALL_STACK=""
-DONE_ITEMS=""
+PURGE=0
+
+# Item record layout (pipe separated, produced by load_config):
+#   name|enabled|hidden|type|source|target|repo|dir|min_version|post_install|commands|packages|depends|description
+ITEM_FIELDS="name enabled hidden mtype source target repo dir min_version post_install commands packages depends description"
 
 # Colors
 RED='\033[0;31m'
@@ -32,7 +38,6 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log()       { printf '[dotfiles] %s\n' "$*"; }
 log_info()  { echo -e "${BLUE}${BOLD}[INFO]${NC} $*"; }
 log_ok()    { echo -e "${GREEN}${BOLD}[OK]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}${BOLD}[WARN]${NC} $*"; }
@@ -42,64 +47,33 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
     cat <<EOF
-${BOLD}dotfiles - Universal Setup & Workspace Orchestrator (${DOTFILES_STABLE_VERSION})${NC}
+${BOLD}dotfiles - Workspace Orchestrator (${DOTFILES_STABLE_VERSION})${NC}
 
 ${BOLD}Usage:${NC} $0 [COMMAND] [OPTIONS]
 
 ${BOLD}Commands:${NC}
-  ${CYAN}install${NC}       Install configured dotfiles components & provision upstream tmux-session-dock
-  ${CYAN}update${NC}        Pull latest dotfiles changes, sync upstream dock & reload tmux
-  ${CYAN}uninstall${NC}     Restore files recorded in manifest and cleanly remove symlinks
-  ${CYAN}status${NC}        Display installation status, active symlinks & managed state
-  ${CYAN}doctor${NC}        Verify system dependencies, shell environment, fonts & socket health
-  ${CYAN}purge${NC}         Full uninstall + remove all backups and state history
+  ${CYAN}install${NC}       Install enabled modules (file modules copied, upstream modules delegated)
+  ${CYAN}update${NC}        Pull dotfiles, update upstream modules, reinstall enabled modules
+  ${CYAN}uninstall${NC}     Restore manifest-recorded files; delegate upstream uninstall to owners
+  ${CYAN}purge${NC}         uninstall + remove backups, state and upstream checkouts
+  ${CYAN}status${NC}        Show module table (state, commands, managed, version)
+  ${CYAN}doctor${NC}        Verify required commands and upstream module versions
 
 ${BOLD}Options:${NC}
-  --v, --version VER   Target specific release tag (e.g. ${DOTFILES_STABLE_VERSION})
-  --latest             Target latest master branch (Default)
-  --all                Install all enabled components non-interactively
-  --no-dock            Skip provisioning upstream tmux-session-dock
-  -h, --help           Show this help message
+  --v, --version VER   Target a release tag of this repo (e.g. ${DOTFILES_STABLE_VERSION})
+  --latest             Target master (default)
+  --all                Install all enabled modules (default behaviour)
+  --skip-upstream      Do not install/update upstream modules (alias: --no-dock)
+  -h, --help           Show this help
+
+${BOLD}Environment:${NC}
+  DOTFILES_DEV_ROOT    Directory holding local upstream checkouts (default: ~/workspace)
+  STATE_DIR            Installer state directory (default: ~/.dotfiles-install)
+
+${BOLD}Note:${NC} the upstream tmux-session-dock uninstaller terminates the running tmux
+server. Run uninstall/purge from outside tmux.
 EOF
     exit 0
-}
-
-# -----------------------------------------------------------------------------
-# Upstream tmux-session-dock Integration
-# -----------------------------------------------------------------------------
-
-provision_upstream_dock() {
-    log_info "Ensuring upstream tmux-session-dock is provisioned..."
-    
-    # Check if local development repo exists
-    if [ -d "$HOME/workspace/tmux-session-dock" ] && [ -x "$HOME/workspace/tmux-session-dock/setup.sh" ]; then
-        log_ok "Detected local workspace at $HOME/workspace/tmux-session-dock"
-        "$HOME/workspace/tmux-session-dock/setup.sh" install --no-tmux-conf >/dev/null 2>&1 || true
-        return 0
-    fi
-
-    if [ ! -d "$TMUX_DOCK_DIR/.git" ]; then
-        log_info "Cloning tmux-session-dock into $TMUX_DOCK_DIR..."
-        mkdir -p "$(dirname "$TMUX_DOCK_DIR")"
-        git clone "$TMUX_DOCK_REPO" "$TMUX_DOCK_DIR" 2>/dev/null || true
-    fi
-
-    if [ -x "$TMUX_DOCK_DIR/setup.sh" ]; then
-        log_info "Running upstream tmux-session-dock setup controller..."
-        "$TMUX_DOCK_DIR/setup.sh" install --no-tmux-conf >/dev/null 2>&1 || true
-        log_ok "Upstream tmux-session-dock installed successfully."
-    fi
-}
-
-update_upstream_dock() {
-    log_info "Updating upstream tmux-session-dock..."
-    if [ -d "$HOME/workspace/tmux-session-dock" ] && [ -x "$HOME/workspace/tmux-session-dock/setup.sh" ]; then
-        "$HOME/workspace/tmux-session-dock/setup.sh" update >/dev/null 2>&1 || true
-        log_ok "Updated local workspace dock."
-    elif [ -d "$TMUX_DOCK_DIR" ] && [ -x "$TMUX_DOCK_DIR/setup.sh" ]; then
-        "$TMUX_DOCK_DIR/setup.sh" update >/dev/null 2>&1 || true
-        log_ok "Updated upstream dock at $TMUX_DOCK_DIR."
-    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -153,9 +127,7 @@ record_manifest() {
     touch "$MANIFEST_FILE"
 
     tmp_manifest="$(mktemp)"
-    if [ -f "$MANIFEST_FILE" ]; then
-        awk -F '\t' -v t="$target_path" '$2 != t' "$MANIFEST_FILE" > "$tmp_manifest" || true
-    fi
+    awk -F '\t' -v t="$target_path" '$2 != t' "$MANIFEST_FILE" > "$tmp_manifest" || true
     printf '%s\t%s\t%s\t%s\n' "$name" "$target_path" "$backup_path" "$source_name" >> "$tmp_manifest"
     mv "$tmp_manifest" "$MANIFEST_FILE"
 }
@@ -178,6 +150,10 @@ restore_from_manifest() {
 
     while IFS=$'\t' read -r name target_path backup_path source_name; do
         [ -n "$target_path" ] || continue
+        if [ "$source_name" = "upstream" ]; then
+            uninstall_upstream_module "$name" "$target_path"
+            continue
+        fi
         if [ "$backup_path" != "-" ] && [ -f "$backup_path" ]; then
             mkdir -p "$(dirname "$target_path")"
             cp "$backup_path" "$target_path"
@@ -191,71 +167,6 @@ restore_from_manifest() {
     done < "$tmp_manifest"
     rm -f "$tmp_manifest" "$MANIFEST_FILE"
     log_ok "Manifest rollback completed."
-}
-
-clear_install_state() {
-    rm -rf "$STATE_DIR"
-    log_ok "Cleared installer state at $STATE_DIR"
-}
-
-do_uninstall() {
-    log_info "Starting uninstallation of dotfiles components..."
-    
-    # 1. Restore from manifest if manifest exists
-    if [ -f "$MANIFEST_FILE" ]; then
-        restore_from_manifest
-    else
-        log_info "No manifest found; cleaning target files defined in install.toml..."
-        load_config
-        while IFS='|' read -r name enabled hidden source target commands packages depends description; do
-            [ -n "$target" ] || continue
-            local target_path
-            target_path="$(expand_path "$target")"
-            if [ -e "$target_path" ] || [ -L "$target_path" ]; then
-                rm -rf "$target_path"
-                log_ok "Removed $target_path"
-            fi
-        done < "$ITEMS_FILE"
-    fi
-
-    # 2. Clean dotfiles binary artifacts from ~/.local/bin
-    rm -f "$HOME/.local/bin/tmux-session-dock" \
-          "$HOME/.local/bin/tmux-session-launcher" \
-          "$HOME/.local/bin/tmux-sidebar-tmux-adapter" \
-          "$HOME/.local/bin/tmux-theme-picker" \
-          "$HOME/.local/bin/tmux-help-viewer" \
-          "$HOME/.local/bin/tmux-command-palette"
-    log_ok "Cleaned dotfiles binary artifacts from ~/.local/bin"
-
-    # 3. Clean ~/.tmux.conf if it matches dotfiles configuration
-    if [ -f "$HOME/.tmux.conf" ]; then
-        if grep -q "tmux-session-dock" "$HOME/.tmux.conf" 2>/dev/null || grep -q "dotfiles" "$HOME/.tmux.conf" 2>/dev/null; then
-            rm -f "$HOME/.tmux.conf"
-            log_ok "Removed managed ~/.tmux.conf"
-        fi
-    fi
-
-    log_ok "Uninstallation completed."
-}
-
-do_purge() {
-    log_warn "Purging all dotfiles components, backups, caches and runtime state..."
-    do_uninstall
-
-    # Purge caches, state, and config
-    rm -rf "$HOME/.cache/dotfiles"
-    rm -rf "$HOME/.config/tmux"
-    rm -rf "$STATE_DIR"
-    log_ok "Purged ~/.cache/dotfiles, ~/.config/tmux, and $STATE_DIR"
-
-    # Purge upstream dock state if installed
-    if [ -d "$TMUX_DOCK_DIR" ]; then
-        rm -rf "$TMUX_DOCK_DIR"
-        log_ok "Purged upstream dock at $TMUX_DOCK_DIR"
-    fi
-    rm -rf "$HOME/.local/state/tmux-session-dock" "$HOME/.cache/tmux-session-dock"
-
-    log_ok "🎉 Complete purge finished! Zero residual files remain."
 }
 
 # -----------------------------------------------------------------------------
@@ -304,78 +215,186 @@ load_config() {
         }
         return s
     }
+    function reset_item() {
+        name = ""; enabled = "false"; hidden = "false"; mtype = "file"
+        source = ""; target = ""; repo = ""; dir = ""; min_version = ""; description = ""
+        post_install[0] = 0; commands[0] = 0; packages[0] = 0; depends[0] = 0
+    }
     function flush_item() {
         if (name != "") {
-            print name "|" enabled "|" hidden "|" source "|" target "|" join_array(commands) "|" join_array(packages) "|" join_array(depends) "|" description
+            print name "|" enabled "|" hidden "|" mtype "|" source "|" target "|" repo "|" dir "|" min_version "|" join_array(post_install) "|" join_array(commands) "|" join_array(packages) "|" join_array(depends) "|" description
         }
-        name = ""; enabled = "false"; hidden = "false"; source = ""; target = ""; description = ""
-        commands[0] = 0; packages[0] = 0; depends[0] = 0
+        reset_item()
     }
-    BEGIN {
-        name = ""; enabled = "false"; hidden = "false"; source = ""; target = ""; description = ""
-        commands[0] = 0; packages[0] = 0; depends[0] = 0
-    }
+    BEGIN { reset_item() }
     /^[ \t]*\[\[dotfiles\]\]/ { flush_item(); next }
-    /^[ \t]*name[ \t]*=/        { name = unquote(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*enabled[ \t]*=/     { enabled = trim(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*hidden[ \t]*=/      { hidden = trim(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*source[ \t]*=/      { source = unquote(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*target[ \t]*=/      { target = unquote(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*description[ \t]*=/ { description = unquote(substr($0, index($0, "=") + 1)); next }
-    /^[ \t]*commands[ \t]*=/    { parse_array(substr($0, index($0, "=") + 1), commands); next }
-    /^[ \t]*packages[ \t]*=/    { parse_array(substr($0, index($0, "=") + 1), packages); next }
-    /^[ \t]*depends[ \t]*=/     { parse_array(substr($0, index($0, "=") + 1), depends); next }
+    /^[ \t]*name[ \t]*=/         { name = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*enabled[ \t]*=/      { enabled = trim(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*hidden[ \t]*=/       { hidden = trim(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*type[ \t]*=/         { mtype = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*source[ \t]*=/       { source = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*target[ \t]*=/       { target = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*repo[ \t]*=/         { repo = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*dir[ \t]*=/          { dir = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*min_version[ \t]*=/  { min_version = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*description[ \t]*=/  { description = unquote(substr($0, index($0, "=") + 1)); next }
+    /^[ \t]*post_install[ \t]*=/ { parse_array(substr($0, index($0, "=") + 1), post_install); next }
+    /^[ \t]*commands[ \t]*=/     { parse_array(substr($0, index($0, "=") + 1), commands); next }
+    /^[ \t]*packages[ \t]*=/     { parse_array(substr($0, index($0, "=") + 1), packages); next }
+    /^[ \t]*depends[ \t]*=/      { parse_array(substr($0, index($0, "=") + 1), depends); next }
     END { flush_item() }
     ' "$CONFIG_FILE" > "$ITEMS_FILE"
 }
 
-# -----------------------------------------------------------------------------
-# Installation Engine
-# -----------------------------------------------------------------------------
-
-ensure_executable() {
-    path="$(expand_path "$1")"
-    [ -f "$path" ] && chmod +x "$path"
+# Print the item record for one module name (empty if absent).
+find_item() {
+    awk -F '|' -v n="$1" '$1 == n { print; exit }' "$ITEMS_FILE"
 }
 
-after_install_item() {
-    name="$1"
-    target="$2"
+# -----------------------------------------------------------------------------
+# Upstream Module Adapter (public CLI contract: setup.sh install|update|uninstall|purge|status)
+# -----------------------------------------------------------------------------
 
-    case "$name" in
-        tmux)
-            if tmux info >/dev/null 2>&1; then
-                tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
-            fi
-            ;;
-        tmux-session-dock)
-            provision_upstream_dock
-            ;;
-        urxvt-resize-font)
-            ensure_executable "$target"
-            ;;
-        tmux-xresources)
-            if command_exists xrdb && [ -n "${DISPLAY:-}" ]; then
-                xrdb -merge "$(expand_path "$target")" 2>/dev/null || true
-            fi
-            ;;
+resolve_upstream_dir() {
+    name="$1"
+    dir="$2"
+    if [ -x "$DOTFILES_DEV_ROOT/$name/setup.sh" ]; then
+        printf '%s\n' "$DOTFILES_DEV_ROOT/$name"
+    else
+        expand_path "$dir"
+    fi
+}
+
+is_dev_checkout() {
+    case "$1" in
+        "$DOTFILES_DEV_ROOT"/*) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
-install_item() {
-    name="$1"
-    hidden="$2"
-    source="$3"
-    target="$4"
-    commands="$5"
-    packages="$6"
-    depends="$7"
+upstream_version() {
+    git -C "$1" describe --tags --abbrev=0 2>/dev/null || printf 'unknown\n'
+}
 
-    # Handle upstream dock virtual component
-    if [ "$name" = "tmux-session-dock" ]; then
-        provision_upstream_dock
+# version_ge A B : true when A >= B (semver-ish via sort -V)
+version_ge() {
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
+}
+
+check_upstream_version() {
+    name="$1"
+    path="$2"
+    min_version="$3"
+    [ -n "$min_version" ] || return 0
+    current="$(upstream_version "$path")"
+    if [ "$current" = "unknown" ]; then
+        log_warn "$name: version unknown (no git tag reachable) - required >= $min_version"
+        return 1
+    fi
+    if version_ge "$current" "$min_version"; then
+        log_ok "$name version $current (>= $min_version)"
         return 0
     fi
+    log_warn "$name version $current is below required $min_version. Run: $0 update"
+    return 1
+}
+
+install_upstream_module() {
+    name="$1"
+    repo="$2"
+    dir="$3"
+    min_version="$4"
+
+    if [ "$SKIP_UPSTREAM" = "1" ]; then
+        log_info "Skipping upstream module $name (--skip-upstream)"
+        return 0
+    fi
+
+    path="$(resolve_upstream_dir "$name" "$dir")"
+    if is_dev_checkout "$path"; then
+        log_ok "$name: using local checkout $path"
+    elif [ ! -d "$path/.git" ]; then
+        log_info "$name: cloning $repo -> $path"
+        mkdir -p "$(dirname "$path")"
+        if ! git clone --quiet "$repo" "$path" </dev/null; then
+            log_error "$name: git clone failed"
+            return 1
+        fi
+    fi
+
+    if [ ! -x "$path/setup.sh" ]; then
+        log_error "$name: $path/setup.sh not found or not executable"
+        return 1
+    fi
+
+    log_info "$name: delegating install to $path/setup.sh"
+    if ! "$path/setup.sh" install >/dev/null </dev/null; then
+        log_warn "$name: upstream install reported an error"
+    fi
+    check_upstream_version "$name" "$path" "$min_version" || true
+    record_manifest "$name" "$path" "-" "upstream"
+    log_ok "Installed $name (upstream) -> $path"
+}
+
+update_upstream_module() {
+    name="$1"
+    dir="$2"
+    path="$(resolve_upstream_dir "$name" "$dir")"
+    if [ -x "$path/setup.sh" ]; then
+        log_info "$name: delegating update to $path/setup.sh"
+        "$path/setup.sh" update >/dev/null </dev/null || log_warn "$name: upstream update reported an error"
+    fi
+}
+
+uninstall_upstream_module() {
+    name="$1"
+    dir="$2"
+    path="$(resolve_upstream_dir "$name" "$dir")"
+    if [ -x "$path/setup.sh" ]; then
+        if [ "$PURGE" = "1" ]; then
+            log_info "$name: delegating purge to $path/setup.sh"
+            "$path/setup.sh" purge >/dev/null </dev/null || log_warn "$name: upstream purge reported an error"
+        else
+            log_info "$name: delegating uninstall to $path/setup.sh"
+            "$path/setup.sh" uninstall >/dev/null </dev/null || log_warn "$name: upstream uninstall reported an error"
+        fi
+    fi
+    if [ "$PURGE" = "1" ] && [ -d "$path" ] && ! is_dev_checkout "$path"; then
+        rm -rf "$path"
+        log_ok "$name: removed checkout $path"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# File Module Installer
+# -----------------------------------------------------------------------------
+
+run_post_install() {
+    target="$1"
+    hooks="$2"
+    target_path="$(expand_path "$target")"
+    for hook in $hooks; do
+        case "$hook" in
+            executable)
+                [ -f "$target_path" ] && chmod +x "$target_path"
+                ;;
+            xrdb-merge)
+                if command_exists xrdb && [ -n "${DISPLAY:-}" ]; then
+                    xrdb -merge "$target_path" 2>/dev/null || true
+                fi
+                ;;
+            *)
+                log_warn "Unknown post_install hook '$hook' for $target"
+                ;;
+        esac
+    done
+}
+
+install_file_module() {
+    name="$1"
+    source="$2"
+    target="$3"
+    post_install="$4"
 
     target_path="$(expand_path "$target")"
     source_url="$(source_url "$source")"
@@ -391,7 +410,7 @@ install_item() {
             return 1
         fi
     else
-        if ! curl -fsSL "$source_url" -o "$tmp_file" 2>/dev/null; then
+        if ! curl -fsSL "$source_url" -o "$tmp_file" 2>/dev/null </dev/null; then
             log_error "Failed to download $source_url"
             rm -f "$tmp_file"
             return 1
@@ -411,61 +430,143 @@ install_item() {
     record_manifest "$name" "$target_path" "$backup_path" "$source"
     log_ok "Installed $name -> $target_path"
 
-    after_install_item "$name" "$target"
-
-    # Install dependencies
-    if [ -n "$depends" ]; then
-        for dep in $depends; do
-            while IFS='|' read -r d_name d_enabled d_hidden d_source d_target d_commands d_packages d_depends d_desc; do
-                if [ "$d_name" = "$dep" ]; then
-                    install_item "$d_name" "$d_hidden" "$d_source" "$d_target" "$d_commands" "$d_packages" "$d_depends"
-                fi
-            done < "$ITEMS_FILE"
-        done
-    fi
-}
-
-do_install_all() {
-    log_info "Installing all enabled dotfiles components..."
-    load_config
-    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
-        if [ "$enabled" = "true" ] && [ "$hidden" != "true" ]; then
-            install_item "$name" "$hidden" "$source" "$target" "$commands" "$packages" "$depends"
-        fi
-    done < "$ITEMS_FILE"
-    log_ok "All enabled components installed successfully!"
+    run_post_install "$target" "$post_install"
 }
 
 # -----------------------------------------------------------------------------
-# Diagnostics & Doctor
+# Installation Engine (type dispatch + dependency walk)
+# -----------------------------------------------------------------------------
+
+install_item() {
+    # shellcheck disable=SC2086
+    IFS='|' read -r $ITEM_FIELDS <<< "$1"
+
+    case "$mtype" in
+        upstream)
+            install_upstream_module "$name" "$repo" "$dir" "$min_version"
+            ;;
+        file)
+            install_file_module "$name" "$source" "$target" "$post_install"
+            ;;
+        *)
+            log_error "$name: unknown module type '$mtype'"
+            return 1
+            ;;
+    esac
+
+    for dep in $depends; do
+        dep_item="$(find_item "$dep")"
+        if [ -n "$dep_item" ]; then
+            install_item "$dep_item"
+        else
+            log_warn "$name: dependency '$dep' not defined in install.toml"
+        fi
+    done
+}
+
+do_install_all() {
+    log_info "Installing all enabled dotfiles modules..."
+    load_config
+    while IFS= read -r item; do
+        # shellcheck disable=SC2086
+        IFS='|' read -r $ITEM_FIELDS <<< "$item"
+        if [ "$enabled" = "true" ] && [ "$hidden" != "true" ]; then
+            install_item "$item"
+        fi
+    done < "$ITEMS_FILE"
+    log_ok "All enabled modules installed."
+}
+
+# -----------------------------------------------------------------------------
+# Uninstall / Purge
+# -----------------------------------------------------------------------------
+
+do_uninstall() {
+    log_info "Uninstalling dotfiles modules..."
+    if [ -n "${TMUX:-}" ]; then
+        log_warn "Running inside tmux: the upstream tmux-session-dock uninstaller terminates the tmux server."
+    fi
+    load_config
+
+    if [ -f "$MANIFEST_FILE" ]; then
+        restore_from_manifest
+    else
+        log_info "No manifest found; removing targets defined in install.toml..."
+        while IFS= read -r item; do
+            # shellcheck disable=SC2086
+            IFS='|' read -r $ITEM_FIELDS <<< "$item"
+            case "$mtype" in
+                upstream)
+                    uninstall_upstream_module "$name" "$dir"
+                    ;;
+                file)
+                    [ -n "$target" ] || continue
+                    target_path="$(expand_path "$target")"
+                    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+                        rm -rf "$target_path"
+                        log_ok "Removed $target_path"
+                    fi
+                    ;;
+            esac
+        done < "$ITEMS_FILE"
+    fi
+
+    log_ok "Uninstallation completed."
+}
+
+do_purge() {
+    log_warn "Purging all dotfiles modules, backups and state..."
+    PURGE=1
+    do_uninstall
+    rm -rf "$HOME/.cache/dotfiles"   # legacy tmux-zshrc location (pre v0.8.0)
+    rm -rf "$STATE_DIR"
+    log_ok "Purged ~/.cache/dotfiles and $STATE_DIR"
+}
+
+# -----------------------------------------------------------------------------
+# Diagnostics
 # -----------------------------------------------------------------------------
 
 do_status() {
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
-    echo -e "  ${BOLD}dotfiles (${DOTFILES_STABLE_VERSION}) - Status & Manifest Overview${NC}"
+    echo -e "  ${BOLD}dotfiles (${DOTFILES_STABLE_VERSION}) - Module Status${NC}"
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
     load_config
-    printf '%-4s %-9s %-12s %-10s %-9s %s\n' "No" "State" "Target" "Command" "Managed" "Name"
+    printf '%-4s %-9s %-9s %-8s %-10s %-8s %-10s %s\n' "No" "State" "Type" "Target" "Command" "Managed" "Version" "Name"
     printf '%s\n' "----------------------------------------------------------------------"
-    
-    local idx=1
-    while IFS='|' read -r name enabled hidden source target commands packages depends description; do
-        [ "$hidden" = "true" ] && continue
-        local target_path
-        target_path="$(expand_path "$target")"
-        local target_state="missing"
-        local cmd_state="-"
-        local managed_state="no"
 
-        [ -e "$target_path" ] && target_state="exists"
+    idx=1
+    while IFS= read -r item; do
+        # shellcheck disable=SC2086
+        IFS='|' read -r $ITEM_FIELDS <<< "$item"
+        [ "$hidden" = "true" ] && continue
+
+        target_state="missing"
+        cmd_state="-"
+        managed_state="no"
+        version_state="-"
+
+        case "$mtype" in
+            upstream)
+                path="$(resolve_upstream_dir "$name" "$dir")"
+                [ -x "$path/setup.sh" ] && target_state="exists"
+                version_state="$(upstream_version "$path")"
+                ;;
+            *)
+                [ -e "$(expand_path "$target")" ] && target_state="exists"
+                ;;
+        esac
+
         if [ -n "$commands" ]; then
-            local missing=0
+            missing=0
             for c in $commands; do command_exists "$c" || missing=$((missing + 1)); done
             [ "$missing" -eq 0 ] && cmd_state="ok" || cmd_state="missing:$missing"
         fi
         is_managed "$name" && managed_state="yes"
 
-        printf '%-4s %-9s %-12s %-10s %-9s %s\n' "$idx" "$([ "$enabled" = "true" ] && echo -e "${GREEN}enabled${NC}" || echo "disabled")" "$target_state" "$cmd_state" "$managed_state" "$name"
+        state_label="disabled"
+        [ "$enabled" = "true" ] && state_label="$(echo -e "${GREEN}enabled${NC} ")"
+        printf '%-4s %-9b %-9s %-8s %-10s %-8s %-10s %s\n' "$idx" "$state_label" "$mtype" "$target_state" "$cmd_state" "$managed_state" "$version_state" "$name"
         idx=$((idx + 1))
     done < "$ITEMS_FILE"
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
@@ -473,35 +574,42 @@ do_status() {
 
 do_doctor() {
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
-    echo -e "  ${BOLD}dotfiles Environment Doctor & Health Check${NC}"
+    echo -e "  ${BOLD}dotfiles Doctor${NC}"
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
-    
-    local checks=(
-        "tmux:Multiplexer"
-        "zsh:Shell"
-        "urxvt:Terminal"
-        "bc:Calculator"
-        "xclip:Clipboard"
-        "xrdb:X11 Resources"
-        "vim:Editor"
-    )
+    load_config
 
-    for item in "${checks[@]}"; do
-        local cmd="${item%%:*}"
-        local label="${item##*:}"
-        if command_exists "$cmd"; then
-            echo -e "  [OK]      $cmd ($label)"
+    # 1. Required commands: union over enabled modules (and their dependencies)
+    echo -e "${BOLD}Required commands${NC}"
+    all_commands=""
+    while IFS= read -r item; do
+        # shellcheck disable=SC2086
+        IFS='|' read -r $ITEM_FIELDS <<< "$item"
+        [ "$enabled" = "true" ] || [ "$hidden" = "true" ] || continue
+        all_commands="$all_commands $commands"
+    done < "$ITEMS_FILE"
+    for c in $(printf '%s\n' $all_commands | sort -u); do
+        if command_exists "$c"; then
+            echo -e "  [OK]      $c"
         else
-            echo -e "  ${YELLOW}[MISSING]${NC} $cmd ($label)"
+            echo -e "  ${YELLOW}[MISSING]${NC} $c"
         fi
     done
 
-    # Check upstream dock
-    if [ -x "$HOME/.local/bin/tmux-session-dock" ] || [ -d "$TMUX_DOCK_DIR" ] || [ -d "$HOME/workspace/tmux-session-dock" ]; then
-        echo -e "  [OK]      tmux-session-dock (Upstream Dock Integration)"
-    else
-        echo -e "  ${YELLOW}[MISSING]${NC} tmux-session-dock (Run: ./setup.sh install)"
-    fi
+    # 2. Upstream modules: version gate + delegated status
+    while IFS= read -r item; do
+        # shellcheck disable=SC2086
+        IFS='|' read -r $ITEM_FIELDS <<< "$item"
+        [ "$mtype" = "upstream" ] && [ "$enabled" = "true" ] || continue
+        echo
+        echo -e "${BOLD}Upstream: $name${NC}"
+        path="$(resolve_upstream_dir "$name" "$dir")"
+        if [ -x "$path/setup.sh" ]; then
+            check_upstream_version "$name" "$path" "$min_version" || true
+            "$path/setup.sh" status 2>/dev/null </dev/null | sed 's/^/  /' || true
+        else
+            echo -e "  ${YELLOW}[MISSING]${NC} $name not installed (Run: $0 install)"
+        fi
+    done < "$ITEMS_FILE"
 
     echo -e "${CYAN}${BOLD}======================================================================${NC}"
 }
@@ -511,7 +619,15 @@ do_update() {
     if [ -d ".git" ]; then
         git pull --ff-only origin master || git pull origin main || true
     fi
-    update_upstream_dock
+    load_config
+    if [ "$SKIP_UPSTREAM" != "1" ]; then
+        while IFS= read -r item; do
+            # shellcheck disable=SC2086
+            IFS='|' read -r $ITEM_FIELDS <<< "$item"
+            [ "$mtype" = "upstream" ] && [ "$enabled" = "true" ] || continue
+            update_upstream_module "$name" "$dir"
+        done < "$ITEMS_FILE"
+    fi
     do_install_all
 }
 
@@ -521,7 +637,7 @@ do_update() {
 
 INVOKED_AS="$(basename "$0")"
 
-# Backward compatibility for install.sh / uninstall.sh
+# Backward compatibility for install.sh / uninstall.sh symlinks
 if [ "$INVOKED_AS" = "install.sh" ] && [ $# -eq 0 ]; then
     set -- "install" "--all"
 elif [ "$INVOKED_AS" = "uninstall.sh" ] && [ $# -eq 0 ]; then
@@ -529,24 +645,50 @@ elif [ "$INVOKED_AS" = "uninstall.sh" ] && [ $# -eq 0 ]; then
 fi
 
 CMD="${1:-}"
+case "$CMD" in
+    --*) CMD="install" ;;          # curl ... | bash -s -- --v vX.Y.Z  => install
+    *)   shift || true ;;
+esac
+
+# Global options
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --v|--version)
+            DOTFILES_VERSION="${2:-master}"
+            shift 2 || shift
+            ;;
+        --latest)
+            DOTFILES_VERSION="master"
+            shift
+            ;;
+        --skip-upstream|--no-dock)
+            SKIP_UPSTREAM=1
+            shift
+            ;;
+        --all)
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 case "$CMD" in
     install)
-        shift || true
         setup_urls
-        if [ "${1:-}" = "--all" ]; then
-            do_install_all
-        else
-            do_install_all
-        fi
+        do_install_all
         ;;
     update)
+        setup_urls
         do_update
         ;;
     uninstall|undo|rollback)
+        setup_urls
         do_uninstall
         ;;
     purge)
+        setup_urls
         do_purge
         ;;
     status)
@@ -554,14 +696,25 @@ case "$CMD" in
         do_status
         ;;
     doctor|check)
+        setup_urls
         do_doctor
+        ;;
+    dump-config)
+        # Hidden: print parsed install.toml records (used by tests)
+        setup_urls
+        load_config
+        cat "$ITEMS_FILE"
         ;;
     -h|--help)
         usage
         ;;
-    *)
-        # If run interactively on TTY with no args, install enabled components
+    "")
+        # curl ... | bash  (no arguments): install everything
         setup_urls
         do_install_all
+        ;;
+    *)
+        log_error "Unknown command: $CMD"
+        usage
         ;;
 esac
